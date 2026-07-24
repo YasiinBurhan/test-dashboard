@@ -1,0 +1,8 @@
+{
+	"appId": "com.rekrutmen.laporanharian",
+	"appName": "Laporan Harian Rekrutmen",
+	"webDir": "dist",
+	"server": {
+		"androidScheme": "https"
+	}
+}

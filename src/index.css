@@ -1,0 +1,135 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "SF Pro", "SF Compact Display", "SF Compact Text", system-ui, sans-serif;
+}
+
+@layer base {
+  :root {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "SF Pro", "SF Compact Display", "SF Compact Text", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    font-size: 16px;
+  }
+
+  /* Force all elements to fall back to the premium iOS system font */
+  *, *::before, *::after, input, button, select, textarea {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "SF Pro", "SF Compact Display", "SF Compact Text", system-ui, sans-serif !important;
+  }
+
+  /* Responsive base font scaling for Android, iPhone, Tablet & Laptop */
+  @media (max-width: 380px) {
+    :root {
+      font-size: 15px; /* Compact Android / iPhone SE */
+    }
+  }
+
+  @media (min-width: 640px) {
+    :root {
+      font-size: 16.5px; /* Tablets */
+    }
+  }
+
+  @media (min-width: 1024px) {
+    :root {
+      font-size: 17px; /* Laptop & Desktop */
+    }
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "SF Pro", "SF Compact Display", "SF Compact Text", system-ui, sans-serif;
+    letter-spacing: -0.011em;
+    overflow-x: hidden;
+    background-color: var(--tg-bg-color, #030712);
+    color: var(--tg-text-color, #f8fafc);
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+}
+
+@layer utilities {
+  .bg-mesh-gradient {
+    background-color: var(--tg-bg-color, #030712);
+    background-image: 
+      radial-gradient(at 15% 15%, rgba(14, 165, 233, 0.08) 0px, transparent 50%),
+      radial-gradient(at 85% 20%, rgba(99, 102, 241, 0.06) 0px, transparent 50%),
+      radial-gradient(at 50% 80%, rgba(59, 130, 246, 0.06) 0px, transparent 50%);
+  }
+
+  .glass-glow {
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37), inset 0 1px 1px 0 rgba(255, 255, 255, 0.1);
+  }
+
+  .text-gradient {
+    background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 50%, #38bdf8 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+}
+
+/* Safe area padding for Telegram WebApp / iOS Notch / Android Status & Gesture Bars */
+.pt-safe-header {
+  padding-top: max(2.25rem, calc(env(safe-area-inset-top, 0px) + 0.5rem));
+}
+
+.pt-safe {
+  padding-top: max(1.75rem, env(safe-area-inset-top, 0px));
+}
+
+.pb-safe {
+  padding-bottom: max(1.25rem, env(safe-area-inset-bottom, 0px));
+}
+
+.mt-safe {
+  margin-top: max(1.75rem, env(safe-area-inset-top, 0px));
+}
+
+/* Fluid sync container for APK mobile and Tablet responsive layout */
+.sync-container {
+  width: 100%;
+  max-width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+@media (min-width: 640px) {
+  .sync-container {
+    max-width: 640px;
+  }
+}
+
+@media (min-width: 768px) {
+  .sync-container {
+    max-width: 768px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .sync-container {
+    max-width: 1024px;
+  }
+}
+
+@media (min-width: 1280px) {
+  .sync-container {
+    max-width: 1280px;
+  }
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(56, 189, 248, 0.4);
+}
+
+

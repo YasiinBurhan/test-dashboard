@@ -1,0 +1,15 @@
+# Keep line endings of files consistent and treat binaries correctly
+* text=auto eol=lf
+
+# Explicitly mark binary files so Git won't corrupt them by converting line endings
+*.jar binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.mp4 binary
+*.wav binary
+*.mp3 binary
+*.aar binary
+*.apk binary

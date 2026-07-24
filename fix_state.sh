@@ -1,0 +1,1 @@
+sed -i '/\/\/ View State & Post Count/a \  const [recruiters, setRecruiters] = useState<UserProfile[]>([]);\n  const [selectedRecruiterId, setSelectedRecruiterId] = useState<string>('"'"'"'"');' src/pages/PostinganPage.tsx

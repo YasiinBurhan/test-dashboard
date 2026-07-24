@@ -1,0 +1,114 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Recruiter, Admin, or Owner profile document indexed by Telegram ID",
+      "type": "object",
+      "properties": {
+        "telegramId": { "type": "string" },
+        "username": { "type": "string" },
+        "firstName": { "type": "string" },
+        "lastName": { "type": "string" },
+        "photoUrl": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "whatsapp": { "type": "string" },
+        "akun9Kucing": { "type": "string" },
+        "role": { "type": "string", "enum": ["Owner", "Admin", "Recruiter"] },
+        "status": { "type": "string", "enum": ["Pending", "Active", "Rejected", "Suspended"] },
+        "approved": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "approvedBy": { "type": "string" },
+        "approvedAt": { "type": "string" }
+      },
+      "required": ["telegramId", "email", "whatsapp", "akun9Kucing", "role", "status", "approved"]
+    },
+    "DailyReport": {
+      "title": "Daily Report",
+      "description": "Recruitment daily activity metrics submitted by recruiter",
+      "type": "object",
+      "properties": {
+        "reportId": { "type": "string" },
+        "telegramId": { "type": "string" },
+        "username": { "type": "string" },
+        "name": { "type": "string" },
+        "date": { "type": "string" },
+        "visit": { "type": "integer" },
+        "applicant": { "type": "integer" },
+        "quality": { "type": "integer" },
+        "posting": { "type": "integer" },
+        "permission": { "type": "integer" },
+        "note": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["reportId", "telegramId", "date", "visit", "applicant", "quality", "posting"]
+    },
+    "Announcement": {
+      "title": "Announcement",
+      "description": "System-wide broadcast messages created by Owner or Admin",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "author": { "type": "string" },
+        "pinned": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "title", "content", "createdAt"]
+    },
+    "Post": {
+      "title": "Recruitment Post",
+      "description": "Batch of links sent to Telegram, archived automatically after current day",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "telegramId": { "type": "string" },
+        "username": { "type": "string" },
+        "name": { "type": "string" },
+        "date": { "type": "string" },
+        "startNumber": { "type": "integer" },
+        "links": { "type": "array", "items": { "type": "string" } },
+        "platforms": { "type": "array", "items": { "type": "string" } },
+        "archived": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "telegramId", "date", "startNumber", "links", "archived", "createdAt"]
+    },
+    "Setting": {
+      "title": "System Setting",
+      "description": "System-wide configuration settings managed by Owner",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "systemStatus": { "type": "string" },
+        "allowRegistrations": { "type": "boolean" },
+        "announcementHeader": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id"]
+    }
+  },
+  "firestore": {
+    "/users/{telegramId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User account documents stored with Telegram ID as document ID"
+    },
+    "/laporan_harian/{reportId}": {
+      "schema": { "$ref": "#/entities/DailyReport" },
+      "description": "Daily activity logs created by recruiters"
+    },
+    "/announcements/{announcementId}": {
+      "schema": { "$ref": "#/entities/Announcement" },
+      "description": "Announcements created by Admin or Owner"
+    },
+    "/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/Setting" },
+      "description": "System configuration parameters"
+    },
+    "/posts/{postId}": {
+      "schema": { "$ref": "#/entities/Post" },
+      "description": "Batch posting history"
+    }
+  }
+}

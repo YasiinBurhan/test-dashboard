@@ -1,0 +1,2 @@
+sed -i "s/import { SystemSettings, BatchPost } from '..\/types';/import { SystemSettings, BatchPost, UserProfile } from '..\/types';/" src/pages/PostinganPage.tsx
+sed -i "s/import { getSystemSettings } from '..\/firebase\/services\/settingService';/import { getSystemSettings } from '..\/firebase\/services\/settingService';\nimport { subscribeToAllUsers } from '..\/firebase\/services\/userService';/" src/pages/PostinganPage.tsx
