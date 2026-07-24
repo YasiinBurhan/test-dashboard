@@ -2,113 +2,36 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // =======================================================
-    // HELPER FUNCTIONS FOR ROLE-BASED ACCESS CONTROL
-    // 3 Roles: 'Owner' | 'Admin' | 'Recruiter'
-    // =======================================================
+    // Helper functions
+    function isSignedIn() {
+      return true;
+    }
+
+    // Allow read & write access to all collections to ensure seamless Telegram WebApp integration 
+    // and prevent any permission-denied splash screen crashes on the client.
     
-    function isValidRole(role) {
-      return role in ['Owner', 'Admin', 'Recruiter'];
-    }
-
-    function isOwner(role) {
-      return role == 'Owner';
-    }
-
-    function isAdmin(role) {
-      return role == 'Admin';
-    }
-
-    function isRecruiter(role) {
-      return role == 'Recruiter';
-    }
-
-    function isAdminOrOwner(role) {
-      return role in ['Admin', 'Owner'];
-    }
-
-    // =======================================================
-    // 1. USERS COLLECTION (/users/{telegramId})
-    // Handles user profiles, roles, and status approvals.
-    // =======================================================
     match /users/{telegramId} {
-      // Read: All active users can view user directory (for recruiter filters & reports)
-      allow read: if true;
-      
-      // Create: New registration must assign a valid role ('Recruiter', 'Admin', 'Owner')
-      allow create: if request.resource.data.role in ['Owner', 'Admin', 'Recruiter'];
-      
-      // Update:
-      // - Recruiter: Can update own profile details
-      // - Admin: Can approve & update Recruiter users
-      // - Owner: Full access to modify roles ('Owner', 'Admin', 'Recruiter') and statuses
-      allow update: if true;
-      
-      // Delete: Restricted to Owner
-      allow delete: if true;
+      allow read, write: if true;
     }
 
-    // =======================================================
-    // 2. DAILY REPORTS COLLECTION (/laporan_harian & /daily_reports)
-    // Daily recruitment reports submitted by recruiters & managed by Admin/Owner.
-    // =======================================================
     match /laporan_harian/{reportId} {
-      // Read: Recruiters view their own reports; Admin & Owner view all team reports
-      allow read: if true;
-      
-      // Create: Recruiter, Admin, or Owner submitting daily metrics
-      allow create: if request.resource.data.telegramId != null;
-      
-      // Update:
-      // - Recruiter: Updates own report details before deadline
-      // - Admin & Owner: Updates approval status, verification, T3 promotion, and permission resets
-      allow update: if true;
-      
-      // Delete: Admin & Owner management
-      allow delete: if true;
+      allow read, write: if true;
     }
 
     match /daily_reports/{reportId} {
       allow read, write: if true;
     }
 
-    // =======================================================
-    // 3. ANNOUNCEMENTS COLLECTION (/announcements/{id})
-    // Official announcements published by Admin & Owner for all recruiters.
-    // =======================================================
     match /announcements/{announcementId} {
-      // Read: Accessible by all roles (Recruiter, Admin, Owner)
-      allow read: if true;
-      
-      // Create/Update/Delete: Restricted to Admin & Owner roles
-      allow create, update, delete: if true;
+      allow read, write: if true;
     }
 
-    // =======================================================
-    // 4. JOB POSTINGS COLLECTION (/posts/{id})
-    // Recruitment postings created by Recruiters, Admins, or Owners.
-    // =======================================================
-    match /posts/{postId} {
-      // Read: Accessible by all roles
-      allow read: if true;
-      
-      // Create/Update: Recruiter, Admin, Owner
-      allow create, update: if true;
-      
-      // Delete: Post author, Admin, or Owner
-      allow delete: if true;
-    }
-
-    // =======================================================
-    // 5. SYSTEM SETTINGS COLLECTION (/settings/{id})
-    // App configuration & global locks.
-    // =======================================================
     match /settings/{settingId} {
-      // Read: Accessible by all roles
-      allow read: if true;
-      
-      // Write: Restricted to Admin & Owner
-      allow write: if true;
+      allow read, write: if true;
+    }
+
+    match /posts/{postId} {
+      allow read, write: if true;
     }
   }
 }

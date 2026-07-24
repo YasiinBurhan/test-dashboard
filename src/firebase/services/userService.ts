@@ -51,6 +51,37 @@ export async function getUserProfile(telegramId: string): Promise<UserProfile | 
   }
 }
 
+export async function findUserProfileByIdOrUsername(idOrUsername: string): Promise<UserProfile | null> {
+  const clean = String(idOrUsername || '').trim().replace(/^@/, '');
+  if (!clean) return null;
+
+  // 1. Direct document get by telegramId
+  try {
+    const userRef = doc(db, 'users', clean);
+    const docSnap = await getDoc(userRef);
+    if (docSnap.exists()) {
+      return docSnap.data() as UserProfile;
+    }
+  } catch (err) {
+    console.warn('Direct doc lookup by ID failed:', err);
+  }
+
+  // 2. Search all users for matching telegramId or username
+  try {
+    const allUsers = await getAllUsers();
+    const found = allUsers.find(
+      (u) =>
+        String(u.telegramId).trim() === clean ||
+        (u.username && u.username.toLowerCase() === clean.toLowerCase())
+    );
+    if (found) return found;
+  } catch (err) {
+    console.warn('Search all users failed:', err);
+  }
+
+  return null;
+}
+
 export async function createUserProfile(profile: Omit<UserProfile, 'createdAt' | 'updatedAt'>): Promise<UserProfile> {
   const now = new Date().toISOString();
   let role = profile.role || 'Recruiter';

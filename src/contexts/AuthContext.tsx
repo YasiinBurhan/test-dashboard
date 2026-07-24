@@ -2,13 +2,13 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 import { AuthState, TelegramUser, UserProfile } from '../types';
 import { getTelegramWebApp, isTelegramEnvironment } from '../telegram/webapp';
 import { verifyTelegramInitDataApi } from '../services/api';
-import { getUserProfile, subscribeToUserProfile } from '../firebase/services/userService';
+import { getUserProfile, subscribeToUserProfile, getAllUsers, createUserProfile, findUserProfileByIdOrUsername } from '../firebase/services/userService';
 
 interface AuthContextType extends AuthState {
   refreshProfile: () => Promise<UserProfile | null>;
   logout: () => void;
   continueLogin: () => Promise<void>;
-  loginManually: (telegramId: string, name: string, username?: string) => Promise<{ success: boolean; error?: string }>;
+  loginManually: (telegramId: string, name?: string, username?: string) => Promise<{ success: boolean; error?: string }>;
   registerManually: (telegramId: string, name: string, username?: string) => void;
 }
 
@@ -92,11 +92,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         try {
           const savedUser = JSON.parse(savedUserStr);
           if (savedUser && savedUser.id) {
-            const profile = await withTimeout(getUserProfile(String(savedUser.id)), 8000, null);
+            const cleanSavedId = String(savedUser.id).trim();
+            const profile = await withTimeout(findUserProfileByIdOrUsername(cleanSavedId), 8000, null);
+
             if (profile) {
+              const tgUser: TelegramUser = {
+                id: Number(profile.telegramId) || savedUser.id,
+                first_name: profile.firstName || savedUser.first_name || 'User',
+                last_name: profile.lastName || savedUser.last_name || '',
+                username: profile.username || savedUser.username || '',
+                photo_url: profile.photoUrl || savedUser.photo_url || ''
+              };
+
               await finishLoading({
                 isAuthenticated: true,
-                telegramUser: savedUser,
+                telegramUser: tgUser,
                 userProfile: profile,
                 token: 'manual_session_token',
                 initData: '',
@@ -258,26 +268,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const loginManually = async (telegramIdInput: string, nameInput?: string, usernameInput?: string) => {
     setState((prev) => ({ ...prev, isLoading: true, error: null }));
-    const cleanId = String(telegramIdInput || '').trim();
+    const cleanId = String(telegramIdInput || '').trim().replace(/^@/, '');
     if (!cleanId) {
       setState((prev) => ({ ...prev, isLoading: false }));
-      return { success: false, error: 'Mohon masukkan ID Telegram Anda.' };
+      return { success: false, error: 'Mohon masukkan ID atau Username Telegram Anda.' };
     }
 
     try {
-      let profile = await withTimeout(getUserProfile(cleanId), 8000, null);
-      // Brief retry if first fetch was null due to Firestore connection delay
-      if (!profile) {
-        await new Promise((r) => setTimeout(r, 800));
-        profile = await withTimeout(getUserProfile(cleanId), 8000, null);
-      }
+      const profile = await withTimeout(findUserProfileByIdOrUsername(cleanId), 8000, null);
 
       if (profile) {
         const tgUser: TelegramUser = {
-          id: Number(cleanId),
-          first_name: nameInput?.trim() || profile.firstName || 'User',
+          id: Number(profile.telegramId) || 12345678,
+          first_name: profile.firstName || nameInput?.trim() || 'User',
           last_name: profile.lastName || '',
-          username: usernameInput?.trim() || profile.username || '',
+          username: profile.username || usernameInput?.trim() || '',
           photo_url: profile.photoUrl || ''
         };
         
@@ -294,14 +299,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           error: null,
           isTelegramContext: true
         });
+
         return { success: true };
       } else {
         setState((prev) => ({ ...prev, isLoading: false }));
-        return { success: false, error: `ID Telegram (${cleanId}) belum terdaftar di Firestore. Silakan mendaftar terlebih dahulu.` };
+        return {
+          success: false,
+          error: `ID / Username Telegram (${cleanId}) tidak terdaftar di Firestore. Silakan mendaftar terlebih dahulu di tab "Daftar Baru".`
+        };
       }
     } catch (err) {
+      console.error('Error during manual login:', err);
       setState((prev) => ({ ...prev, isLoading: false }));
-      return { success: false, error: 'Gagal memverifikasi akun. Silakan periksa koneksi internet Anda.' };
+      return { success: false, error: 'Gagal memverifikasi akun. Periksa koneksi internet Anda.' };
     }
   };
 
