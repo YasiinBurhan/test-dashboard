@@ -4,7 +4,7 @@ import { StatusBadge } from '../components/common/StatusBadge';
 import { formatUsername } from '../utils/format';
 import { Button } from '../components/common/Button';
 import { useRecruiters } from '../hooks/useRecruiters';
-import { Announcement, SystemSettings, UserRole, UserStatus } from '../types';
+import { Announcement, DailyReport, SystemSettings, UserRole, UserStatus } from '../types';
 import {
   getAnnouncements,
   createAnnouncement,
@@ -14,7 +14,8 @@ import {
   getSystemSettings,
   updateSystemSettings
 } from '../firebase/services/settingService';
-import { Key, Megaphone, Settings, Users, ShieldAlert, Plus, Trash2, CheckCircle2, BarChart2, Bot, Globe, XCircle, AlertTriangle, Send } from 'lucide-react';
+import { subscribeToAllReports } from '../firebase/services/reportService';
+import { Key, Megaphone, Settings, Users, ShieldAlert, Plus, Trash2, CheckCircle2, BarChart2, Bot, Globe, XCircle, AlertTriangle, Send, FileSpreadsheet, Copy, Download, Calendar, Filter, Check } from 'lucide-react';
 
 const getApiBaseUrl = () => {
   if (import.meta.env.VITE_BACKEND_URL) {
@@ -28,6 +29,16 @@ const getApiBaseUrl = () => {
 };
 
 const API_BASE_URL = getApiBaseUrl();
+
+const formatDateDDMMYYYY = (dateString?: string) => {
+  if (!dateString) return '-';
+  const clean = dateString.split('T')[0];
+  const parts = clean.split('-');
+  if (parts.length === 3 && parts[0].length === 4) {
+    return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  }
+  return dateString;
+};
 
 export const OwnerPage: React.FC = () => {
   const { users, changeStatus, changeRole, refetch: refetchUsers } = useRecruiters();
@@ -124,7 +135,130 @@ export const OwnerPage: React.FC = () => {
     }
   };
 
-  const [activeSubTab, setActiveSubTab] = useState<'users' | 'announcements' | 'settings'>('users');
+  const [activeSubTab, setActiveSubTab] = useState<'users' | 'announcements' | 'settings' | 'export'>('users');
+
+  // Export Spreadsheet State
+  const [allReports, setAllReports] = useState<DailyReport[]>([]);
+  const [exportDate, setExportDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [exportRecruiter, setExportRecruiter] = useState<string>('');
+  const [exportResultFilter, setExportResultFilter] = useState<string>('all');
+  const [exportGrupFilter, setExportGrupFilter] = useState<string>('all');
+  const [copyStatus, setCopyStatus] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (activeSubTab === 'export') {
+      const unsubscribe = subscribeToAllReports((reports) => {
+        setAllReports(reports || []);
+      });
+      return () => unsubscribe();
+    }
+  }, [activeSubTab]);
+
+  const filteredReports = allReports.filter((r) => {
+    const rDate = r.date || (r.createdAt ? r.createdAt.split('T')[0] : '');
+    if (exportDate && rDate !== exportDate) return false;
+
+    if (exportRecruiter) {
+      const recruiterClean = exportRecruiter.toLowerCase().replace(/^@/, '').trim();
+      const reportRecruiter = (r.recruiterUsername || r.username || '').toLowerCase().replace(/^@/, '');
+      if (!reportRecruiter.includes(recruiterClean)) return false;
+    }
+
+    if (exportResultFilter !== 'all') {
+      if (exportResultFilter === 'ACC' && r.result !== 'ACC') return false;
+      if (exportResultFilter === 'REJECT' && r.result !== 'REJECT') return false;
+      if (exportResultFilter === 'Pending' && r.result !== 'Pending') return false;
+    }
+
+    if (exportGrupFilter !== 'all' && r.grup !== exportGrupFilter) return false;
+
+    return true;
+  });
+
+  const handleCopySpreadsheet = async () => {
+    if (filteredReports.length === 0) {
+      alert('Tidak ada data laporan untuk disalin.');
+      return;
+    }
+
+    const headers = [
+      'Tanggal',
+      'Username Recruiter',
+      'Recruitment channels',
+      'WA Pelamar',
+      'UID 9Kucing Pelamar',
+      'Username Pelamar',
+      'Results',
+      'Grup'
+    ];
+
+    const rows = filteredReports.map((r) => [
+      formatDateDDMMYYYY(r.date || (r.createdAt ? r.createdAt.split('T')[0] : '')),
+      formatUsername(r.recruiterUsername || r.username),
+      r.channel || '-',
+      r.applicantWhatsapp || '-',
+      r.uid9Kucing || '-',
+      formatUsername(r.applicantTelegramUsername),
+      r.result === 'ACC' ? 'YES' : (r.result === 'REJECT' ? 'NO' : (r.result || 'YES')),
+      r.grup || '-'
+    ]);
+
+    const tsvText = [
+      headers.join('\t'),
+      ...rows.map((row) => row.join('\t'))
+    ].join('\n');
+
+    try {
+      await navigator.clipboard.writeText(tsvText);
+      setCopyStatus('✅ Data berhasil disalin ke Clipboard! Silakan Buka Google Sheets / Excel lalu lakukan Paste (Ctrl+V).');
+      setTimeout(() => setCopyStatus(null), 5000);
+    } catch (err) {
+      console.error('Failed to copy to clipboard:', err);
+      alert('Gagal menyalin data otomatis. Silakan gunakan tombol Download .CSV.');
+    }
+  };
+
+  const handleDownloadCSV = () => {
+    if (filteredReports.length === 0) {
+      alert('Tidak ada data laporan untuk diunduh.');
+      return;
+    }
+
+    const headers = [
+      'Tanggal',
+      'Username Recruiter',
+      'Recruitment channels',
+      'WA Pelamar',
+      'UID 9Kucing Pelamar',
+      'Username Pelamar',
+      'Results',
+      'Grup'
+    ];
+
+    const rows = filteredReports.map((r) => [
+      `"${formatDateDDMMYYYY(r.date || (r.createdAt ? r.createdAt.split('T')[0] : '')).replace(/"/g, '""')}"`,
+      `"${formatUsername(r.recruiterUsername || r.username).replace(/"/g, '""')}"`,
+      `"${(r.channel || '-').replace(/"/g, '""')}"`,
+      `"${(r.applicantWhatsapp || '-').replace(/"/g, '""')}"`,
+      `"${(r.uid9Kucing || '-').replace(/"/g, '""')}"`,
+      `"${formatUsername(r.applicantTelegramUsername).replace(/"/g, '""')}"`,
+      `"${r.result === 'ACC' ? 'YES' : (r.result === 'REJECT' ? 'NO' : (r.result || 'YES'))}"`,
+      `"${(r.grup || '-').replace(/"/g, '""')}"`
+    ]);
+
+    const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [
+      headers.map(h => `"${h}"`).join(','),
+      ...rows.map(row => row.join(','))
+    ].join('\n');
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `data_harian_spreadsheet_${exportDate || 'semua'}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   const fetchBotInfo = async (currentSettings?: SystemSettings | null) => {
     const activeSettings = currentSettings || settings;
@@ -369,6 +503,14 @@ export const OwnerPage: React.FC = () => {
           <Megaphone className="w-4 h-4" /> Pengumuman
         </button>
         <button
+          onClick={() => setActiveSubTab('export')}
+          className={`flex-1 py-2 rounded-xl font-bold transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
+            activeSubTab === 'export' ? 'bg-amber-500 text-slate-950 shadow-md' : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <FileSpreadsheet className="w-4 h-4" /> Export Spreadsheet
+        </button>
+        <button
           onClick={() => setActiveSubTab('settings')}
           className={`flex-1 py-2 rounded-xl font-bold transition-colors cursor-pointer flex items-center justify-center gap-1.5 ${
             activeSubTab === 'settings' ? 'bg-amber-500 text-slate-950 shadow-md' : 'text-slate-400 hover:text-white'
@@ -516,6 +658,228 @@ export const OwnerPage: React.FC = () => {
               </GlassCard>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Sub Tab Content: Export Spreadsheet */}
+      {activeSubTab === 'export' && (
+        <div className="space-y-4">
+          <GlassCard className="p-4 border-amber-500/30 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-black text-amber-400 flex items-center gap-2">
+                  <FileSpreadsheet className="w-5 h-5 text-amber-400" />
+                  <span>Export & Salin Data Harian ke Spreadsheet</span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  Format ini disesuaikan untuk langsung disalin (Copy) lalu ditempel (Paste/Ctrl+V) di Google Sheets atau Excel.
+                </p>
+              </div>
+            </div>
+
+            {/* Notification / Copy Success */}
+            {copyStatus && (
+              <div className="p-3 bg-emerald-500/15 border border-emerald-500/40 rounded-xl text-xs text-emerald-300 font-bold flex items-center gap-2 animate-fadeIn">
+                <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>{copyStatus}</span>
+              </div>
+            )}
+
+            {/* Filter Controls */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 pt-2">
+              {/* Date Filter */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1">
+                  <Calendar className="w-3 h-3 text-amber-400" /> Tanggal
+                </label>
+                <input
+                  type="date"
+                  value={exportDate}
+                  onChange={(e) => setExportDate(e.target.value)}
+                  className="bg-slate-900 border border-slate-800 rounded-xl p-2 text-xs text-white outline-none focus:border-amber-400 font-mono"
+                />
+                <div className="flex items-center gap-1 mt-1 text-[10px]">
+                  <button
+                    type="button"
+                    onClick={() => setExportDate(new Date().toISOString().split('T')[0])}
+                    className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-amber-400 cursor-pointer font-medium"
+                  >
+                    Hari Ini
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const d = new Date();
+                      d.setDate(d.getDate() - 1);
+                      setExportDate(d.toISOString().split('T')[0]);
+                    }}
+                    className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer font-medium"
+                  >
+                    Kemarin
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setExportDate('')}
+                    className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 cursor-pointer font-medium"
+                  >
+                    Semua
+                  </button>
+                </div>
+              </div>
+
+              {/* Recruiter Filter */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1">
+                  <Users className="w-3 h-3 text-amber-400" /> Recruiter
+                </label>
+                <input
+                  type="text"
+                  placeholder="Cari Username..."
+                  value={exportRecruiter}
+                  onChange={(e) => setExportRecruiter(e.target.value)}
+                  className="bg-slate-900 border border-slate-800 rounded-xl p-2 text-xs text-white outline-none focus:border-amber-400"
+                />
+              </div>
+
+              {/* Result Filter */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1">
+                  <Filter className="w-3 h-3 text-amber-400" /> Result Status
+                </label>
+                <select
+                  value={exportResultFilter}
+                  onChange={(e) => setExportResultFilter(e.target.value)}
+                  className="bg-slate-900 border border-slate-800 rounded-xl p-2 text-xs text-white outline-none focus:border-amber-400 cursor-pointer"
+                >
+                  <option value="all">Semua Status</option>
+                  <option value="ACC">ACC (YES)</option>
+                  <option value="Pending">Pending</option>
+                  <option value="REJECT">REJECT (NO)</option>
+                </select>
+              </div>
+
+              {/* Grup Filter */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1">
+                  <Filter className="w-3 h-3 text-amber-400" /> Grup
+                </label>
+                <select
+                  value={exportGrupFilter}
+                  onChange={(e) => setExportGrupFilter(e.target.value)}
+                  className="bg-slate-900 border border-slate-800 rounded-xl p-2 text-xs text-white outline-none focus:border-amber-400 cursor-pointer"
+                >
+                  <option value="all">Semua Grup</option>
+                  <option value="T0">T0 / T0-Mark</option>
+                  <option value="V0">V0</option>
+                  <option value="RECRUITER">RECRUITER</option>
+                  <option value="T3">T3</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Summary & Action Buttons */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-800/80">
+              <div className="text-xs text-slate-300">
+                Menampilkan <span className="font-extrabold text-amber-400">{filteredReports.length}</span> baris data
+                {exportDate && <span> untuk tanggal <b className="text-white">{formatDateDDMMYYYY(exportDate)}</b></span>}
+              </div>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={handleCopySpreadsheet}
+                  className="flex-1 sm:flex-initial px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs flex items-center justify-center gap-2 cursor-pointer shadow-lg transition-all"
+                >
+                  <Copy className="w-4 h-4" />
+                  <span>Salin ke Spreadsheet (Copy)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDownloadCSV}
+                  className="px-3 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 cursor-pointer border border-slate-700 transition-all"
+                >
+                  <Download className="w-4 h-4 text-sky-400" />
+                  <span>Download .CSV</span>
+                </button>
+              </div>
+            </div>
+          </GlassCard>
+
+          {/* Table Preview */}
+          <GlassCard className="p-3 border-slate-800 overflow-hidden space-y-3">
+            <div className="flex items-center justify-between px-1">
+              <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                Pratinjau Tabel (Siap Salin & Tempel)
+              </h4>
+              <span className="text-[10px] text-slate-500">
+                Kolom: Tanggal | Username Recruiter | Channels | WA Pelamar | UID 9Kucing | Username Pelamar | Results | Grup
+              </span>
+            </div>
+
+            {filteredReports.length === 0 ? (
+              <div className="py-12 text-center text-slate-500 text-xs">
+                Tidak ada data laporan harian yang sesuai dengan filter.
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded-xl border border-slate-800">
+                <table className="w-full text-left text-xs text-slate-300 font-mono">
+                  <thead className="bg-slate-900/90 text-[10px] uppercase font-bold text-amber-400 border-b border-slate-800">
+                    <tr>
+                      <th className="p-2.5 whitespace-nowrap">Tanggal</th>
+                      <th className="p-2.5 whitespace-nowrap">Username Recruiter</th>
+                      <th className="p-2.5 whitespace-nowrap">Recruitment channels</th>
+                      <th className="p-2.5 whitespace-nowrap">WA Pelamar</th>
+                      <th className="p-2.5 whitespace-nowrap">UID 9Kucing Pelamar</th>
+                      <th className="p-2.5 whitespace-nowrap">Username Pelamar</th>
+                      <th className="p-2.5 whitespace-nowrap">Results</th>
+                      <th className="p-2.5 whitespace-nowrap">Grup</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60 bg-slate-950/40 text-[11px]">
+                    {filteredReports.map((r, idx) => {
+                      const formattedResult = r.result === 'ACC' ? 'YES' : (r.result === 'REJECT' ? 'NO' : (r.result || 'YES'));
+                      return (
+                        <tr key={r.reportId || idx} className="hover:bg-slate-900/50 transition-colors">
+                          <td className="p-2.5 whitespace-nowrap font-sans font-medium text-slate-300">
+                            {formatDateDDMMYYYY(r.date || (r.createdAt ? r.createdAt.split('T')[0] : ''))}
+                          </td>
+                          <td className="p-2.5 whitespace-nowrap font-sans text-sky-400">
+                            {formatUsername(r.recruiterUsername || r.username)}
+                          </td>
+                          <td className="p-2.5 whitespace-nowrap font-sans text-slate-300">
+                            {r.channel || '-'}
+                          </td>
+                          <td className="p-2.5 whitespace-nowrap font-sans text-emerald-400">
+                            {r.applicantWhatsapp || '-'}
+                          </td>
+                          <td className="p-2.5 whitespace-nowrap text-amber-300 font-bold">
+                            {r.uid9Kucing || '-'}
+                          </td>
+                          <td className="p-2.5 whitespace-nowrap font-sans text-sky-300">
+                            {formatUsername(r.applicantTelegramUsername)}
+                          </td>
+                          <td className="p-2.5 whitespace-nowrap font-sans font-black">
+                            <span className={`px-2 py-0.5 rounded text-[10px] ${
+                              formattedResult === 'YES' 
+                                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
+                                : formattedResult === 'NO'
+                                ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                                : 'bg-amber-500/20 text-amber-400'
+                            }`}>
+                              {formattedResult}
+                            </span>
+                          </td>
+                          <td className="p-2.5 whitespace-nowrap font-sans font-bold text-indigo-300">
+                            {r.grup || '-'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </GlassCard>
         </div>
       )}
 

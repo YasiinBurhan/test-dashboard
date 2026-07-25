@@ -89,11 +89,16 @@ export function useReports() {
     }
   };
 
-  const updateStatus = async (reportId: string, status: 'Pending' | 'ACC' | 'REJECT') => {
+  const updateStatus = async (
+    reportId: string, 
+    status: 'Pending' | 'ACC' | 'REJECT',
+    targetTelegramId?: string,
+    applicantTgUsername?: string
+  ) => {
     setIsLoading(true);
     setError(null);
     try {
-      await updateReportStatus(reportId, status);
+      await updateReportStatus(reportId, status, targetTelegramId, applicantTgUsername);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Gagal mengubah status.';
       setError(msg);
@@ -126,12 +131,13 @@ export function useReports() {
       videoUrl?: string;
       channel?: string;
       grup?: string;
-    }
+    },
+    targetTelegramId?: string
   ) => {
     setIsLoading(true);
     setError(null);
     try {
-      await updateReportDetails(reportId, data);
+      await updateReportDetails(reportId, data, targetTelegramId);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Gagal memperbarui data pelamar.';
       setError(msg);

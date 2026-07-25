@@ -98,6 +98,19 @@ export interface DailyReportFormData {
   applicantPhotoUrl?: string;
 }
 
+export interface AppNotification {
+  id: string;
+  targetUserId?: string; // telegramId of specific recipient (e.g. recruiter)
+  targetRole?: 'Owner' | 'Admin' | 'Recruiter' | 'ADMIN_OWNER' | 'ALL';
+  title: string;
+  message: string;
+  type: 'NEW_REPORT' | 'STATUS_CHANGE' | 'PROMOTION' | 'AUDIT_COMPLETE' | 'SYSTEM';
+  readBy?: string[]; // list of telegramIds who have read this notification
+  senderName?: string;
+  createdAt: string;
+  reportId?: string;
+}
+
 export interface Announcement {
   id: string;
   title: string;

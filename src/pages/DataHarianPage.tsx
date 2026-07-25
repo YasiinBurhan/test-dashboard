@@ -12,6 +12,7 @@ import { subscribeToSystemSettings, getSystemSettings } from '../firebase/servic
 import { sendReportToTelegramApi } from '../services/api';
 import { checkReportDuplicate } from '../firebase/services/reportService';
 import { subscribeToAllUsers } from '../firebase/services/userService';
+import { sendAuditCompleteBroadcast } from '../firebase/services/notificationService';
 import { 
   CalendarClock, 
   CheckCircle2, 
@@ -337,9 +338,9 @@ const CHANNELS = [
 const ReportListCard: React.FC<{
   rep: DailyReport,
   isAdminOrOwner: boolean,
-  onUpdateStatus: (id: string, status: 'Pending' | 'ACC' | 'REJECT') => void,
+  onUpdateStatus: (id: string, status: 'Pending' | 'ACC' | 'REJECT', targetTelegramId?: string, applicantTgUsername?: string) => void,
   onUpdatePermission?: (id: string, permission: number) => void,
-  onUpdateDetails?: (id: string, data: any) => Promise<void>,
+  onUpdateDetails?: (id: string, data: any, targetTelegramId?: string) => Promise<void>,
   userPhotoMap?: Map<string, { photoUrl?: string; firstName?: string; name?: string }>,
   isPemeriksaan?: boolean,
   isArsip?: boolean
@@ -406,7 +407,7 @@ const ReportListCard: React.FC<{
         updateData.videoUrl = newPhotoUrl;
       }
 
-      await onUpdateDetails(rep.reportId || '', updateData);
+      await onUpdateDetails(rep.reportId || '', updateData, rep.telegramId);
       setIsEditing(false);
       triggerHaptic('notification', 'success');
     } catch (err) {
@@ -517,7 +518,7 @@ const ReportListCard: React.FC<{
           {isAdminOrOwner ? (
             <select
               value={rep.result || 'Pending'}
-              onChange={(e) => onUpdateStatus(rep.reportId || '', e.target.value as 'Pending' | 'ACC' | 'REJECT')}
+              onChange={(e) => onUpdateStatus(rep.reportId || '', e.target.value as 'Pending' | 'ACC' | 'REJECT', rep.telegramId, rep.applicantTelegramUsername)}
               className={`px-2 py-0.5 rounded-full text-[10px] font-black border outline-none appearance-none cursor-pointer ${
                 rep.result === 'ACC'
                   ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
@@ -1268,6 +1269,22 @@ export const DataHarianPage: React.FC = () => {
 
   const closeAlert = () => {
     setAlertState(prev => ({ ...prev, isOpen: false }));
+  };
+
+  const [isPushingNotif, setIsPushingNotif] = useState(false);
+
+  const handlePushAuditNotification = async () => {
+    setIsPushingNotif(true);
+    try {
+      const senderName = userProfile?.firstName || userProfile?.username || 'Admin';
+      await sendAuditCompleteBroadcast(senderName);
+      showAlert('success', 'Notifikasi Terkirim', 'Push notifikasi bahwa pemeriksaan rekrutan telah selesai berhasil dikirimkan ke seluruh Recruiter!');
+    } catch (err) {
+      console.error('Error sending push notification:', err);
+      showAlert('error', 'Gagal Kirim Notifikasi', 'Terjadi kesalahan saat mengirimkan notifikasi push.');
+    } finally {
+      setIsPushingNotif(false);
+    }
   };
   const [showReview, setShowReview] = useState<boolean>(false);
   const [isCheckingDuplicate, setIsCheckingDuplicate] = useState<boolean>(false);
@@ -2766,7 +2783,7 @@ export const DataHarianPage: React.FC = () => {
 
         return (
           <GlassCard className="p-4 space-y-4 border-slate-800 bg-slate-900/80">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-800 pb-2.5 gap-2">
               <div className="flex items-center gap-2">
                 <div className="p-1.5 rounded-xl bg-amber-500/15 text-amber-400">
                   <FileSpreadsheet className="w-4 h-4" />
@@ -2775,11 +2792,13 @@ export const DataHarianPage: React.FC = () => {
                   Data Minggu Ini
                 </span>
               </div>
-              <span className="text-[10px] bg-slate-800 text-slate-300 px-2.5 py-0.5 rounded-full font-bold">
-                {activeDayTab === 'Semua' 
-                  ? `Total ${reportsMingguIni.length}` 
-                  : `${filteredReportsMingguIni.length} dari ${reportsMingguIni.length}`}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] bg-slate-800 text-slate-300 px-2.5 py-0.5 rounded-full font-bold">
+                  {activeDayTab === 'Semua' 
+                    ? `Total ${reportsMingguIni.length}` 
+                    : `${filteredReportsMingguIni.length} dari ${reportsMingguIni.length}`}
+                </span>
+              </div>
             </div>
 
             {/* Horizontal Scrollable Day Tabs */}
@@ -2858,8 +2877,26 @@ export const DataHarianPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Sub-tabs: Semua, Pending, Bekerja, Tidak Bekerja */}
-            <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800 gap-1 overflow-x-auto no-scrollbar shrink-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              {isAdminOrOwner && (
+                <button
+                  type="button"
+                  disabled={isPushingNotif}
+                  onClick={handlePushAuditNotification}
+                  className="px-3 py-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 disabled:opacity-50 text-slate-950 font-black rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-md shadow-amber-500/10 transition-all active:scale-95"
+                  title="Kirim notifikasi bahwa pemeriksaan selesai ke seluruh recruiter"
+                >
+                  {isPushingNotif ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Send className="w-3.5 h-3.5" />
+                  )}
+                  <span>Push Notifikasi Selesai Periksa</span>
+                </button>
+              )}
+
+              {/* Sub-tabs: Semua, Pending, Bekerja, Tidak Bekerja */}
+              <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800 gap-1 overflow-x-auto no-scrollbar shrink-0">
               <button
                 type="button"
                 onClick={() => {
@@ -2923,6 +2960,7 @@ export const DataHarianPage: React.FC = () => {
                 <span>Tidak Bekerja ({countPemeriksaanTidakBekerja})</span>
               </button>
             </div>
+          </div>
           </div>
 
           {filteredReportsPemeriksaan.length === 0 ? (

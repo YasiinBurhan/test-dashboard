@@ -2,6 +2,7 @@ import {
   collection,
   doc,
   setDoc,
+  getDoc,
   getDocs,
   query,
   where,
@@ -11,6 +12,7 @@ import {
 import { db } from '../config';
 import { handleFirestoreError, OperationType } from '../error';
 import { DailyReport, DailyReportFormData } from '../../types';
+import { createNotification } from './notificationService';
 
 const COLLECTION_NAME = 'laporan_harian';
 
@@ -99,6 +101,17 @@ export async function createDailyReport(
   try {
     const reportRef = doc(db, COLLECTION_NAME, reportId);
     await setDoc(reportRef, report);
+
+    // Trigger notification to Admin & Owner if status is Pending or new report
+    createNotification({
+      targetRole: 'ADMIN_OWNER',
+      title: 'Laporan Rekrutan Baru (Pending)',
+      message: `Laporan rekrutan dari @${report.recruiterUsername || report.username} untuk pelamar ${report.applicantTelegramUsername ? '@' + report.applicantTelegramUsername.replace(/^@/, '') : (report.name || 'Pelamar')}. Status: Pending.`,
+      type: 'NEW_REPORT',
+      reportId,
+      senderName: report.username
+    }).catch(err => console.error('Error creating new report notification:', err));
+
     return report;
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `${COLLECTION_NAME}/${reportId}`);
@@ -120,10 +133,44 @@ export async function getReportsByTelegramId(telegramId: string): Promise<DailyR
   }
 }
 
-export async function updateReportStatus(reportId: string, result: 'Pending' | 'ACC' | 'REJECT'): Promise<void> {
+export async function updateReportStatus(
+  reportId: string, 
+  result: 'Pending' | 'ACC' | 'REJECT',
+  targetTelegramId?: string,
+  applicantTgUsername?: string
+): Promise<void> {
   try {
     const reportRef = doc(db, COLLECTION_NAME, reportId);
     await setDoc(reportRef, { result, updatedAt: new Date().toISOString() }, { merge: true });
+
+    // Fetch telegramId and applicant info if not provided
+    let recipientId = targetTelegramId;
+    let applicantTg = applicantTgUsername;
+
+    if (!recipientId) {
+      const snap = await getDoc(reportRef);
+      if (snap.exists()) {
+        const data = snap.data() as DailyReport;
+        recipientId = data.telegramId;
+        applicantTg = data.applicantTelegramUsername;
+      }
+    }
+
+    if (recipientId) {
+      const isAcc = result === 'ACC';
+      const isReject = result === 'REJECT';
+      const applicantName = applicantTg ? `@${applicantTg.replace(/^@/, '')}` : 'Pelamar';
+
+      createNotification({
+        targetUserId: recipientId,
+        title: isAcc ? 'Laporan Rekrutan Di-ACC! 🎉' : (isReject ? 'Laporan Rekrutan Ditolak ❌' : 'Status Laporan Diperbarui'),
+        message: isAcc
+          ? `Selamat! Data pelamar ${applicantName} Anda telah disetujui (ACC).`
+          : (isReject ? `Data pelamar ${applicantName} Anda ditolak.` : `Status pelamar ${applicantName} diubah menjadi Pending.`),
+        type: 'STATUS_CHANGE',
+        reportId
+      }).catch(err => console.error('Error creating status notification:', err));
+    }
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `${COLLECTION_NAME}/${reportId}`);
   }
@@ -138,11 +185,37 @@ export async function updateReportDetails(
     videoUrl?: string;
     channel?: string;
     grup?: string;
-  }
+  },
+  targetTelegramId?: string
 ): Promise<void> {
   try {
     const reportRef = doc(db, COLLECTION_NAME, reportId);
     await setDoc(reportRef, { ...data, updatedAt: new Date().toISOString() }, { merge: true });
+
+    if (data.grup) {
+      let recipientId = targetTelegramId;
+      let applicantTg = data.applicantTelegramUsername;
+
+      if (!recipientId || !applicantTg) {
+        const snap = await getDoc(reportRef);
+        if (snap.exists()) {
+          const repData = snap.data() as DailyReport;
+          recipientId = recipientId || repData.telegramId;
+          applicantTg = applicantTg || repData.applicantTelegramUsername;
+        }
+      }
+
+      if (recipientId) {
+        const applicantName = applicantTg ? `@${applicantTg.replace(/^@/, '')}` : 'Pelamar';
+        createNotification({
+          targetUserId: recipientId,
+          title: 'Promosi Rekrutan! 🚀',
+          message: `Pelamar ${applicantName} Anda telah dipromosikan ke Grup ${data.grup}.`,
+          type: 'PROMOTION',
+          reportId
+        }).catch(err => console.error('Error creating promotion notification:', err));
+      }
+    }
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `${COLLECTION_NAME}/${reportId}`);
   }
