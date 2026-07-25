@@ -42,9 +42,10 @@ export const Header: React.FC<HeaderProps> = ({ title, showUserBadge = true }) =
         style={{
           backgroundColor: 'var(--tg-header-bg-color, var(--tg-bg-color, rgba(3, 7, 18, 0.95)))',
           borderColor: 'var(--tg-secondary-bg-color, rgba(255, 255, 255, 0.1))',
-          paddingTop: 'calc(12px + env(safe-area-inset-top, 0px))'
+          paddingTop: 'calc(max(28px, var(--tg-safe-area-inset-top, env(safe-area-inset-top, 0px))) + 8px)',
+          paddingBottom: '12px'
         }}
-        className="sticky top-0 z-40 w-full backdrop-blur-xl border-b px-4 md:px-8 py-3 transition-colors duration-300"
+        className="sticky top-0 z-40 w-full backdrop-blur-xl border-b px-4 md:px-8 transition-colors duration-300"
       >
         <div className="w-full max-w-7xl mx-auto flex items-center justify-between gap-3">
 
