@@ -17,9 +17,36 @@ export const Header: React.FC<HeaderProps> = ({ title, showUserBadge = true }) =
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isTelegramBotMode, setIsTelegramBotMode] = useState(false);
+  const [safeAreaTop, setSafeAreaTop] = useState('0px');
 
   const userTelegramId = userProfile?.telegramId || (telegramUser?.id ? String(telegramUser.id) : '');
   const userRole = userProfile?.role || 'Recruiter';
+
+  useEffect(() => {
+    // Initial read directly from CSS variables
+    const initialVal = typeof window !== 'undefined' ? (document.documentElement.style.getPropertyValue('--tg-safe-area-inset-top') || '0px') : '0px';
+    setSafeAreaTop(initialVal);
+
+    const handleSafeAreaUpdate = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const { eventType, prevTop, currentTop, appliedTop } = customEvent.detail || {};
+      
+      const latestVal = document.documentElement.style.getPropertyValue('--tg-safe-area-inset-top') || '0px';
+      setSafeAreaTop(latestVal);
+      
+      console.log(`\n[Header Re-render Lifecycle Trace]`);
+      console.log(`  Event: ${eventType}`);
+      console.log(`  Previous Top: ${prevTop}`);
+      console.log(`  Current Top: ${currentTop}`);
+      console.log(`  Applied CSS Variable: ${appliedTop}`);
+      console.log(`  Header state updated directly from CSS Variable to: ${latestVal}`);
+    };
+
+    window.addEventListener('tg-safe-area-updated', handleSafeAreaUpdate);
+    return () => {
+      window.removeEventListener('tg-safe-area-updated', handleSafeAreaUpdate);
+    };
+  }, []);
 
   useEffect(() => {
     // Detect if running inside Telegram Mini App vs Standalone PWA / Web Browser
@@ -58,9 +85,9 @@ export const Header: React.FC<HeaderProps> = ({ title, showUserBadge = true }) =
         style={{
           backgroundColor: 'var(--tg-header-bg-color, var(--tg-bg-color, #030712))',
           borderColor: 'var(--tg-secondary-bg-color, rgba(255, 255, 255, 0.1))',
-          paddingTop: '12px',
+          paddingTop: `calc(${safeAreaTop} + 12px)`,
           paddingBottom: '12px',
-          top: 'var(--tg-safe-area-inset-top, env(safe-area-inset-top, 0px))'
+          top: 0
         }}
         className="sticky z-40 w-full backdrop-blur-xl border-b px-4 md:px-8 transition-colors duration-300"
       >

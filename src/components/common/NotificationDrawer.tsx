@@ -134,7 +134,10 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({
       {/* Slide-over Drawer Panel */}
       <div className="relative w-full max-w-md h-full bg-slate-900 border-l border-slate-800 shadow-2xl flex flex-col z-10 overflow-hidden">
         {/* Drawer Header */}
-        <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/90 backdrop-blur-md sticky top-0 z-10">
+        <div 
+          className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/90 backdrop-blur-md sticky top-0 z-10"
+          style={{ paddingTop: 'calc(var(--tg-safe-area-inset-top, env(safe-area-inset-top, 0px)) + 16px)' }}
+        >
           <div className="flex items-center gap-2">
             <div className="p-2 bg-amber-500/10 rounded-xl border border-amber-500/20 text-amber-400">
               <Bell className="w-5 h-5" />
@@ -254,7 +257,10 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({
         </div>
 
         {/* Drawer Footer */}
-        <div className="p-3 border-t border-slate-800 bg-slate-950/60 text-[11px] text-slate-500 text-center">
+        <div 
+          className="p-3 border-t border-slate-800 bg-slate-950/60 text-[11px] text-slate-500 text-center pb-safe"
+          style={{ paddingBottom: 'calc(var(--tg-safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) + 12px)' }}
+        >
           Notifikasi diperbarui secara real-time
         </div>
       </div>

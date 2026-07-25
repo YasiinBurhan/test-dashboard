@@ -78,9 +78,10 @@ export const BrowserNoticePage: React.FC = () => {
     <div
       style={{
         backgroundColor: 'var(--tg-bg-color, #030712)',
-        color: 'var(--tg-text-color, #f8fafc)'
+        color: 'var(--tg-text-color, #f8fafc)',
+        minHeight: 'var(--tg-viewport-height)'
       }}
-      className="min-h-screen flex flex-col items-center justify-center p-5 pt-safe-header pb-safe text-center transition-colors duration-300 bg-mesh-gradient overflow-x-hidden"
+      className="flex flex-col items-center justify-center p-5 pt-safe-header pb-safe text-center transition-colors duration-300 bg-mesh-gradient overflow-x-hidden"
     >
       <GlassCard className="max-w-md w-full p-6 space-y-6 border border-slate-800/80 shadow-sm relative overflow-hidden">
         {/* Decorative elements */}

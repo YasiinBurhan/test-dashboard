@@ -20,6 +20,7 @@ declare global {
         colorScheme: 'light' | 'dark';
         themeParams: TelegramThemeParams;
         isExpanded: boolean;
+        isFullscreen?: boolean;
         viewportHeight: number;
         viewportStableHeight: number;
         headerColor: string;
@@ -58,6 +59,9 @@ declare global {
         ready: () => void;
         expand: () => void;
         close: () => void;
+        isVersionAtLeast?: (version: string) => boolean;
+        requestFullscreen?: () => void;
+        exitFullscreen?: () => void;
         setHeaderColor: (color: string) => void;
         setBackgroundColor: (color: string) => void;
         onEvent: (eventType: string, eventHandler: (...args: unknown[]) => void) => void;
@@ -66,6 +70,12 @@ declare global {
         openTelegramLink: (url: string) => void;
         openLink: (url: string) => void;
         safeAreaInset?: {
+          top: number;
+          bottom: number;
+          left: number;
+          right: number;
+        };
+        contentSafeAreaInset?: {
           top: number;
           bottom: number;
           left: number;
@@ -135,7 +145,14 @@ export function initTelegramApp() {
   const webApp = getTelegramWebApp();
   if (webApp) {
     webApp.ready();
-    webApp.expand();
+    try {
+       webApp.expand();
+    } catch(e) {}
+    try {
+       if ((webApp as any).disableVerticalSwipes) {
+         (webApp as any).disableVerticalSwipes();
+       }
+    } catch(e) {}
     try {
       if (webApp.setHeaderColor) {
         webApp.setHeaderColor('#030712');

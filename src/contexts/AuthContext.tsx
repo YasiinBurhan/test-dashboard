@@ -56,9 +56,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (immediateWa && (immediateWa.initData || immediateWa.initDataUnsafe?.user || immediateWa.platform)) {
       try {
         immediateWa.ready();
-        immediateWa.expand();
       } catch (e) {
-        console.error('Error calling Telegram WebApp ready/expand:', e);
+        console.error('Error calling Telegram WebApp ready:', e);
       }
     } else {
       await new Promise<void>((resolve) => {
@@ -69,9 +68,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             clearInterval(interval);
             try {
               wa.ready();
-              wa.expand();
             } catch (e) {
-              console.error('Error calling Telegram WebApp ready/expand:', e);
+              console.error('Error calling Telegram WebApp ready:', e);
             }
             resolve();
           } else if (Date.now() - checkStart > 200) { // Reduced script wait timeout

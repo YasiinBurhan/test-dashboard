@@ -59,7 +59,10 @@ export const PendingPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4 pt-safe-header pb-safe text-center overflow-x-hidden">
+    <div 
+      style={{ minHeight: 'var(--tg-viewport-height)' }}
+      className="bg-slate-950 flex flex-col items-center justify-center p-4 pt-safe-header pb-safe text-center overflow-x-hidden"
+    >
       <div className="max-w-md w-full space-y-6">
         <div className="flex justify-center">
           <AzurLizeLogo size="lg" />

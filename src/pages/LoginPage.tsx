@@ -125,7 +125,10 @@ export const LoginPage: React.FC = () => {
 
   if (isCheckingExisting) {
     return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4">
+      <div 
+        style={{ minHeight: 'var(--tg-viewport-height)' }}
+        className="bg-slate-950 flex flex-col items-center justify-center p-4"
+      >
         <GlassCard className="max-w-md w-full p-8 text-center space-y-4 border-blue-500/20">
           <AzurLizeLogo size="lg" />
           <div className="flex flex-col items-center gap-3 pt-4">
@@ -139,7 +142,10 @@ export const LoginPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4 pb-safe pt-safe-header overflow-x-hidden">
+    <div 
+      style={{ minHeight: 'var(--tg-viewport-height)' }}
+      className="bg-slate-950 flex flex-col items-center justify-center p-4 pb-safe pt-safe-header overflow-x-hidden"
+    >
       <div className="max-w-md w-full space-y-6">
         <div className="flex flex-col items-center text-center space-y-2">
           <AzurLizeLogo size="lg" />

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { AuthProvider } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { useAuth } from './hooks/useAuth';
-import { initTelegramApp } from './telegram/webapp';
+import { initTelegramApp, getTelegramWebApp } from './telegram/webapp';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { SplashPage } from './pages/SplashPage';
 import { BrowserNoticePage } from './pages/BrowserNoticePage';
@@ -22,10 +22,139 @@ import { TabType } from './components/navigation/BottomNav';
 import { GlassCard } from './components/common/GlassCard';
 import { ShieldAlert, LogOut } from 'lucide-react';
 
+const ViewportUpdater: React.FC = () => {
+  useEffect(() => {
+    const updateSafeAreas = (eventType = 'App Init') => {
+      if (typeof window === 'undefined') return;
+      const webApp = getTelegramWebApp();
+      
+      const prevTop = document.documentElement.style.getPropertyValue('--tg-safe-area-inset-top') || '0px';
+      
+      let top = 0;
+      let bottom = 0;
+      let left = 0;
+      let right = 0;
+      
+      let mode = 'Browser';
+
+      // 1. Strict Priority: If running inside Telegram, we prioritize contentSafeAreaInset, then safeAreaInset.
+      if (webApp) {
+        mode = 'Telegram App';
+        if (webApp.contentSafeAreaInset) {
+          top = webApp.contentSafeAreaInset.top || 0;
+          bottom = webApp.contentSafeAreaInset.bottom || 0;
+          left = webApp.contentSafeAreaInset.left || 0;
+          right = webApp.contentSafeAreaInset.right || 0;
+        } else if (webApp.safeAreaInset) {
+          top = webApp.safeAreaInset.top || 0;
+          bottom = webApp.safeAreaInset.bottom || 0;
+          left = webApp.safeAreaInset.left || 0;
+          right = webApp.safeAreaInset.right || 0;
+        }
+      } else {
+        // Outside Telegram (Browser/PWA), we fallback to other platform safe area methods
+        const cssTopVal = getComputedStyle(document.documentElement).getPropertyValue('--css-safe-area-inset-top');
+        const parsedCssTop = parseFloat(cssTopVal) || 0;
+        
+        const cssBottomVal = getComputedStyle(document.documentElement).getPropertyValue('--css-safe-area-inset-bottom');
+        const parsedCssBottom = parseFloat(cssBottomVal) || 0;
+        
+        top = parsedCssTop;
+        bottom = parsedCssBottom;
+
+        if (top === 0 && window.visualViewport) {
+          if (window.visualViewport.offsetTop > 0) {
+            top = window.visualViewport.offsetTop;
+          }
+        }
+
+        if (top === 0 && (window as any).Capacitor) {
+          const ionTop = getComputedStyle(document.documentElement).getPropertyValue('--ion-safe-area-top');
+          const parsedIonTop = parseFloat(ionTop) || 0;
+          if (parsedIonTop > 0) {
+            top = parsedIonTop;
+          }
+        }
+      }
+
+      const currentTop = `${top}px`;
+
+      // Set the standard CSS variables on the root document
+      document.documentElement.style.setProperty('--tg-safe-area-inset-top', currentTop);
+      document.documentElement.style.setProperty('--tg-safe-area-inset-bottom', `${bottom}px`);
+      document.documentElement.style.setProperty('--tg-safe-area-inset-left', `${left}px`);
+      document.documentElement.style.setProperty('--tg-safe-area-inset-right', `${right}px`);
+      
+      let vh = `${window.innerHeight}px`;
+      if (webApp && webApp.viewportStableHeight > 0) {
+        vh = `${webApp.viewportStableHeight}px`;
+      } else if (webApp && webApp.viewportHeight > 0) {
+        vh = `${webApp.viewportHeight}px`;
+      }
+      document.documentElement.style.setProperty('--tg-viewport-height', vh);
+
+      console.log(`\n[ViewportUpdater] Event: ${eventType}`);
+      console.log(`[ViewportUpdater] Previous Top: ${prevTop}`);
+      console.log(`[ViewportUpdater] Current Top: ${currentTop}`);
+      console.log(`[ViewportUpdater] Applied CSS Variable --tg-safe-area-inset-top: ${document.documentElement.style.getPropertyValue('--tg-safe-area-inset-top')}`);
+      
+      // Dispatch custom event to notify Header and other active observers immediately
+      const event = new CustomEvent('tg-safe-area-updated', { 
+        detail: {
+          eventType,
+          prevTop,
+          currentTop,
+          appliedTop: currentTop,
+          mode
+        } 
+      });
+      window.dispatchEvent(event);
+    };
+
+    // Run immediately on mount
+    updateSafeAreas('App Init');
+
+    const webApp = getTelegramWebApp();
+    
+    const handleSafeAreaChanged = () => updateSafeAreas('safeAreaChanged / contentSafeAreaChanged');
+    const handleViewportChanged = () => updateSafeAreas('viewportChanged');
+    const handleResize = () => updateSafeAreas('window.resize');
+    const handleOrientationChange = () => updateSafeAreas('window.orientationchange');
+
+    if (webApp) {
+      try {
+        webApp.onEvent('safeAreaChanged', handleSafeAreaChanged);
+        webApp.onEvent('contentSafeAreaChanged', handleSafeAreaChanged);
+        webApp.onEvent('viewportChanged', handleViewportChanged);
+      } catch (e) {
+        console.error('Error binding Telegram events:', e);
+      }
+    }
+
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleOrientationChange);
+
+    return () => {
+      if (webApp) {
+        try {
+          webApp.offEvent('safeAreaChanged', handleSafeAreaChanged);
+          webApp.offEvent('contentSafeAreaChanged', handleSafeAreaChanged);
+          webApp.offEvent('viewportChanged', handleViewportChanged);
+        } catch (e) {
+          // Ignore
+        }
+      }
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleOrientationChange);
+    };
+  }, []);
+
+  return null; // This component doesn't render anything
+};
+
 const AppContent: React.FC = () => {
   const { isLoading, isAuthenticated, isTelegramContext, userProfile, logout } = useAuth();
   const [activeTab, setActiveTab] = useState<TabType>('beranda');
-  const [forceShowInstructions, setForceShowInstructions] = useState(false);
 
   useEffect(() => {
     initTelegramApp();
@@ -56,9 +185,10 @@ const AppContent: React.FC = () => {
       <div
         style={{
           backgroundColor: 'var(--tg-bg-color, #030712)',
-          color: 'var(--tg-text-color, #f8fafc)'
+          color: 'var(--tg-text-color, #f8fafc)',
+          minHeight: 'var(--tg-viewport-height)'
         }}
-        className="min-h-screen flex flex-col items-center justify-center p-4 text-center transition-colors duration-300 bg-mesh-gradient overflow-x-hidden"
+        className="flex flex-col items-center justify-center p-4 text-center transition-colors duration-300 bg-mesh-gradient overflow-x-hidden"
       >
         <GlassCard className="max-w-md w-full space-y-4 border-rose-500/40 p-6">
           <div className="w-16 h-16 rounded-full bg-rose-500/20 text-rose-500 dark:text-rose-400 flex items-center justify-center mx-auto text-3xl font-bold">
@@ -124,6 +254,7 @@ export default function App() {
     <ErrorBoundary>
       <ThemeProvider>
         <AuthProvider>
+          <ViewportUpdater />
           <AppContent />
         </AuthProvider>
       </ThemeProvider>

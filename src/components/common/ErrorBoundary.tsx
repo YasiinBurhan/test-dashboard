@@ -28,7 +28,10 @@ export class ErrorBoundary extends React.Component<Props, State> {
   public render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
+    <div 
+      style={{ minHeight: 'var(--tg-viewport-height)' }}
+      className="bg-slate-950 flex items-center justify-center p-4"
+    >
           <GlassCard className="max-w-md w-full text-center space-y-4 border-rose-500/30">
             <div className="w-16 h-16 bg-rose-500/20 text-rose-400 rounded-full flex items-center justify-center mx-auto text-2xl font-bold">
               !
