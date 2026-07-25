@@ -50,7 +50,7 @@ const getApiBaseUrl = () => {
   if (hostname.endsWith('.vercel.app')) {
     return '';
   }
-  return 'https://wsswws.vercel.app';
+  return 'https://test-dashboard-lake-pi.vercel.app';
 };
 
 const API_BASE_URL = getApiBaseUrl();
