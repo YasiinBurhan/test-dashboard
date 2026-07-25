@@ -16,6 +16,19 @@ import {
 } from '../firebase/services/settingService';
 import { Key, Megaphone, Settings, Users, ShieldAlert, Plus, Trash2, CheckCircle2, BarChart2, Bot, Globe, XCircle, AlertTriangle, Send } from 'lucide-react';
 
+const getApiBaseUrl = () => {
+  if (import.meta.env.VITE_BACKEND_URL) {
+    return import.meta.env.VITE_BACKEND_URL;
+  }
+  const hostname = typeof window !== 'undefined' ? window.location.hostname : '';
+  if (hostname.endsWith('.vercel.app')) {
+    return '';
+  }
+  return 'https://wsswws.vercel.app';
+};
+
+const API_BASE_URL = getApiBaseUrl();
+
 export const OwnerPage: React.FC = () => {
   const { users, changeStatus, changeRole, refetch: refetchUsers } = useRecruiters();
 
@@ -46,24 +59,66 @@ export const OwnerPage: React.FC = () => {
     setIsTestingTelegram(true);
     setTestTelegramStatus(null);
 
+    // Try backend API first
     try {
-      const response = await fetch('/api/telegram/test-send', {
+      if (API_BASE_URL) {
+        const response = await fetch(`${API_BASE_URL}/api/telegram/test-send`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            groupId: settings.telegramGroupId,
+            topicId: settings.telegramTopicId,
+            botToken: settings.telegramBotToken
+          })
+        });
+
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const data = await response.json();
+          if (data.success) {
+            setTestTelegramStatus({ type: 'success', message: data.message || 'Pesan tes berhasil terkirim ke Telegram!' });
+            return;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Backend API unavailable, falling back to direct Telegram API:', err);
+    }
+
+    // Direct Telegram Bot API fallback (Firebase / Serverless)
+    try {
+      const botToken = settings?.telegramBotToken;
+      if (!botToken) {
+        setTestTelegramStatus({ type: 'error', message: 'Token Bot Telegram belum diisi di Pengaturan.' });
+        return;
+      }
+
+      let cleanGroup = String(settings.telegramGroupId || '').trim();
+      if (!cleanGroup.startsWith('-100') && !cleanGroup.startsWith('@')) {
+        if (!cleanGroup.startsWith('-')) cleanGroup = '-100' + cleanGroup;
+        else cleanGroup = '-100' + cleanGroup.substring(1);
+      }
+      const topicNum = settings.telegramTopicId && !isNaN(Number(settings.telegramTopicId)) ? Number(settings.telegramTopicId) : undefined;
+
+      const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          groupId: settings.telegramGroupId,
-          topicId: settings.telegramTopicId
+          chat_id: cleanGroup,
+          message_thread_id: topicNum,
+          text: '🤖 <b>TES BOT TELEGRAM AZURLIZE</b>\n\nBot berhasil terhubung ke Telegram!',
+          parse_mode: 'HTML'
         })
       });
 
       const data = await response.json();
-      if (data.success) {
-        setTestTelegramStatus({ type: 'success', message: data.message || 'Pesan tes berhasil terkirim ke Telegram!' });
+      if (data.ok) {
+        setTestTelegramStatus({ type: 'success', message: '✅ Pesan tes berhasil terkirim ke Telegram!' });
       } else {
-        setTestTelegramStatus({ type: 'error', message: data.error || 'Gagal mengirim pesan tes.' });
+        setTestTelegramStatus({ type: 'error', message: `❌ Gagal: ${data.description || 'Gagal mengirim pesan tes.'}` });
       }
     } catch (err) {
-      setTestTelegramStatus({ type: 'error', message: err instanceof Error ? err.message : 'Error koneksi' });
+      setTestTelegramStatus({ type: 'error', message: err instanceof Error ? err.message : 'Error koneksi ke Telegram' });
     } finally {
       setIsTestingTelegram(false);
     }
@@ -71,48 +126,108 @@ export const OwnerPage: React.FC = () => {
 
   const [activeSubTab, setActiveSubTab] = useState<'users' | 'announcements' | 'settings'>('users');
 
-  const fetchBotInfo = async () => {
+  const fetchBotInfo = async (currentSettings?: SystemSettings | null) => {
+    const activeSettings = currentSettings || settings;
+    const botToken = activeSettings?.telegramBotToken;
+
+    // Try backend API first
     try {
-      const response = await fetch('/api/telegram/bot-info');
-      const result = await response.json();
-      if (result.success) {
-        setBotInfo(result.data);
+      if (API_BASE_URL) {
+        const queryUrl = botToken 
+          ? `${API_BASE_URL}/api/telegram/bot-info?token=${encodeURIComponent(botToken)}`
+          : `${API_BASE_URL}/api/telegram/bot-info`;
+        const response = await fetch(queryUrl);
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const result = await response.json();
+          if (result.success) {
+            setBotInfo(result.data);
+            return;
+          }
+        }
       }
     } catch (err) {
-      console.error('Error fetching bot info:', err);
+      console.warn('Backend API unavailable for bot info, falling back to direct Telegram API:', err);
+    }
+
+    // Direct Telegram Bot API fallback
+    try {
+      const botToken = activeSettings?.telegramBotToken;
+      if (!botToken) return;
+
+      const response = await fetch(`https://api.telegram.org/bot${botToken}/getMe`);
+      const result = await response.json();
+      if (result.ok) {
+        setBotInfo(result.result);
+      }
+    } catch (err) {
+      console.error('Error fetching bot info via Telegram API:', err);
     }
   };
 
   const handleSetWebhook = async () => {
     setIsSettingWebhook(true);
     setWebhookStatus(null);
-    try {
-      const response = await fetch('/api/telegram/set-webhook', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: window.location.origin })
-      });
-      
-      const contentType = response.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
-        const text = await response.text();
-        console.error('Non-JSON response:', text);
-        const snippet = text.substring(0, 100).replace(/</g, '&lt;');
-        setWebhookStatus(`❌ Gagal: Server Vercel mengembalikan HTML/Teks (Bukan JSON).
-          Status: ${response.status}
-          Snippet: ${snippet}...
-          Pastikan backend dideploy sebagai Serverless Function.`);
-        return;
-      }
+    
+    const botToken = settings?.telegramBotToken?.trim();
+    if (!botToken) {
+      setWebhookStatus('❌ Token Bot Telegram belum diisi. Silakan isi Token Bot dan klik "Simpan Pengaturan" terlebih dahulu.');
+      setIsSettingWebhook(false);
+      return;
+    }
 
+    const currentOrigin = window.location.origin;
+    const isLocalDev = currentOrigin.includes('localhost:') || currentOrigin.includes('127.0.0.1:');
+    const isFirebaseHosting = currentOrigin.includes('firebaseapp.com') || currentOrigin.includes('web.app');
+    
+    let defaultBaseUrl = 'https://azurlize-team-3ba4f.firebaseapp.com';
+    if (API_BASE_URL) {
+      defaultBaseUrl = API_BASE_URL;
+    } else if (!isLocalDev && !isFirebaseHosting) {
+      defaultBaseUrl = currentOrigin;
+    }
+
+    const targetBaseUrl = (settings?.webhookUrl?.trim() || defaultBaseUrl).replace(/\/$/, '');
+    const fullWebhookUrl = `${targetBaseUrl}/api/telegram/webhook`;
+
+    // Try backend API if configured
+    if (API_BASE_URL) {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/telegram/set-webhook`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            url: targetBaseUrl,
+            botToken: botToken
+          })
+        });
+        
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const result = await response.json();
+          if (result.success) {
+            setWebhookStatus('✅ Webhook Bot berhasil diaktifkan di Vercel!');
+            setIsSettingWebhook(false);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Backend endpoint unavailable, calling Telegram API directly:', err);
+      }
+    }
+
+    // Direct Telegram API call (Works directly on Firebase without Vercel or Node backend!)
+    try {
+      const response = await fetch(`https://api.telegram.org/bot${botToken}/setWebhook?url=${encodeURIComponent(fullWebhookUrl)}`);
       const result = await response.json();
-      if (result.success) {
-        setWebhookStatus('✅ Webhook Bot berhasil diaktifkan!');
+
+      if (result.ok) {
+        setWebhookStatus('✅ Webhook Bot berhasil diaktifkan langsung di Telegram!');
       } else {
-        setWebhookStatus('❌ Gagal: ' + (result.error || 'Terjadi kesalahan'));
+        setWebhookStatus(`❌ Telegram Error: ${result.description || 'Gagal mengaktifkan Webhook'}`);
       }
     } catch (err) {
-      setWebhookStatus('❌ Gagal menghubungi server');
+      setWebhookStatus(`❌ Gagal terhubung ke Telegram API: ${err instanceof Error ? err.message : 'Koneksi error'}`);
     } finally {
       setIsSettingWebhook(false);
     }
@@ -125,7 +240,7 @@ export const OwnerPage: React.FC = () => {
       const sys = await getSystemSettings();
       setSettings(sys);
       if (activeSubTab === 'settings') {
-        fetchBotInfo();
+        fetchBotInfo(sys);
       }
     } catch (err) {
       console.error('Error loading owner data:', err);
@@ -457,6 +572,21 @@ export const OwnerPage: React.FC = () => {
               />
             </div>
 
+            <div className="flex flex-col gap-1.5 bg-slate-900/80 p-3 rounded-2xl border border-amber-500/30">
+              <label className="text-xs font-bold text-amber-400 flex items-center justify-between">
+                <span>Telegram Bot Token (Dari @BotFather)</span>
+                <span className="text-[10px] text-amber-300 font-normal">Wajib diisi untuk Bot Telegram</span>
+              </label>
+              <input
+                type="text"
+                placeholder="Contoh: 1234567890:ABCdefGHIjklMNOpqrsTUVwxyZ"
+                value={settings.telegramBotToken || ''}
+                onChange={(e) => setSettings({ ...settings, telegramBotToken: e.target.value })}
+                className="w-full bg-slate-950 border border-amber-500/40 rounded-xl p-2.5 text-xs text-white outline-none focus:border-amber-400 font-mono"
+              />
+              <p className="text-[10px] text-slate-400">Dapatkan token dari @BotFather di Telegram lalu paste di sini.</p>
+            </div>
+
             <div className="flex flex-col gap-1.5 bg-slate-900/80 p-3 rounded-2xl border border-slate-800">
               <label className="text-xs font-bold text-white">Telegram Group ID (Tujuan Notifikasi)</label>
               <input
@@ -534,6 +664,18 @@ export const OwnerPage: React.FC = () => {
               />
             </div>
 
+            <div className="flex flex-col gap-1.5 bg-slate-900/80 p-3 rounded-2xl border border-slate-800">
+              <label className="text-xs font-bold text-sky-300">Webhook Base URL (Domain Hosting)</label>
+              <input
+                type="text"
+                placeholder="https://azurlize-team-3ba4f.firebaseapp.com"
+                value={settings.webhookUrl || ''}
+                onChange={(e) => setSettings({ ...settings, webhookUrl: e.target.value })}
+                className="w-full bg-slate-950 border border-sky-500/30 rounded-xl p-2.5 text-xs text-white outline-none focus:border-sky-400 font-mono"
+              />
+              <p className="text-[10px] text-slate-500">Domain publik yang dipakai untuk Menerima Webhook Telegram Bot.</p>
+            </div>
+
             <div className="flex flex-col gap-2 pt-2 border-t border-slate-800/80">
               <button
                 type="button"
@@ -584,8 +726,8 @@ export const OwnerPage: React.FC = () => {
               <div className="flex flex-col gap-1.5">
                 <span className="text-[10px] font-bold text-slate-500 uppercase">Webhook URL saat ini:</span>
                 <div className="flex items-center gap-2 bg-slate-900 px-3 py-2 rounded-xl border border-slate-800">
-                  <Globe className="w-3 h-3 text-slate-500" />
-                  <span className="text-[10px] text-slate-300 font-mono truncate">{window.location.origin}/api/telegram/webhook</span>
+                  <Globe className="w-3 h-3 text-sky-400" />
+                  <span className="text-[10px] text-sky-300 font-mono truncate">{(settings?.webhookUrl || 'https://azurlize-team-3ba4f.firebaseapp.com').replace(/\/$/, '')}/api/telegram/webhook</span>
                 </div>
               </div>
 

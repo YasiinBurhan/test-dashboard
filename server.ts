@@ -333,6 +333,7 @@ app.get('/api/check-telegram/:username', async (req: Request, res: Response) => 
  */
 app.post('/api/telegram/webhook', async (req: Request, res: Response) => {
   try {
+    const activeToken = ((req.query.token as string) || (req.body?.botToken as string) || TELEGRAM_BOT_TOKEN).trim();
     const { message, edited_message, channel_post, edited_channel_post } = req.body;
     
     // Process standard messages
@@ -351,10 +352,10 @@ app.post('/api/telegram/webhook', async (req: Request, res: Response) => {
       responseText += `• Atau klik tombol menu/web app di pojok kiri bawah obrolan ini.\n\n`;
       responseText += `<i>Jika Anda membutuhkan bantuan info chat/grup, gunakan perintah /id atau /info. Selamat bekerja!</i>`;
 
-      // Get WebApp URL dynamically
-      const host = req.get('host') || 'ais-dev-zbqn5b46dflqymdy6ajpnm-268860382066.asia-east1.run.app';
+      // Get WebApp URL dynamically (defaulting to Firebase hosting domain)
+      const host = req.get('host');
       const protocol = req.secure || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
-      const webAppUrl = `${protocol}://${host}`;
+      const webAppUrl = host && !host.includes('localhost') ? `${protocol}://${host}` : 'https://azurlize-team-3ba4f.firebaseapp.com';
 
       const keyboard = {
         inline_keyboard: [
@@ -367,7 +368,7 @@ app.post('/api/telegram/webhook', async (req: Request, res: Response) => {
         ]
       };
 
-      await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      await fetch(`https://api.telegram.org/bot${activeToken}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -397,7 +398,7 @@ app.post('/api/telegram/webhook', async (req: Request, res: Response) => {
       responseText += `\n<i>Gunakan ID di atas pada Pengaturan Aplikasi AzurLize.</i>`;
 
       // Reply to the message
-      await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      await fetch(`https://api.telegram.org/bot${activeToken}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -421,20 +422,22 @@ app.post('/api/telegram/webhook', async (req: Request, res: Response) => {
 // API Endpoint: Set Telegram Webhook
 app.post('/api/telegram/set-webhook', async (req: Request, res: Response) => {
   try {
-    const { url } = req.body;
+    const { url, botToken } = req.body;
+    const activeToken = (botToken || TELEGRAM_BOT_TOKEN).trim();
+
     if (!url) {
       res.status(400).json({ success: false, error: 'URL webhook diperlukan' });
       return;
     }
 
-    if (!TELEGRAM_BOT_TOKEN) {
+    if (!activeToken) {
       res.status(400).json({ success: false, error: 'Token Bot Telegram tidak dikonfigurasi.' });
       return;
     }
 
     const cleanUrl = url.replace(/\/$/, '');
-    const webhookUrl = `${cleanUrl}/api/telegram/webhook`;
-    const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook?url=${encodeURIComponent(webhookUrl)}`);
+    const webhookUrl = `${cleanUrl}/api/telegram/webhook?token=${encodeURIComponent(activeToken)}`;
+    const response = await fetch(`https://api.telegram.org/bot${activeToken}/setWebhook?url=${encodeURIComponent(webhookUrl)}`);
     const result = await response.json();
 
     if (result.ok) {
@@ -449,14 +452,15 @@ app.post('/api/telegram/set-webhook', async (req: Request, res: Response) => {
 });
 
 // API Endpoint: Get Bot Info
-app.get('/api/telegram/bot-info', async (_req: Request, res: Response) => {
+app.get('/api/telegram/bot-info', async (req: Request, res: Response) => {
   try {
-    if (!TELEGRAM_BOT_TOKEN) {
+    const activeToken = ((req.query.token as string) || TELEGRAM_BOT_TOKEN).trim();
+    if (!activeToken) {
       res.status(400).json({ success: false, error: 'Token Bot Telegram tidak dikonfigurasi.' });
       return;
     }
 
-    const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getMe`);
+    const response = await fetch(`https://api.telegram.org/bot${activeToken}/getMe`);
     const result = await response.json();
 
     if (result.ok) {
@@ -502,7 +506,8 @@ function parseTelegramChatAndTopic(groupId?: string, topicId?: string) {
 // API Endpoint: Test sending message to Telegram
 app.post('/api/telegram/test-send', async (req: Request, res: Response) => {
   try {
-    const { groupId, topicId } = req.body;
+    const { groupId, topicId, botToken } = req.body;
+    const activeToken = (botToken || TELEGRAM_BOT_TOKEN).trim();
     const { targetGroup, topicNum } = parseTelegramChatAndTopic(groupId, topicId);
 
     if (!targetGroup) {
@@ -510,7 +515,7 @@ app.post('/api/telegram/test-send', async (req: Request, res: Response) => {
       return;
     }
 
-    if (!TELEGRAM_BOT_TOKEN) {
+    if (!activeToken) {
       res.status(400).json({ success: false, error: 'Token Bot Telegram tidak ditemukan di server.' });
       return;
     }
@@ -522,7 +527,7 @@ app.post('/api/telegram/test-send', async (req: Request, res: Response) => {
     };
     if (topicNum) payload.message_thread_id = topicNum;
 
-    let response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+    let response = await fetch(`https://api.telegram.org/bot${activeToken}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -718,12 +723,27 @@ app.post('/api/telegram/send-report', async (req: Request, res: Response) => {
       return;
     }
 
+    if (report && (report.grup === 'T3' || report.grup === 'T0-MARK (Dipromosikan)')) {
+      res.json({ success: true, message: 'Data T0-MARK Dipromosikan berhasil disimpan (tidak dikirim ke Telegram).' });
+      return;
+    }
+
     let captionHtml = '';
     if (customText) {
       captionHtml = customText;
     } else if (report) {
       const recUsername = report.recruiterUsername ? `@${report.recruiterUsername.replace(/^@/, '')}` : (report.username ? `@${report.username}` : report.name);
       const applicantTg = report.applicantTelegramUsername ? `@${report.applicantTelegramUsername.replace(/^@/, '')}` : '-';
+
+      let rawGrup = report.grup || '-';
+      let displayGrup = rawGrup;
+      if (rawGrup === 'T0' || rawGrup === 'T0-MARK') {
+        displayGrup = 'T0-MARK';
+      } else if (rawGrup === 'V0') {
+        displayGrup = 'V0';
+      } else if (rawGrup === 'RECRUITER') {
+        displayGrup = 'RECRUITER';
+      }
 
       captionHtml = `
 UID : ${report.uid9Kucing || '-'}
@@ -732,7 +752,7 @@ Username Telegram : ${applicantTg}
 Rekomendasi dari : ${recUsername}
 Info dari sosmed : ${report.channel || '-'}
 
-Grub : ${report.grup || '-'}
+Grub : ${displayGrup}
 `.trim();
     }
 

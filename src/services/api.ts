@@ -1,6 +1,18 @@
 import { ApiResponse } from '../types';
+import { getSystemSettings } from '../firebase/services/settingService';
 
-const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || '';
+const getApiBaseUrl = () => {
+  if (import.meta.env.VITE_BACKEND_URL) {
+    return import.meta.env.VITE_BACKEND_URL;
+  }
+  const hostname = typeof window !== 'undefined' ? window.location.hostname : '';
+  if (hostname.endsWith('.vercel.app')) {
+    return '';
+  }
+  return 'https://wsswws.vercel.app';
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 export async function verifyTelegramInitDataApi(initData: string): Promise<ApiResponse<{
   token: string;
@@ -132,25 +144,86 @@ export async function sendReportToTelegramApi(
   topicId?: string,
   customText?: string
 ): Promise<ApiResponse> {
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/telegram/send-report`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ report, videoDataUrl, groupId, topicId, customText })
-    });
+  const sys = await getSystemSettings();
+  const token = sys?.telegramBotToken;
 
-    const contentType = response.headers.get('content-type');
-    if (!contentType || !contentType.includes('application/json')) {
-      if (response.status === 413) {
-        return { success: false, error: 'Ukuran video/data terlalu besar (Maksimal 4.5MB). Mohon gunakan video yang lebih pendek atau resolusi lebih rendah.' };
+  // 1. Try server endpoint if API_BASE_URL is configured
+  if (API_BASE_URL) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/telegram/send-report`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ report, videoDataUrl, groupId, topicId, customText, botToken: token })
+      });
+
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        const data = await response.json();
+        if (data.success) return data;
       }
-      return { success: false, error: `Server error (${response.status}). Mohon coba lagi nanti.` };
+    } catch {
+      // Fallback to direct Telegram API below
+    }
+  }
+
+  // 2. Direct Telegram API fallback (Works on Firebase static hosting)
+  try {
+    const targetGroupRaw = groupId || sys?.telegramGroupId;
+    const targetTopicRaw = topicId || sys?.telegramTopicReport;
+
+    if (!token || !targetGroupRaw) {
+      return { success: false, error: 'Token Bot Telegram atau Group ID belum dikonfigurasi di Pengaturan.' };
     }
 
-    const data = await response.json();
-    return data;
+    let cleanGroup = String(targetGroupRaw).trim();
+    if (!cleanGroup.startsWith('-100') && !cleanGroup.startsWith('@')) {
+      if (!cleanGroup.startsWith('-')) cleanGroup = '-100' + cleanGroup;
+      else cleanGroup = '-100' + cleanGroup.substring(1);
+    }
+    const topicNum = targetTopicRaw && !isNaN(Number(targetTopicRaw)) ? Number(targetTopicRaw) : undefined;
+
+    const messageText = customText || `📊 <b>LAPORAN HARIAN</b>\n\nData laporan telah berhasil diperbarui.`;
+
+    if (videoDataUrl) {
+      const fetchRes = await fetch(videoDataUrl);
+      const blob = await fetchRes.blob();
+      const formData = new FormData();
+      formData.append('chat_id', cleanGroup);
+      if (topicNum) formData.append('message_thread_id', String(topicNum));
+      formData.append('video', blob, 'video.mp4');
+      formData.append('caption', messageText);
+      formData.append('parse_mode', 'HTML');
+
+      const tgRes = await fetch(`https://api.telegram.org/bot${token}/sendVideo`, {
+        method: 'POST',
+        body: formData
+      });
+      const tgData = await tgRes.json();
+      if (tgData.ok) {
+        return { success: true, message: 'Laporan berhasil dikirim ke Telegram!' };
+      } else {
+        return { success: false, error: tgData.description || 'Gagal mengirim video laporan ke Telegram' };
+      }
+    } else {
+      const tgRes = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: cleanGroup,
+          message_thread_id: topicNum,
+          text: messageText,
+          parse_mode: 'HTML'
+        })
+      });
+      const tgData = await tgRes.json();
+      if (tgData.ok) {
+        return { success: true, message: 'Laporan berhasil dikirim ke Telegram!' };
+      } else {
+        return { success: false, error: tgData.description || 'Gagal mengirim laporan ke Telegram' };
+      }
+    }
   } catch (err) {
     return {
       success: false,

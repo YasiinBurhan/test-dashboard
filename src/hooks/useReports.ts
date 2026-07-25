@@ -27,8 +27,13 @@ export function useReports() {
     let unsubscribe: () => void;
 
     const handleError = (err: any) => {
-      console.error('Error in useReports subscription:', err);
-      setError(err instanceof Error ? err.message : 'Gagal memuat data harian.');
+      console.warn('Error in useReports subscription:', err);
+      const rawMessage = err instanceof Error ? err.message : String(err);
+      if (rawMessage.includes('permission') || rawMessage.includes('PERMISSION_DENIED')) {
+        setError('Aturan Firestore melarang akses. Mohon salin Aturan Keamanan (Firestore Rules) ke Firebase Console proyek Anda.');
+      } else {
+        setError('Gagal memuat data laporan harian.');
+      }
       setIsLoading(false);
     };
     

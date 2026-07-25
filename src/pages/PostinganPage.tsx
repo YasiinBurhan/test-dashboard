@@ -42,6 +42,19 @@ import {
   Award
 } from 'lucide-react';
 
+const getApiBaseUrl = () => {
+  if (import.meta.env.VITE_BACKEND_URL) {
+    return import.meta.env.VITE_BACKEND_URL;
+  }
+  const hostname = typeof window !== 'undefined' ? window.location.hostname : '';
+  if (hostname.endsWith('.vercel.app')) {
+    return '';
+  }
+  return 'https://wsswws.vercel.app';
+};
+
+const API_BASE_URL = getApiBaseUrl();
+
 type SocialPlatform = 'Facebook' | 'X (Twitter)' | 'Instagram' | 'TikTok' | 'Threads' | 'WhatsApp' | 'Telegram' | 'Lainnya';
 
 interface SocialLink {
@@ -329,10 +342,6 @@ export const PostinganPage: React.FC = () => {
 
   useEffect(() => {
     if (isManagement) {
-      if (activeView === 'buat') {
-        setActiveView('minggu_ini');
-      }
-      
       const unsubscribeUsers = subscribeToAllUsers((users) => {
         const recs = users.filter(u => u.role === 'Recruiter');
         setRecruiters(recs);
@@ -809,8 +818,13 @@ export const PostinganPage: React.FC = () => {
     triggerHaptic('impact', 'medium');
 
     try {
-      const recruiterName = userProfile ? `${userProfile.firstName} ${userProfile.lastName || ''}`.trim() : `${telegramUser?.first_name || ''} ${telegramUser?.last_name || ''}`.trim() || 'Recruiter';
-      const recruiterUsername = userProfile?.username || telegramUser?.username || '';
+      const selectedRec = isManagement ? recruiters.find(r => String(r.telegramId) === String(selectedRecruiterId)) : null;
+      const recruiterName = selectedRec 
+        ? `${selectedRec.firstName} ${selectedRec.lastName || ''}`.trim()
+        : (userProfile ? `${userProfile.firstName} ${userProfile.lastName || ''}`.trim() : `${telegramUser?.first_name || ''} ${telegramUser?.last_name || ''}`.trim() || 'Recruiter');
+      const recruiterUsername = selectedRec
+        ? (selectedRec.username || '')
+        : (userProfile?.username || telegramUser?.username || '');
       const recruiterTelegramId = effectiveTelegramId;
       
       // Compress all images
@@ -829,34 +843,103 @@ export const PostinganPage: React.FC = () => {
 
       const effectiveStartNum = typeof startNumber === 'number' && startNumber >= 1 ? startNumber : 1;
 
-      const response = await fetch('/api/telegram/send-post', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          links: validLinks.map(l => l.url),
-          startNumber: effectiveStartNum,
-          images: compressedImages,
-          recruiterName,
-          recruiterUsername,
-          groupId: currentSettings?.telegramGroupId || '',
-          topicId: currentSettings?.telegramTopicPosting || ''
-        })
-      });
+      let sendSuccess = false;
 
-      const contentType = response.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
-        const text = await response.text();
-        console.error('Non-JSON response from server:', text);
-        
-        if (response.status === 413) {
-          throw new Error('Ukuran data terlalu besar (Maksimal 4.5MB). Coba kurangi jumlah gambar atau gunakan gambar dengan ukuran lebih kecil.');
+      // 1. Try backend server endpoint if API_BASE_URL is configured
+      if (API_BASE_URL) {
+        try {
+          const response = await fetch(`${API_BASE_URL}/api/telegram/send-post`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              links: validLinks.map(l => l.url),
+              startNumber: effectiveStartNum,
+              images: compressedImages,
+              recruiterName,
+              recruiterUsername,
+              groupId: currentSettings?.telegramGroupId || '',
+              topicId: currentSettings?.telegramTopicPosting || '',
+              botToken: currentSettings?.telegramBotToken || ''
+            })
+          });
+
+          const contentType = response.headers.get('content-type');
+          if (contentType && contentType.includes('application/json')) {
+            const result = await response.json();
+            if (result.success) {
+              sendSuccess = true;
+            } else if (result.error) {
+              console.warn('[Postingan] Backend response error:', result.error);
+            }
+          }
+        } catch (err) {
+          console.warn('[Postingan] Backend API unavailable, attempting direct Telegram API fallback:', err);
         }
-        
-        throw new Error(`Server error (${response.status}). Mohon coba lagi nanti.`);
       }
 
-      const result = await response.json();
-      if (result.success) {
+      // 2. Direct Telegram API fallback (Works on Firebase static hosting without Vercel or Node backend)
+      if (!sendSuccess) {
+        const token = currentSettings?.telegramBotToken;
+        let targetGroup = String(currentSettings?.telegramGroupId || '').trim();
+        const targetTopic = currentSettings?.telegramTopicPosting;
+
+        if (!token || !targetGroup) {
+          throw new Error('Token Bot Telegram atau Group ID belum dikonfigurasi di Pengaturan.');
+        }
+
+        if (!targetGroup.startsWith('-100') && !targetGroup.startsWith('@')) {
+          if (!targetGroup.startsWith('-')) targetGroup = '-100' + targetGroup;
+          else targetGroup = '-100' + targetGroup.substring(1);
+        }
+        const topicNum = targetTopic && !isNaN(Number(targetTopic)) ? Number(targetTopic) : undefined;
+
+        let textContent = `📌 <b>LINK POSTINGAN BARU</b>\n\n`;
+        textContent += `👤 <b>Recruiter:</b> ${recruiterName} (${recruiterUsername ? '@' + recruiterUsername : '-'})\n`;
+        textContent += `📊 <b>Jumlah Link:</b> ${validLinks.length}\n\n`;
+        validLinks.forEach((l, idx) => {
+          textContent += `${effectiveStartNum + idx}. ${l.url}\n`;
+        });
+
+        if (compressedImages && compressedImages.length > 0) {
+          const base64Data = compressedImages[0];
+          const fetchRes = await fetch(base64Data);
+          const blob = await fetchRes.blob();
+          const formData = new FormData();
+          formData.append('chat_id', targetGroup);
+          if (topicNum) formData.append('message_thread_id', String(topicNum));
+          formData.append('photo', blob, 'image.jpg');
+          formData.append('caption', textContent);
+          formData.append('parse_mode', 'HTML');
+
+          const tgRes = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
+            method: 'POST',
+            body: formData
+          });
+          const tgData = await tgRes.json();
+          if (!tgData.ok) {
+            throw new Error(`Telegram Error: ${tgData.description || 'Gagal mengirim gambar ke Telegram'}`);
+          }
+          sendSuccess = true;
+        } else {
+          const tgRes = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: targetGroup,
+              message_thread_id: topicNum,
+              text: textContent,
+              parse_mode: 'HTML'
+            })
+          });
+          const tgData = await tgRes.json();
+          if (!tgData.ok) {
+            throw new Error(`Telegram Error: ${tgData.description || 'Gagal mengirim pesan ke Telegram'}`);
+          }
+          sendSuccess = true;
+        }
+      }
+
+      if (sendSuccess) {
         const newPostData = {
           telegramId: recruiterTelegramId,
           username: recruiterUsername,
@@ -900,7 +983,7 @@ export const PostinganPage: React.FC = () => {
         // Switch view to Minggu Ini Posts automatically
         setActiveView('minggu_ini');
       } else {
-        throw new Error(result.error || 'Gagal mengirim postingan');
+        throw new Error('Gagal mengirim postingan ke Telegram. Mohon periksa Token Bot dan Group ID di Pengaturan.');
       }
     } catch (err) {
       console.error('[Postingan] Error submitting:', err);
@@ -1030,19 +1113,17 @@ export const PostinganPage: React.FC = () => {
           style={{ top: 'calc(60px + env(safe-area-inset-top, 0px))' }}
           className="sticky z-30 flex p-1 bg-slate-950/95 backdrop-blur-md rounded-2xl border border-slate-850/80 shadow-2xl mb-4"
         >
-          {!isManagement && (
-            <button
-              onClick={() => { setActiveView('buat'); triggerHaptic('selection'); }}
-              className={`flex-1 flex items-center justify-center gap-2 h-11 rounded-xl text-[10px] font-black uppercase transition-all ${
-                activeView === 'buat' 
-                  ? 'bg-sky-500/10 text-sky-400 border border-sky-500/20 shadow-lg' 
-                  : 'text-slate-600 hover:text-slate-400 border border-transparent'
-              }`}
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Buat
-            </button>
-          )}
+          <button
+            onClick={() => { setActiveView('buat'); triggerHaptic('selection'); }}
+            className={`flex-1 flex items-center justify-center gap-2 h-11 rounded-xl text-[10px] font-black uppercase transition-all ${
+              activeView === 'buat' 
+                ? 'bg-sky-500/10 text-sky-400 border border-sky-500/20 shadow-lg' 
+                : 'text-slate-600 hover:text-slate-400 border border-transparent'
+            }`}
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Buat
+          </button>
           <button
             onClick={() => { setActiveView('minggu_ini'); triggerHaptic('selection'); }}
             className={`flex-1 flex flex-col items-center justify-center h-11 rounded-xl transition-all ${
@@ -1085,7 +1166,7 @@ export const PostinganPage: React.FC = () => {
           )}
         </div>
 
-        {!isManagement && activeView === 'buat' && (
+        {activeView === 'buat' && (
           <motion.div
             initial={{ opacity: 0, x: -10 }}
             animate={{ opacity: 1, x: 0 }}

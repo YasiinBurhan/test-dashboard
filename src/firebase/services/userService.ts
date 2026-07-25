@@ -47,6 +47,11 @@ export async function getUserProfile(telegramId: string): Promise<UserProfile | 
     }
     return null;
   } catch (error) {
+    const rawMessage = error instanceof Error ? error.message : String(error);
+    if (rawMessage.includes('permission') || rawMessage.includes('PERMISSION_DENIED') || rawMessage.includes('Missing or insufficient permissions')) {
+      console.warn(`Firestore permission denied reading user profile ${telegramId}`);
+      return null;
+    }
     return handleFirestoreError(error, OperationType.GET, `users/${telegramId}`);
   }
 }
@@ -157,7 +162,7 @@ export async function updateUserRole(
   }
 }
 
-export function subscribeToAllUsers(onUpdate: (users: UserProfile[]) => void): () => void {
+export function subscribeToAllUsers(onUpdate: (users: UserProfile[]) => void, onError?: (error: any) => void): () => void {
   const usersRef = collection(db, 'users');
   const q = query(usersRef, orderBy('createdAt', 'desc'));
   
@@ -165,7 +170,12 @@ export function subscribeToAllUsers(onUpdate: (users: UserProfile[]) => void): (
     const users = snapshot.docs.map(docSnap => docSnap.data() as UserProfile);
     onUpdate(users);
   }, (error) => {
-    console.error('Error listening to all users:', error);
+    console.warn('Error listening to all users:', error);
+    if (onError) {
+      onError(error);
+    } else {
+      onUpdate([]);
+    }
   });
 }
 
@@ -176,6 +186,11 @@ export async function getAllUsers(): Promise<UserProfile[]> {
     const snapshot = await getDocs(q);
     return snapshot.docs.map(docSnap => docSnap.data() as UserProfile);
   } catch (error) {
+    const rawMessage = error instanceof Error ? error.message : String(error);
+    if (rawMessage.includes('permission') || rawMessage.includes('PERMISSION_DENIED') || rawMessage.includes('Missing or insufficient permissions')) {
+      console.warn('Firestore permissions missing for users collection');
+      return [];
+    }
     return handleFirestoreError(error, OperationType.LIST, 'users');
   }
 }

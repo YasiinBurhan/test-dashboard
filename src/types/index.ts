@@ -112,6 +112,7 @@ export interface SystemSettings {
   systemStatus: 'Operational' | 'Maintenance';
   allowRegistrations: boolean;
   announcementHeader: string;
+  telegramBotToken?: string;
   telegramGroupId?: string;
   telegramTopicId?: string;
   telegramTopicT0?: string;
@@ -119,6 +120,8 @@ export interface SystemSettings {
   telegramTopicRecruiter?: string;
   telegramTopicT3?: string;
   telegramTopicPosting?: string;
+  telegramTopicReport?: string;
+  webhookUrl?: string;
   updatedAt: string;
 }
 

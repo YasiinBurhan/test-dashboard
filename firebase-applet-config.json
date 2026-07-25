@@ -1,12 +1,12 @@
 {
-  "projectId": "gen-lang-client-0319391691",
-  "appId": "1:536366426261:web:7e829808f5fc6a6146d39c",
-  "apiKey": "AIzaSyAV4DjG10iuTV7BcbaXDSKoi8IBPZpQCE0",
-  "authDomain": "gen-lang-client-0319391691.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-azurlizeteam-2d074352-4f1f-439f-929b-e8abd4b7b0ef",
-  "storageBucket": "gen-lang-client-0319391691.firebasestorage.app",
-  "messagingSenderId": "536366426261",
-  "measurementId": "",
-  "oAuthClientId": "536366426261-j0an91k78qh79arrnha9cs1cuv6nlojd.apps.googleusercontent.com",
+  "projectId": "azurlize-team-3ba4f",
+  "appId": "1:456969334839:web:d3fdb65425ee8935b7cfb2",
+  "apiKey": "AIzaSyD5tYWBCFVDW580MpiHw1P210fnxIMthGU",
+  "authDomain": "azurlize-team-3ba4f.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "azurlize-team-3ba4f.firebasestorage.app",
+  "messagingSenderId": "456969334839",
+  "measurementId": "G-CJMN3DF3J2",
+  "oAuthClientId": "",
   "recaptchaSiteKey": ""
 }

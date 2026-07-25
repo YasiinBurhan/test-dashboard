@@ -59,7 +59,11 @@ export const LaporanHarianPage: React.FC = () => {
 
   const { submittedRecruiters, unsubmittedRecruiters } = useMemo(() => {
     const targetDate = formData.date || initialDateStr;
-    const submittedIds = new Set(reports.filter(r => r.date === targetDate).map(r => r.telegramId));
+    const submittedIds = new Set(
+      reports
+        .filter(r => r.date === targetDate && !r.applicantWhatsapp && !r.uid9Kucing)
+        .map(r => r.telegramId)
+    );
     
     return {
       submittedRecruiters: recruiters.filter(u => submittedIds.has(u.telegramId)),
@@ -75,6 +79,7 @@ export const LaporanHarianPage: React.FC = () => {
     return reports.some(r => {
       if (r.permission !== 1) return false;
       if (r.telegramId !== effectiveTelegramId) return false;
+      if (r.applicantWhatsapp || r.uid9Kucing) return false; // Must be summary report
       return getWIBMondayOfDate(r.date) === targetMonday;
     });
   }, [reports, formData.date, effectiveTelegramId]);
@@ -166,6 +171,25 @@ export const LaporanHarianPage: React.FC = () => {
   }, [nowWib]);
 
   const { hours, minutes, seconds, elapsedPercent } = timeInfo;
+
+  // Compute remaining time until midnight (00:00:00 WIB) when the topic/form opens again
+  const reopenTimeInfo = useMemo(() => {
+    const currentSeconds = nowWib.hours * 3600 + nowWib.minutes * 60 + nowWib.seconds;
+    const totalDaySeconds = 24 * 3600;
+    const diff = Math.max(0, totalDaySeconds - currentSeconds);
+
+    const h = Math.floor(diff / 3600);
+    const m = Math.floor((diff % 3600) / 60);
+    const s = diff % 60;
+
+    const pad = (n: number) => String(n).padStart(2, '0');
+
+    return {
+      hours: pad(h),
+      minutes: pad(m),
+      seconds: pad(s)
+    };
+  }, [nowWib]);
 
 
   // Lock status: locked if past 10:00 WIB and NOT Admin/Owner
@@ -388,62 +412,58 @@ Status Target & Efektif? <b>${formData.effectiveStatus || 'YES'}</b>`;
       className="space-y-5 pb-28"
     >
       {/* Live WIB Timer & Lock Status */}
-      <GlassCard className="p-4 bg-slate-950/80 border-slate-800/80 shadow-xl">
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
-          <div className="flex flex-col min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[10px] font-black text-sky-400 uppercase tracking-widest flex items-center gap-1.5">
-                <Timer className="w-3.5 h-3.5 animate-pulse text-sky-400" />
-                Batas Waktu Laporan
-              </span>
-              <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full border ${
-                nowWib.isPast10 
-                  ? 'bg-rose-500/10 text-rose-300 border-rose-500/20' 
-                  : 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'
-              }`}>
-                {nowWib.isPast10 ? 'Tertutup' : 'Terbuka'}
-              </span>
-              <span className="text-[8px] font-black uppercase text-sky-300 bg-sky-500/10 px-2 py-0.5 rounded-full border border-sky-500/20">
-                Maksimal 10:00 WIB Pagi
-              </span>
-            </div>
-            <p className="text-[9.5px] text-slate-400 font-medium mt-0.5 leading-snug">
-              {nowWib.isPast10 
-                ? 'Batas waktu pengiriman laporan harian (00:00 - 10:00 WIB) telah lewat.' 
-                : 'Mohon kirimkan laporan harian Anda sebelum pukul 10:00 WIB.'}
-            </p>
-            <div className="flex items-center gap-1.5 mt-2 font-mono">
-              <div className="text-center">
-                <span className={`text-2xl font-black tracking-tighter ${nowWib.isPast10 ? 'text-rose-400' : 'text-white'}`}>{hours}</span>
-                <span className="block text-[7px] font-bold text-slate-500 uppercase -mt-1 font-sans">Jam</span>
-              </div>
-              <span className="text-lg font-black text-sky-500/50 -translate-y-1">:</span>
-              <div className="text-center">
-                <span className={`text-2xl font-black tracking-tighter ${nowWib.isPast10 ? 'text-rose-400' : 'text-white'}`}>{minutes}</span>
-                <span className="block text-[7px] font-bold text-slate-500 uppercase -mt-1 font-sans">Menit</span>
-              </div>
-              <span className="text-lg font-black text-sky-500/50 -translate-y-1">:</span>
-              <div className="text-center">
-                <span className={`text-2xl font-black tracking-tighter ${nowWib.isPast10 ? 'text-rose-500' : 'text-sky-400'}`}>{seconds}</span>
-                <span className="block text-[7px] font-bold text-slate-500 uppercase -mt-1 font-sans">Detik</span>
-              </div>
-              <span className="text-[9px] font-bold text-slate-400 ml-2 font-sans self-center">Sisa Waktu Laporan</span>
-            </div>
+      <GlassCard className="p-4 bg-slate-950/80 border-slate-800/80 shadow-xl space-y-4">
+        {/* Header Row */}
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/60 pb-3">
+          <div className="flex items-center gap-2">
+            <Timer className="w-4 h-4 text-sky-400 animate-pulse" />
+            <h3 className="text-[11px] sm:text-xs font-black text-white uppercase tracking-wider">Status Laporan & Jadwal</h3>
           </div>
-          <div className="text-left sm:text-right shrink-0">
-            <div className="text-[9px] font-black text-slate-500 uppercase mb-1">Status Laporan</div>
-            <div className="w-24 h-2 bg-slate-900 rounded-full overflow-hidden border border-slate-800">
-              <motion.div 
-                initial={{ width: 0 }}
-                animate={{ width: `${elapsedPercent}%` }}
-                className={`h-full ${
-                  nowWib.isPast10 ? 'bg-gradient-to-r from-rose-600 to-rose-400' : 'bg-gradient-to-r from-emerald-600 to-emerald-400'
-                }`}
-              />
-            </div>
-            <span className={`text-[8px] font-bold mt-1 block ${nowWib.isPast10 ? 'text-rose-400' : 'text-emerald-400'}`}>
-              {Math.round(elapsedPercent)}% Waktu Berjalan
+          <div className="flex items-center gap-1.5">
+            <span className={`text-[8px] sm:text-[9px] font-black uppercase px-2 py-0.5 rounded-full border ${
+              nowWib.isPast10 
+                ? 'bg-rose-500/10 text-rose-300 border-rose-500/20' 
+                : 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'
+            }`}>
+              {nowWib.isPast10 ? '🔴 Form Ditutup' : '🟢 Form Dibuka'}
             </span>
+          </div>
+        </div>
+
+        {/* Single Dynamic Timer Block */}
+        <div className="p-4 rounded-2xl bg-slate-900/40 border border-slate-800/60 flex flex-col md:flex-row md:items-center justify-between gap-4 text-center md:text-left">
+          <div className="space-y-1">
+            <span className="text-[10px] font-black uppercase tracking-wider text-sky-400 block">
+              {nowWib.isPast10 ? 'Sisa Waktu Pembukaan Laporan' : 'Sisa Waktu Pengisian Hari Ini'}
+            </span>
+            <p className="text-[9.5px] text-slate-400 font-medium max-w-md leading-normal mx-auto md:mx-0">
+              {nowWib.isPast10 
+                ? 'Formulir saat ini ditutup karena telah melewati pukul 10:00 WIB. Pendaftaran laporan berikutnya akan dibuka kembali tepat pukul 00:00 WIB.' 
+                : 'Mohon kirimkan laporan harian Anda sebelum batas waktu pengerjaan berakhir pada pukul 10:00 WIB Pagi.'}
+            </p>
+          </div>
+          
+          <div className="flex items-center justify-center gap-1.5 font-mono shrink-0 mx-auto md:mx-0">
+            <div className="text-center bg-slate-950/90 px-3 py-2 rounded-xl border border-slate-800/80 min-w-[48px] shadow-inner">
+              <span className={`text-xl sm:text-2xl font-black tracking-tighter ${nowWib.isPast10 ? 'text-amber-400' : 'text-white'}`}>
+                {nowWib.isPast10 ? reopenTimeInfo.hours : hours}
+              </span>
+              <span className="block text-[7px] font-bold text-slate-500 uppercase font-sans mt-0.5">Jam</span>
+            </div>
+            <span className="text-xl font-black text-slate-700 animate-pulse">:</span>
+            <div className="text-center bg-slate-950/90 px-3 py-2 rounded-xl border border-slate-800/80 min-w-[48px] shadow-inner">
+              <span className={`text-xl sm:text-2xl font-black tracking-tighter ${nowWib.isPast10 ? 'text-amber-400' : 'text-white'}`}>
+                {nowWib.isPast10 ? reopenTimeInfo.minutes : minutes}
+              </span>
+              <span className="block text-[7px] font-bold text-slate-500 uppercase font-sans mt-0.5">Min</span>
+            </div>
+            <span className="text-xl font-black text-slate-700 animate-pulse">:</span>
+            <div className="text-center bg-slate-950/90 px-3 py-2 rounded-xl border border-slate-800/80 min-w-[48px] shadow-inner">
+              <span className={`text-xl sm:text-2xl font-black tracking-tighter ${nowWib.isPast10 ? 'text-amber-300' : 'text-sky-400'}`}>
+                {nowWib.isPast10 ? reopenTimeInfo.seconds : seconds}
+              </span>
+              <span className="block text-[7px] font-bold text-slate-500 uppercase font-sans mt-0.5">Detik</span>
+            </div>
           </div>
         </div>
       </GlassCard>
@@ -630,15 +650,17 @@ Status Target & Efektif? <b>${formData.effectiveStatus || 'YES'}</b>`;
               <span>Izin Tidak Bekerja?</span>
             </label>
             <span className="text-[10px] text-slate-400 px-1 block mb-2 -mt-1">
-              {isAdminOrOwner ? 'Pilih Ya jika izin/libur, pilih Tidak jika aktif bekerja seperti biasa.' : 'Status izin hanya dapat diatur oleh Admin atau Owner.'}
+              {isAdminOrOwner 
+                ? 'Pilih Ya jika izin/libur, pilih Tidak jika aktif bekerja seperti biasa.' 
+                : 'Pilih Ya jika Anda izin/libur hari ini (Maksimal 1x per minggu, Senin - Minggu).'}
             </span>
             <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"
-                disabled={isLocked || !isAdminOrOwner}
+                disabled={isLocked}
                 onClick={() => setFormData({ ...formData, permission: 0 })}
                 className={`py-2.5 px-4 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-1.5 ${
-                  isLocked || !isAdminOrOwner
+                  isLocked
                     ? 'opacity-50 cursor-not-allowed bg-slate-950 text-slate-600 border-slate-900'
                     : formData.permission === 0
                     ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 font-black cursor-pointer'
@@ -649,10 +671,20 @@ Status Target & Efektif? <b>${formData.effectiveStatus || 'YES'}</b>`;
               </button>
               <button
                 type="button"
-                disabled={isLocked || !isAdminOrOwner || (alreadyHasIzinThisWeek && !isAdminOrOwner)}
-                onClick={() => setFormData({ ...formData, permission: 1 })}
+                disabled={isLocked || (alreadyHasIzinThisWeek && !isAdminOrOwner)}
+                onClick={() => {
+                  setFormData({ ...formData, permission: 1 });
+                  if (!isAdminOrOwner) {
+                    setAlertState({
+                      isOpen: true,
+                      type: 'warning',
+                      title: 'Pemberitahuan Izin',
+                      message: 'Anda mengaktifkan status "Izin Tidak Bekerja". Ingat, fitur ini hanya dapat diaktifkan maksimal 1 kali dalam seminggu!'
+                    });
+                  }
+                }}
                 className={`py-2.5 px-4 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-1.5 ${
-                  isLocked || !isAdminOrOwner || (alreadyHasIzinThisWeek && !isAdminOrOwner)
+                  isLocked || (alreadyHasIzinThisWeek && !isAdminOrOwner)
                     ? 'opacity-50 cursor-not-allowed bg-slate-950 text-slate-600 border-slate-900'
                     : formData.permission === 1
                     ? 'bg-rose-500/20 text-rose-300 border-rose-500/40 font-black cursor-pointer'
@@ -663,9 +695,9 @@ Status Target & Efektif? <b>${formData.effectiveStatus || 'YES'}</b>`;
               </button>
             </div>
             {!isAdminOrOwner && (
-              <p className="text-[10px] text-amber-400 font-semibold px-1 mt-1 flex items-center gap-1 leading-normal">
-                <span>🔒</span>
-                <span>Fitur izin tidak bekerja hanya dapat diubah oleh Admin/Owner.</span>
+              <p className="text-[10px] text-emerald-400 font-semibold px-1 mt-1 flex items-center gap-1 leading-normal">
+                <span>🟢</span>
+                <span>Anda dapat mengatur status izin sendiri maksimal 1 kali per minggu (Senin - Minggu).</span>
               </p>
             )}
             {alreadyHasIzinThisWeek && !isAdminOrOwner && (
@@ -742,7 +774,7 @@ Status Target & Efektif? <b>${formData.effectiveStatus || 'YES'}</b>`;
             
             <div className="space-y-3">
               {reports
-                .filter(r => r.telegramId === effectiveTelegramId && getWIBMondayOfDate(r.date) === getWIBMondayOfDate(getWIBDate()))
+                .filter(r => r.telegramId === effectiveTelegramId && !r.applicantWhatsapp && !r.uid9Kucing && getWIBMondayOfDate(r.date) === getWIBMondayOfDate(getWIBDate()))
                 .sort((a, b) => b.date.localeCompare(a.date))
                 .map((r, idx) => (
                   <div key={idx} className="p-3 rounded-2xl bg-slate-900/50 border border-slate-800/80 flex items-center justify-between">
@@ -770,7 +802,7 @@ Status Target & Efektif? <b>${formData.effectiveStatus || 'YES'}</b>`;
                     </div>
                   </div>
                 ))}
-              {reports.filter(r => r.telegramId === effectiveTelegramId && getWIBMondayOfDate(r.date) === getWIBMondayOfDate(getWIBDate())).length === 0 && (
+              {reports.filter(r => r.telegramId === effectiveTelegramId && !r.applicantWhatsapp && !r.uid9Kucing && getWIBMondayOfDate(r.date) === getWIBMondayOfDate(getWIBDate())).length === 0 && (
                 <div className="py-12 text-center">
                   <Clock className="w-8 h-8 text-slate-800 mx-auto mb-2 opacity-20" />
                   <p className="text-xs text-slate-500 italic">Belum ada laporan minggu ini.</p>
@@ -796,7 +828,7 @@ Status Target & Efektif? <b>${formData.effectiveStatus || 'YES'}</b>`;
 
             <div className="space-y-3">
               {reports
-                .filter(r => r.telegramId === effectiveTelegramId)
+                .filter(r => r.telegramId === effectiveTelegramId && !r.applicantWhatsapp && !r.uid9Kucing)
                 .sort((a, b) => b.date.localeCompare(a.date))
                 .map((r, idx) => (
                   <div key={idx} className="p-3 rounded-2xl bg-slate-900/50 border border-slate-800/80 flex items-center justify-between">
@@ -821,7 +853,7 @@ Status Target & Efektif? <b>${formData.effectiveStatus || 'YES'}</b>`;
                     </div>
                   </div>
                 ))}
-              {reports.filter(r => r.telegramId === effectiveTelegramId).length === 0 && (
+              {reports.filter(r => r.telegramId === effectiveTelegramId && !r.applicantWhatsapp && !r.uid9Kucing).length === 0 && (
                 <div className="py-12 text-center">
                   <Clock className="w-8 h-8 text-slate-800 mx-auto mb-2 opacity-20" />
                   <p className="text-xs text-slate-500 italic">Belum ada riwayat laporan.</p>
@@ -844,19 +876,19 @@ Status Target & Efektif? <b>${formData.effectiveStatus || 'YES'}</b>`;
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {submittedRecruiters.map(r => (
-                  <div key={r.telegramId} className="flex items-center gap-3 p-3 rounded-2xl bg-slate-900 border border-slate-800/80">
+                  <div key={r.telegramId} className="flex items-center gap-3 p-3 rounded-2xl bg-slate-900 border border-slate-800/80 w-full min-w-0">
                     <div className="w-10 h-10 rounded-xl overflow-hidden bg-slate-800 shrink-0 border border-slate-700">
                       {r.photoUrl ? (
-                        <img src={r.photoUrl} alt={r.firstName} className="w-full h-full object-cover" />
+                        <img src={r.photoUrl} alt={r.firstName} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-slate-500 font-bold text-xs uppercase">
                           {r.firstName.slice(0, 2)}
                         </div>
                       )}
                     </div>
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <p className="text-xs font-bold text-slate-200 truncate">{r.firstName} {r.lastName}</p>
-                      <p className="text-[10px] text-slate-500 truncate">@{r.username || 'Tanpa username'}</p>
+                      <p className="text-[10px] text-slate-400 truncate">@{r.username || 'Tanpa username'}</p>
                     </div>
                   </div>
                 ))}
@@ -874,19 +906,19 @@ Status Target & Efektif? <b>${formData.effectiveStatus || 'YES'}</b>`;
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {unsubmittedRecruiters.map(r => (
-                  <div key={r.telegramId} className="flex items-center gap-3 p-3 rounded-2xl bg-slate-900 border border-slate-800/80">
+                  <div key={r.telegramId} className="flex items-center gap-3 p-3 rounded-2xl bg-slate-900 border border-slate-800/80 w-full min-w-0">
                     <div className="w-10 h-10 rounded-xl overflow-hidden bg-slate-800 shrink-0 border border-slate-700">
                       {r.photoUrl ? (
-                        <img src={r.photoUrl} alt={r.firstName} className="w-full h-full object-cover grayscale opacity-70" />
+                        <img src={r.photoUrl} alt={r.firstName} className="w-full h-full object-cover grayscale opacity-70" referrerPolicy="no-referrer" />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-slate-500 font-bold text-xs uppercase">
                           {r.firstName.slice(0, 2)}
                         </div>
                       )}
                     </div>
-                    <div className="min-w-0">
-                      <p className="text-xs font-bold text-slate-400 truncate">{r.firstName} {r.lastName}</p>
-                      <p className="text-[10px] text-slate-600 truncate">@{r.username || 'Tanpa username'}</p>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-bold text-slate-300 truncate">{r.firstName} {r.lastName}</p>
+                      <p className="text-[10px] text-slate-400 truncate">@{r.username || 'Tanpa username'}</p>
                     </div>
                   </div>
                 ))}

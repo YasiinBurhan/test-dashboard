@@ -2,36 +2,35 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper functions
-    function isSignedIn() {
-      return true;
-    }
-
-    // Allow read & write access to all collections to ensure seamless Telegram WebApp integration 
-    // and prevent any permission-denied splash screen crashes on the client.
-    
-    match /users/{telegramId} {
+    // 1. COLLECTION: USERS (Data Profil User & Recruiter)
+    match /users/{userId} {
       allow read, write: if true;
     }
 
+    // 2. COLLECTION: POSTS (Data Batch Posting Job)
+    match /posts/{postId} {
+      allow read, write: if true;
+    }
+
+    // 3. COLLECTION: LAPORAN HARIAN (Data Laporan Harian Metric Recruiter)
     match /laporan_harian/{reportId} {
       allow read, write: if true;
     }
 
+    // Fallback alias for daily_reports if used
     match /daily_reports/{reportId} {
       allow read, write: if true;
     }
 
+    // 4. COLLECTION: ANNOUNCEMENTS (Pengumuman & Notifikasi)
     match /announcements/{announcementId} {
       allow read, write: if true;
     }
 
+    // 5. COLLECTION: SETTINGS (Pengaturan Aplikasi & System Locks)
     match /settings/{settingId} {
-      allow read, write: if true;
-    }
-
-    match /posts/{postId} {
       allow read, write: if true;
     }
   }
 }
+

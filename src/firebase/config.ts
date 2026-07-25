@@ -23,11 +23,19 @@ if (!getApps().length) {
 }
 
 // Export Firestore database with experimental forceLongPolling for better Telegram WebApp compatibility
-// CRITICAL: We use the firestoreDatabaseId from the provisioned config
-export const db: Firestore = initializeFirestore(app, {
-  experimentalForceLongPolling: true,
-  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
-}, firebaseAppletConfig.firestoreDatabaseId);
+const dbId = firebaseAppletConfig.firestoreDatabaseId && firebaseAppletConfig.firestoreDatabaseId !== '(default)'
+  ? firebaseAppletConfig.firestoreDatabaseId
+  : undefined;
+
+export const db: Firestore = dbId
+  ? initializeFirestore(app, {
+      experimentalForceLongPolling: true,
+      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+    }, dbId)
+  : initializeFirestore(app, {
+      experimentalForceLongPolling: true,
+      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+    });
 
 export const auth: Auth = getAuth(app);
 

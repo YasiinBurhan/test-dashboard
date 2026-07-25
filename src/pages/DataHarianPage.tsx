@@ -55,6 +55,19 @@ import {
 } from 'lucide-react';
 import { triggerHaptic } from '../telegram/webapp';
 
+const getApiBaseUrl = () => {
+  if (import.meta.env.VITE_BACKEND_URL) {
+    return import.meta.env.VITE_BACKEND_URL;
+  }
+  const hostname = typeof window !== 'undefined' ? window.location.hostname : '';
+  if (hostname.endsWith('.vercel.app')) {
+    return '';
+  }
+  return 'https://wsswws.vercel.app';
+};
+
+const API_BASE_URL = getApiBaseUrl();
+
 // Channel Platform Real SVG Icons
 const compressMediaFile = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -249,7 +262,7 @@ const checkTelegramAvailability = async (cleanUsername: string): Promise<{
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-    const response = await fetch(`/api/check-telegram/${cleanUsername}`, { signal: controller.signal });
+    const response = await fetch(`${API_BASE_URL}/api/check-telegram/${cleanUsername}`, { signal: controller.signal });
     clearTimeout(timeoutId);
 
     if (!response.ok) {
@@ -474,7 +487,7 @@ const ReportListCard: React.FC<{
           </div>
           <div className="flex flex-col min-w-0">
             <span className="font-bold text-white text-xs truncate leading-tight flex items-center gap-1.5">
-              <span>{clean ? `@${clean}` : 'Pelamar'}</span>
+              <span>{applicantPhotoInfo?.name || applicantPhotoInfo?.firstName || (clean ? clean : 'Pelamar')}</span>
               {rep.videoUrl && (
                 <span className="text-[9px] px-1.5 py-0.2 bg-sky-500/10 text-sky-400 rounded-md border border-sky-500/20 font-medium shrink-0">
                   📷 Bukti
@@ -985,16 +998,19 @@ export const DataHarianPage: React.FC = () => {
 
   // Admin/Owner sees all reports, regular users see only theirs
   const userReports = useMemo(() => {
-    let baseReports = reports;
+    // Only display individual applicant entries (having whatsapp or uid9kucing), exclude Daily Summary reports
+    const applicantOnlyReports = reports.filter((r) => r.applicantWhatsapp || r.uid9Kucing);
+
+    let baseReports = applicantOnlyReports;
     if (!isAdminOrOwner) {
-      baseReports = reports.filter((r) => String(r.telegramId) === String(telegramId));
+      baseReports = applicantOnlyReports.filter((r) => String(r.telegramId) === String(telegramId));
     } else if (selectedRecruiter !== 'Semua') {
       const targetRecruiter = recruitersList.find(rec => rec.key === selectedRecruiter);
 
       const targetTgId = targetRecruiter?.telegramId ? String(targetRecruiter.telegramId) : (selectedRecruiter.match(/^\d+$/) ? selectedRecruiter : undefined);
       const targetCleanUname = targetRecruiter?.cleanUsername || selectedRecruiter.replace(/@/g, '').trim().toLowerCase();
 
-      baseReports = reports.filter((r) => {
+      baseReports = applicantOnlyReports.filter((r) => {
         const rTgId = r.telegramId ? String(r.telegramId) : undefined;
         const rCleanUname = (r.recruiterUsername || r.username || '').replace(/@/g, '').trim().toLowerCase();
 
@@ -1210,7 +1226,7 @@ export const DataHarianPage: React.FC = () => {
 
   // Check if submitted report today
   const hasReportToday = useMemo(() => {
-    return reports.some((r) => r.telegramId === telegramId && r.date === todayStr);
+    return reports.some((r) => r.telegramId === telegramId && r.date === todayStr && (r.applicantWhatsapp || r.uid9Kucing));
   }, [reports, telegramId, todayStr]);
 
   // Form State initialized with auto set values
@@ -1729,36 +1745,40 @@ export const DataHarianPage: React.FC = () => {
 
       await submitReport(reportData);
       
-      // Send to Telegram using real-time settings or fallback
+      // Send to Telegram using real-time settings or fallback (skip if T3/Dipromosikan)
       let telegramNotice = '';
-      try {
-        let currentSettings = settings;
-        if (!currentSettings || !currentSettings.telegramGroupId) {
-          try {
-            const sys = await getSystemSettings();
-            if (sys) currentSettings = sys;
-          } catch (sysErr) {
-            console.warn('[DataHarian] Fallback fetch system settings error:', sysErr);
+      if (targetGrup === 'T3') {
+        telegramNotice = ' (Status T0-MARK Dipromosikan: disimpan di sistem, tidak dikirim ke Telegram)';
+      } else {
+        try {
+          let currentSettings = settings;
+          if (!currentSettings || !currentSettings.telegramGroupId) {
+            try {
+              const sys = await getSystemSettings();
+              if (sys) currentSettings = sys;
+            } catch (sysErr) {
+              console.warn('[DataHarian] Fallback fetch system settings error:', sysErr);
+            }
           }
-        }
 
-        const groupId = currentSettings?.telegramGroupId || '';
-        let topicId = '';
-        if (targetGrup === 'T0') topicId = currentSettings?.telegramTopicT0 || '';
-        if (targetGrup === 'V0') topicId = currentSettings?.telegramTopicV0 || '';
-        if (targetGrup === 'T3') topicId = currentSettings?.telegramTopicT3 || '';
+          const groupId = currentSettings?.telegramGroupId || '';
+          let topicId = '';
+          if (targetGrup === 'T0') topicId = currentSettings?.telegramTopicT0 || '';
+          if (targetGrup === 'V0') topicId = currentSettings?.telegramTopicV0 || '';
+          if (targetGrup === 'RECRUITER') topicId = currentSettings?.telegramTopicRecruiter || '';
 
-        // Call our proxy server to send the message to Telegram
-        const res = await sendReportToTelegramApi(reportData, formData.videoUrl, groupId, topicId);
-        if (!res.success) {
-          console.error('Failed to send to telegram:', res.error);
-          telegramNotice = ` (Catatan Telegram: ${res.error})`;
-        } else {
-          telegramNotice = ' (Terkirim ke Telegram)';
+          // Call our proxy server to send the message to Telegram
+          const res = await sendReportToTelegramApi(reportData, formData.videoUrl, groupId, topicId);
+          if (!res.success) {
+            console.error('Failed to send to telegram:', res.error);
+            telegramNotice = ` (Catatan Telegram: ${res.error})`;
+          } else {
+            telegramNotice = ' (Terkirim ke Telegram)';
+          }
+        } catch (e) {
+          console.error('Error sending telegram notification:', e);
+          telegramNotice = ` (Error Telegram: ${e instanceof Error ? e.message : 'Koneksi gagal'})`;
         }
-      } catch (e) {
-        console.error('Error sending telegram notification:', e);
-        telegramNotice = ` (Error Telegram: ${e instanceof Error ? e.message : 'Koneksi gagal'})`;
       }
 
       const successMessage = `Data Harian pelamar berhasil disimpan!${telegramNotice ? telegramNotice : ' Tersinkron ke Telegram & Google Sheets.'}`;
@@ -2708,114 +2728,6 @@ export const DataHarianPage: React.FC = () => {
 
           {/* Sidebar / Live Summary & Guidelines (col-span-4 on laptop, 12 on mobile) */}
           <div className="lg:col-span-4 space-y-4">
-            {/* Live Report Preview Widget */}
-            <GlassCard className="border-slate-800/80 p-4 space-y-3.5 relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-24 h-24 bg-sky-500/5 rounded-full blur-xl pointer-events-none" />
-              
-              <div className="flex items-center gap-2 border-b border-slate-800 pb-2.5">
-                <div className="p-1.5 rounded-lg bg-sky-500/10 text-sky-400">
-                  <Sparkles className="w-4 h-4" />
-                </div>
-                <div>
-                  <h4 className="text-xs font-black text-white uppercase tracking-wider">Rangkuman Input Aktif</h4>
-                  <p className="text-[9px] text-slate-500">Pratinjau data secara real-time</p>
-                </div>
-              </div>
-
-              <div className="space-y-2 text-xs">
-                {/* Channel & Group */}
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="bg-slate-950/60 p-2 rounded-xl border border-slate-900">
-                    <span className="text-[8px] font-black text-slate-500 uppercase block mb-0.5">Channel</span>
-                    <span className="text-slate-200 font-bold flex items-center gap-1.5 truncate">
-                      <ChannelPlatformIcon id={formData.channel} className="w-3.5 h-3.5 shrink-0" />
-                      <span className="truncate">{CHANNELS.find(c => c.id === formData.channel)?.label || formData.channel || '-'}</span>
-                    </span>
-                  </div>
-                  <div className="bg-slate-950/60 p-2 rounded-xl border border-slate-900">
-                    <span className="text-[8px] font-black text-slate-500 uppercase block mb-0.5">Penempatan</span>
-                    <span className="text-purple-400 font-bold flex items-center gap-1.5">
-                      <Users className="w-3 h-3 shrink-0" />
-                      {formData.grup || 'T0'}
-                    </span>
-                  </div>
-                </div>
-
-                {/* UID & WA */}
-                <div className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-900 space-y-1.5">
-                  <div className="flex justify-between items-center">
-                    <span className="text-[8px] font-black text-slate-500 uppercase">UID 9Kucing</span>
-                    <span className="text-[9px] text-slate-400 font-mono">
-                      {formData.uid9Kucing ? `${formData.uid9Kucing.length} Digit` : 'Kosong'}
-                    </span>
-                  </div>
-                  <div className="text-slate-100 font-bold flex items-center gap-1.5 bg-slate-900/50 px-2 py-1 rounded-lg border border-slate-800 font-mono">
-                    <Hash className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                    {formData.uid9Kucing ? (
-                      <span className="text-amber-300 font-black tracking-wider text-xs sm:text-sm">{formData.uid9Kucing}</span>
-                    ) : (
-                      <span className="text-slate-500 italic text-[10px]">Belum diisi/di-scan</span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-900 space-y-1.5">
-                  <div className="flex justify-between items-center">
-                    <span className="text-[8px] font-black text-slate-500 uppercase">Nomor WhatsApp</span>
-                    <span className="text-[9px] text-slate-400 font-mono">WA</span>
-                  </div>
-                  <div className="text-slate-100 font-bold flex items-center gap-1.5 bg-slate-900/50 px-2 py-1 rounded-lg border border-slate-800 font-mono">
-                    <Phone className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                    {formData.applicantWhatsapp ? (
-                      <span className="text-emerald-400 font-black truncate text-[11px] sm:text-xs">{formData.applicantWhatsapp}</span>
-                    ) : (
-                      <span className="text-slate-500 italic text-[10px]">Menunggu input...</span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Telegram */}
-                <div className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-900 space-y-1.5">
-                  <div className="flex justify-between items-center">
-                    <span className="text-[8px] font-black text-slate-500 uppercase">Username Telegram</span>
-                    <span className="text-[9px] text-slate-400">Telegram</span>
-                  </div>
-                  <div className="text-slate-100 font-bold flex items-center gap-1.5 bg-slate-900/50 px-2 py-1 rounded-lg border border-slate-800">
-                    <Send className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-                    {formData.applicantTelegramUsername ? (
-                      <span className="text-sky-300 font-black truncate text-[11px] sm:text-xs">{formData.applicantTelegramUsername}</span>
-                    ) : (
-                      <span className="text-slate-500 italic text-[10px]">Opsional</span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Bukti Media Thumbnail */}
-                <div className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-900 space-y-2">
-                  <span className="text-[8px] font-black text-slate-500 uppercase block">Bukti yang Diupload</span>
-                  {formData.videoUrl ? (
-                    <div className="flex items-center gap-2.5 bg-slate-900/40 p-1.5 rounded-lg border border-slate-800">
-                      <div className="w-10 h-10 rounded-lg bg-black overflow-hidden border border-slate-800 flex items-center justify-center shrink-0">
-                        {formData.videoUrl.startsWith('data:image/') || formData.videoUrl.match(/\.(jpeg|jpg|png|webp|gif)($|\?)/i) ? (
-                          <img src={formData.videoUrl} alt="Bukti" className="w-full h-full object-cover animate-fade-in" />
-                        ) : (
-                          <video src={formData.videoUrl} className="w-full h-full object-cover" />
-                        )}
-                      </div>
-                      <div className="min-w-0">
-                        <span className="block text-[9px] font-bold text-emerald-400">Bukti Tersimpan ✅</span>
-                        <span className="block text-[8px] text-slate-500 truncate">Penyimpanan lokal aktif</span>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-center py-2.5 bg-slate-900/30 rounded-lg border border-dashed border-slate-800">
-                      <span className="text-[10px] text-slate-500 italic">Belum ada media bukti</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </GlassCard>
-
             {/* OCR Instructions Widget */}
             <GlassCard className="border-slate-800/80 p-4 space-y-3 relative overflow-hidden">
               <div className="absolute top-0 right-0 w-24 h-24 bg-amber-500/5 rounded-full blur-xl pointer-events-none" />

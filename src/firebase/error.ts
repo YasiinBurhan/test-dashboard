@@ -37,8 +37,8 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     friendlyMessage = 'Kueri Firestore membutuhkan indeks komposit.';
   } else if (rawMessage.includes('offline')) {
     friendlyMessage = 'Koneksi internet terganggu atau server tidak dapat dijangkau. Pastikan sinyal Anda stabil.';
-  } else if (rawMessage.includes('permission-denied')) {
-    friendlyMessage = 'Akses ditolak. Mohon hubungi admin jika masalah berlanjut.';
+  } else if (rawMessage.includes('permission') || rawMessage.includes('PERMISSION_DENIED') || rawMessage.includes('Missing or insufficient permissions')) {
+    friendlyMessage = 'Aturan Firestore (Firestore Rules) di proyek Firebase Anda belum mengizinkan akses. Silakan atur rules di Firebase Console.';
   } else if (rawMessage.includes('not-found')) {
     friendlyMessage = 'Data tidak ditemukan.';
   } else if (rawMessage.includes('already-exists')) {
@@ -62,7 +62,11 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     path,
   };
   
-  console.error('Firestore Operation Failed:', JSON.stringify(errInfo, null, 2));
+  if (rawMessage.includes('permission') || rawMessage.includes('PERMISSION_DENIED') || rawMessage.includes('Missing or insufficient permissions')) {
+    console.warn('Firestore Permission Notice for path:', path, '-> Please set rules in Firebase Console.');
+  } else {
+    console.error('Firestore Operation Failed:', JSON.stringify(errInfo, null, 2));
+  }
   
   // Throw the friendly message but keep the tech details in a property if needed
   const enhancedError = new Error(friendlyMessage);
