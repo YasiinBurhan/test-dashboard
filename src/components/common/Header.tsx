@@ -40,9 +40,9 @@ export const Header: React.FC<HeaderProps> = ({ title, showUserBadge = true }) =
     <>
       <header 
         style={{
-          backgroundColor: 'var(--tg-header-bg-color, var(--tg-bg-color, rgba(3, 7, 18, 0.95)))',
+          backgroundColor: 'var(--tg-header-bg-color, var(--tg-bg-color, #030712))',
           borderColor: 'var(--tg-secondary-bg-color, rgba(255, 255, 255, 0.1))',
-          paddingTop: 'calc(max(24px, var(--tg-safe-area-inset-top, env(safe-area-inset-top, 0px))) + 6px)',
+          paddingTop: 'calc(max(12px, var(--tg-safe-area-inset-top, env(safe-area-inset-top, 0px))) + 8px)',
           paddingBottom: '10px'
         }}
         className="sticky top-0 z-40 w-full backdrop-blur-xl border-b px-4 md:px-8 transition-colors duration-300"
@@ -109,3 +109,4 @@ export const Header: React.FC<HeaderProps> = ({ title, showUserBadge = true }) =
     </>
   );
 };
+
