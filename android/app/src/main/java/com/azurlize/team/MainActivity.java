@@ -19,8 +19,8 @@ public class MainActivity extends BridgeActivity {
         window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
         window.setStatusBarColor(Color.TRANSPARENT);
 
-        // Ensure edge-to-edge rendering without status bar obscuring
-        WindowCompat.setDecorFitsSystemWindows(window, false);
+        // Ensure decor fits system windows (so WebView content starts below status bar)
+        WindowCompat.setDecorFitsSystemWindows(window, true);
         WindowInsetsControllerCompat controller = new WindowInsetsControllerCompat(window, window.getDecorView());
         controller.setAppearanceLightStatusBars(false); // Bright white icons (clock, battery, signal) for dark theme
     }

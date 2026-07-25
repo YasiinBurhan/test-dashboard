@@ -95,6 +95,8 @@ export async function createDailyReport(
     note: formData.note || '',
     videoUrl: formData.videoUrl || '',
     applicantPhotoUrl: formData.applicantPhotoUrl || '',
+    isLate: formData.isLate || false,
+    fine: formData.fine || 0,
     createdAt: now
   };
 

@@ -1,12 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { Smartphone, PlusSquare, X, ChevronRight, MoreVertical, Share, Sparkles } from 'lucide-react';
+import { PlusSquare, X, ChevronRight, MoreVertical, Share, CheckCircle2 } from 'lucide-react';
 import { AddToHomeScreenModal } from './AddToHomeScreenModal';
+import appIconImg from '../../assets/images/azurlize_app_icon_1784976691348.jpg';
+import { isStandaloneApp } from '../../telegram/webapp';
 
 export const AddToHomeScreenNotice: React.FC = () => {
   const [isDismissed, setIsDismissed] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isInstalledStandalone, setIsInstalledStandalone] = useState(false);
 
   useEffect(() => {
+    setIsInstalledStandalone(isStandaloneApp());
     const dismissed = localStorage.getItem('azurlize_pwa_notice_dismissed');
     if (dismissed === 'true') {
       setIsDismissed(true);
@@ -22,13 +26,39 @@ export const AddToHomeScreenNotice: React.FC = () => {
     setIsModalOpen(true);
   };
 
+  // If opened directly from Home Screen Shortcut (Standalone PWA mode)
+  if (isInstalledStandalone) {
+    return (
+      <div className="flex items-center justify-between px-3.5 py-2.5 rounded-2xl bg-emerald-950/40 border border-emerald-500/30 backdrop-blur-md text-xs text-emerald-200 shadow-sm">
+        <div className="flex items-center gap-2.5">
+          <img 
+            src={appIconImg} 
+            alt="AzurLize App Icon" 
+            className="w-6 h-6 rounded-lg object-cover border border-emerald-400/40 shrink-0 shadow-sm" 
+          />
+          <div className="flex items-center gap-1.5 font-semibold text-white">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>Terbuka dari Beranda HP (Aplikasi Pintasan)</span>
+          </div>
+        </div>
+        <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold border border-emerald-500/30">
+          Versi Pintasan
+        </span>
+      </div>
+    );
+  }
+
   if (isDismissed) {
     return (
       <>
         {/* Compact pill banner when dismissed */}
         <div className="flex items-center justify-between px-3.5 py-2 rounded-2xl bg-slate-900/80 border border-sky-500/20 backdrop-blur-md text-xs text-slate-300">
           <div className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-sky-400 shrink-0" />
+            <img 
+              src={appIconImg} 
+              alt="AzurLize Icon" 
+              className="w-5 h-5 rounded-md object-cover border border-sky-500/30 shrink-0" 
+            />
             <span>Akses Cepat: <strong className="text-white">Tambah ke Beranda HP</strong></span>
           </div>
           <button
@@ -54,8 +84,12 @@ export const AddToHomeScreenNotice: React.FC = () => {
 
         <div className="flex items-start justify-between gap-3 relative z-10">
           <div className="flex items-start gap-3">
-            <div className="p-2.5 rounded-2xl bg-gradient-to-br from-sky-500 to-blue-600 text-white shadow-md shadow-sky-500/30 shrink-0 mt-0.5">
-              <Smartphone className="w-5 h-5" />
+            <div className="p-0.5 rounded-2xl bg-gradient-to-br from-sky-500 to-blue-600 shadow-lg shadow-sky-500/30 shrink-0 mt-0.5">
+              <img 
+                src={appIconImg} 
+                alt="AzurLize App Icon" 
+                className="w-10 h-10 rounded-xl object-cover border border-white/20"
+              />
             </div>
             <div className="space-y-1">
               <div className="flex items-center gap-2">
@@ -67,7 +101,7 @@ export const AddToHomeScreenNotice: React.FC = () => {
                 </span>
               </div>
               <p className="text-[11px] md:text-xs text-slate-300 leading-relaxed">
-                Buka bot lebih cepat! Klik menu <strong>titik tiga (⋮)</strong> di pojok kanan atas layar Telegram / browser ini, lalu pilih <strong className="text-sky-300">"Tambah ke Beranda"</strong> untuk memasang pintasan.
+                Buka bot lebih cepat! Klik menu <strong>titik tiga (⋮)</strong> di pojok kanan atas layar Telegram / browser ini, lalu pilih <strong className="text-sky-300">"Tambah ke Beranda"</strong> untuk memasang pintasan ikon AzurLize.
               </p>
             </div>
           </div>

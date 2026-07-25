@@ -487,11 +487,21 @@ const ReportListCard: React.FC<{
             )}
           </div>
           <div className="flex flex-col min-w-0">
-            <span className="font-bold text-white text-xs truncate leading-tight flex items-center gap-1.5">
+            <span className="font-bold text-white text-xs truncate leading-tight flex items-center gap-1.5 flex-wrap">
               <span>{applicantPhotoInfo?.name || applicantPhotoInfo?.firstName || (clean ? clean : 'Pelamar')}</span>
               {rep.videoUrl && (
-                <span className="text-[9px] px-1.5 py-0.2 bg-sky-500/10 text-sky-400 rounded-md border border-sky-500/20 font-medium shrink-0">
-                  📷 Bukti
+                <span className="text-[9px] px-1.5 py-0.2 bg-sky-500/10 text-sky-400 rounded-md border border-sky-500/20 font-medium shrink-0 flex items-center gap-1">
+                  🎥 Video Bukti
+                </span>
+              )}
+              {rep.posting !== undefined && rep.posting > 0 && (
+                <span className="text-[9px] px-1.5 py-0.2 bg-indigo-500/10 text-indigo-400 rounded-md border border-indigo-500/20 font-bold shrink-0 flex items-center gap-1">
+                  📦 {rep.posting} Posting
+                </span>
+              )}
+              {(rep.isLate || (rep.fine && rep.fine > 0)) && (
+                <span className="text-[9px] px-1.5 py-0.2 bg-rose-500/10 text-rose-400 rounded-md border border-rose-500/20 font-black shrink-0 flex items-center gap-1">
+                  ⚠️ Terlambat (Denda Rp {(rep.fine || 5000).toLocaleString('id-ID')})
                 </span>
               )}
             </span>
@@ -739,7 +749,7 @@ const ReportListCard: React.FC<{
                   <div className="pt-2 border-t border-slate-900/60 mt-1.5 space-y-1">
                     <div className="flex items-center justify-between">
                       <span className="text-slate-500 font-semibold uppercase text-[9px] sm:text-[10px] md:text-xs tracking-wider flex items-center gap-1">
-                        <span>🖼️ Foto / Bukti Pelamar</span>
+                        <span>🎥 Video Bukti Pelamar</span>
                       </span>
                       <button
                         type="button"
@@ -834,7 +844,7 @@ const ReportListCard: React.FC<{
           >
             <div className="flex items-center justify-between pb-2 border-b border-slate-800 px-1">
               <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                <span>🖼️ Foto / Bukti Pelamar</span>
+                <span>🎥 Video Bukti Pelamar</span>
                 <span className="text-[10px] text-slate-400 font-normal">({rep.applicantWhatsapp || 'Pelamar'})</span>
               </span>
               <button
@@ -872,7 +882,7 @@ export const DataHarianPage: React.FC = () => {
   const { userProfile, telegramUser } = useAuth();
   const { reports, submitReport, updateStatus, updatePermission, updateDetails, isLoading } = useReports();
   const [activeTab, setActiveTab] = useState<'formulir' | 'minggu_ini' | 'pemeriksaan' | 'arsip'>('formulir');
-  const [pemeriksaanFilter, setPemeriksaanFilter] = useState<'semua' | 'pending' | 'bekerja' | 'tidak_bekerja'>('semua');
+  const [pemeriksaanFilter, setPemeriksaanFilter] = useState<'pending' | 'bekerja' | 'tidak_bekerja'>('pending');
   const [activeDayTab, setActiveDayTab] = useState<'Semua' | 'Senin' | 'Selasa' | 'Rabu' | 'Kamis' | 'Jumat' | 'Sabtu' | 'Minggu'>('Semua');
   const [selectedRecruiter, setSelectedRecruiter] = useState<string>('Semua');
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -1066,6 +1076,14 @@ export const DataHarianPage: React.FC = () => {
     return reportsMingguIni.filter(r => r.date === targetDay.dateStr);
   }, [reportsMingguIni, activeDayTab, weekDays]);
 
+  const totalPostingMingguIni = useMemo(() => {
+    return reportsMingguIni.reduce((sum, r) => sum + (r.posting || 0), 0);
+  }, [reportsMingguIni]);
+
+  const totalPostingFilteredMingguIni = useMemo(() => {
+    return filteredReportsMingguIni.reduce((sum, r) => sum + (r.posting || 0), 0);
+  }, [filteredReportsMingguIni]);
+
   const getReportCountForDay = (dayName: string) => {
     if (dayName === 'Semua') return reportsMingguIni.length;
     const targetDay = weekDays.find(d => d.dayName === dayName);
@@ -1074,33 +1092,92 @@ export const DataHarianPage: React.FC = () => {
   };
 
   const reportsPemeriksaan = useMemo(() => {
-    return userReports.filter(r => r.date >= lastMondayStr && r.date < currentMondayStr);
+    return userReports.filter(r => {
+      // 1. Current week's reports are in 'reportsMingguIni', not here.
+      if (r.date >= currentMondayStr) {
+        return false;
+      }
+
+      // 2. Last week's reports are always in Pemeriksaan (can be Pending, ACC, or REJECT)
+      if (r.date >= lastMondayStr && r.date < currentMondayStr) {
+        return true;
+      }
+
+      // 3. Older reports are in Pemeriksaan if they were still active (ACC) or Pending
+      if (r.date < lastMondayStr) {
+        if (r.result === 'REJECT') {
+          // Only show in Pemeriksaan if rejected this week
+          return !!(r.updatedAt && r.updatedAt >= currentMondayStr);
+        }
+        return true;
+      }
+
+      return false;
+    });
   }, [userReports, currentMondayStr, lastMondayStr]);
 
   const countPemeriksaanPending = useMemo(() => {
-    return reportsPemeriksaan.filter(r => !r.result || r.result === 'Pending').length;
-  }, [reportsPemeriksaan]);
+    return reportsPemeriksaan.filter(r => {
+      const isCheckedThisWeek = !!(r.updatedAt && r.updatedAt >= currentMondayStr);
+      if (isCheckedThisWeek) {
+        return !r.result || r.result === 'Pending';
+      }
+      return true; // Auto goes to Pending if not checked this week
+    }).length;
+  }, [reportsPemeriksaan, currentMondayStr]);
 
   const countPemeriksaanBekerja = useMemo(() => {
-    return reportsPemeriksaan.filter(r => r.result === 'ACC').length;
-  }, [reportsPemeriksaan]);
+    return reportsPemeriksaan.filter(r => {
+      const isCheckedThisWeek = !!(r.updatedAt && r.updatedAt >= currentMondayStr);
+      return isCheckedThisWeek && r.result === 'ACC';
+    }).length;
+  }, [reportsPemeriksaan, currentMondayStr]);
 
   const countPemeriksaanTidakBekerja = useMemo(() => {
-    return reportsPemeriksaan.filter(r => r.result === 'REJECT').length;
-  }, [reportsPemeriksaan]);
+    return reportsPemeriksaan.filter(r => {
+      const isCheckedThisWeek = !!(r.updatedAt && r.updatedAt >= currentMondayStr);
+      return isCheckedThisWeek && r.result === 'REJECT';
+    }).length;
+  }, [reportsPemeriksaan, currentMondayStr]);
 
   const filteredReportsPemeriksaan = useMemo(() => {
     return reportsPemeriksaan.filter(r => {
-      if (pemeriksaanFilter === 'pending') return !r.result || r.result === 'Pending';
-      if (pemeriksaanFilter === 'bekerja') return r.result === 'ACC';
-      if (pemeriksaanFilter === 'tidak_bekerja') return r.result === 'REJECT';
-      return true;
+      const isCheckedThisWeek = !!(r.updatedAt && r.updatedAt >= currentMondayStr);
+      const effectiveStatus = isCheckedThisWeek ? (r.result || 'Pending') : 'Pending';
+
+      if (pemeriksaanFilter === 'pending') return effectiveStatus === 'Pending';
+      if (pemeriksaanFilter === 'bekerja') return effectiveStatus === 'ACC';
+      if (pemeriksaanFilter === 'tidak_bekerja') return effectiveStatus === 'REJECT';
+      return false;
     });
-  }, [reportsPemeriksaan, pemeriksaanFilter]);
+  }, [reportsPemeriksaan, pemeriksaanFilter, currentMondayStr]);
 
   const reportsArsip = useMemo(() => {
-    return userReports.filter(r => r.date < lastMondayStr);
-  }, [userReports, lastMondayStr]);
+    return userReports.filter(r => {
+      // 1. Current week's reports are in 'reportsMingguIni'
+      if (r.date >= currentMondayStr) {
+        return false;
+      }
+      
+      // 2. Last week's reports go to Arsip if they were REJECT and not rejected this week (i.e. rejected in the past week)
+      if (r.date >= lastMondayStr && r.date < currentMondayStr) {
+        if (r.result === 'REJECT') {
+          return !(r.updatedAt && r.updatedAt >= currentMondayStr);
+        }
+        return false;
+      }
+      
+      // 3. Older reports go to Arsip if they are REJECT and not rejected this week
+      if (r.date < lastMondayStr) {
+        if (r.result === 'REJECT') {
+          return !(r.updatedAt && r.updatedAt >= currentMondayStr);
+        }
+        return false;
+      }
+      
+      return false;
+    });
+  }, [userReports, lastMondayStr, currentMondayStr]);
 
   const archivedWeeks = useMemo(() => {
     const groups: Record<string, DailyReport[]> = {};
@@ -1277,7 +1354,21 @@ export const DataHarianPage: React.FC = () => {
     setIsPushingNotif(true);
     try {
       const senderName = userProfile?.firstName || userProfile?.username || 'Admin';
-      await sendAuditCompleteBroadcast(senderName);
+      
+      // Get unique dates from reportsPemeriksaan
+      const uniqueDates = Array.from(new Set(reportsPemeriksaan.map(r => r.date).filter(Boolean))) as string[];
+      uniqueDates.sort((a, b) => a.localeCompare(b));
+      
+      let dateString = '';
+      if (uniqueDates.length === 1) {
+        dateString = formatDateWithDay(uniqueDates[0]);
+      } else if (uniqueDates.length > 1) {
+        const firstDateFormatted = formatDateWithDay(uniqueDates[0]);
+        const lastDateFormatted = formatDateWithDay(uniqueDates[uniqueDates.length - 1]);
+        dateString = `${firstDateFormatted} s/d ${lastDateFormatted}`;
+      }
+
+      await sendAuditCompleteBroadcast(senderName, dateString);
       showAlert('success', 'Notifikasi Terkirim', 'Push notifikasi bahwa pemeriksaan rekrutan telah selesai berhasil dikirimkan ke seluruh Recruiter!');
     } catch (err) {
       console.error('Error sending push notification:', err);
@@ -1673,8 +1764,8 @@ export const DataHarianPage: React.FC = () => {
     setSuccessMsg(null);
 
     if (!formData.videoUrl) {
-      setError('Bukti Foto / Video pelamar wajib diupload terlebih dahulu.');
-      showAlert('warning', 'Video / Bukti Wajib Diupload ⚠️', 'Harap upload video atau foto bukti pelamar terlebih dahulu sebelum mengirimkan formulir!');
+      setError('Video bukti pelamar wajib diupload terlebih dahulu.');
+      showAlert('warning', 'Video Bukti Wajib Diupload ⚠️', 'Harap upload video bukti pelamar terlebih dahulu sebelum mengirimkan formulir!');
       setFormStep('upload');
       return;
     }
@@ -2055,7 +2146,7 @@ export const DataHarianPage: React.FC = () => {
             }`}
           >
             <Video className="w-3.5 h-3.5" />
-            1. Upload Video / Bukti {formData.videoUrl ? '✅' : '⚠️'}
+            1. Upload Video Bukti {formData.videoUrl ? '✅' : '⚠️'}
           </button>
 
           <ArrowRight className="w-3 h-3 text-slate-600 shrink-0" />
@@ -2064,8 +2155,8 @@ export const DataHarianPage: React.FC = () => {
             type="button"
             onClick={() => {
               if (!formData.videoUrl) {
-                setError('Bukti Foto / Video pelamar wajib diupload terlebih dahulu.');
-                showAlert('warning', 'Upload Video / Bukti Dulu ⚠️', 'Harap upload video atau foto bukti pelamar terlebih dahulu!');
+                setError('Video bukti pelamar wajib diupload terlebih dahulu.');
+                showAlert('warning', 'Upload Video Bukti Dulu ⚠️', 'Harap upload video bukti pelamar terlebih dahulu!');
                 setFormStep('upload');
                 return;
               }
@@ -2106,31 +2197,35 @@ export const DataHarianPage: React.FC = () => {
                 </div>
               </div>
 
-              {/* Upload Video / Foto Bukti FIRST */}
+              {/* Upload Video Bukti FIRST */}
               <div className="p-4 rounded-2xl border border-slate-800 bg-slate-950/40 space-y-3">
                 <label className="text-xs font-black tracking-wider text-slate-400 uppercase flex items-center gap-1.5">
-                  <span>📹</span>
-                  <span>Bukti Foto / Video Pelamar</span>
-                  <span className="text-[9px] bg-rose-500/20 text-rose-300 px-2.5 py-0.5 rounded-full font-black border border-rose-500/30 uppercase tracking-widest ml-auto">WAJIB UPLOAD DULU</span>
+                  <span>🎥</span>
+                  <span>Video Bukti Pelamar</span>
+                  <span className="text-[9px] bg-rose-500/20 text-rose-300 px-2.5 py-0.5 rounded-full font-black border border-rose-500/30 uppercase tracking-widest ml-auto">WAJIB UPLOAD VIDEO DULU</span>
                 </label>
                 
                 <div className="flex flex-col sm:flex-row items-center gap-4">
                   <div className="w-full sm:w-1/2">
                     <input
                       type="file"
-                      accept="image/*,video/*"
+                      accept="video/*"
                       id="bukti-video-input"
                       onChange={async (e) => {
                         const file = e.target.files?.[0];
                         if (file) {
+                          if (!file.type.startsWith('video/')) {
+                            showAlert('error', 'Format File Salah ⚠️', 'Hanya diperbolehkan mengupload file video bukti pelamar (format video). Foto tidak diizinkan!');
+                            return;
+                          }
                           try {
                             const dataUrl = await compressMediaFile(file);
                             setFormData((prev) => ({ ...prev, videoUrl: dataUrl }));
                             setError(null);
-                            showAlert('success', 'Bukti Diupload ✅', 'Foto/Video bukti pelamar berhasil diproses dan disimpan!');
+                            showAlert('success', 'Video Bukti Diupload ✅', 'Video bukti pelamar berhasil diproses dan disimpan!');
                           } catch (err: any) {
                             console.error('Error processing media file:', err);
-                            showAlert('error', 'Gagal Memproses File', err.message || 'Gagal memproses file foto/video.');
+                            showAlert('error', 'Gagal Memproses File', err.message || 'Gagal memproses file video bukti.');
                           }
                         }
                       }}
@@ -2140,9 +2235,9 @@ export const DataHarianPage: React.FC = () => {
                       htmlFor="bukti-video-input"
                       className="flex flex-col items-center justify-center border-2 border-dashed border-slate-800 hover:border-sky-500/50 bg-slate-900/60 hover:bg-slate-900/90 rounded-2xl p-5 text-center cursor-pointer transition-all group w-full"
                     >
-                      <span className="text-2xl mb-1.5 group-hover:scale-110 transition-transform duration-200">📹</span>
-                      <span className="text-xs font-bold text-slate-200">Pilih / Seret Video atau Foto</span>
-                      <span className="text-[10px] text-slate-500 font-medium mt-0.5">Format video (mp4) atau foto (jpg, png)</span>
+                      <span className="text-2xl mb-1.5 group-hover:scale-110 transition-transform duration-200">🎥</span>
+                      <span className="text-xs font-bold text-slate-200">Pilih / Upload Video Bukti Pelamar</span>
+                      <span className="text-[10px] text-slate-400 font-medium mt-0.5">Format video (mp4, webm, mov). Foto tidak diizinkan.</span>
                     </label>
                   </div>
 
@@ -2166,7 +2261,7 @@ export const DataHarianPage: React.FC = () => {
                           type="button"
                           onClick={() => {
                             setFormData({ ...formData, videoUrl: undefined });
-                            showAlert('warning', 'Bukti Dihapus', 'File bukti video/foto telah dihapus.');
+                            showAlert('warning', 'Video Bukti Dihapus', 'File video bukti pelamar telah dihapus.');
                           }}
                           className="absolute top-2 right-2 p-1.5 rounded-xl bg-rose-500 text-white hover:bg-rose-600 transition-colors shadow-md text-xs font-bold flex items-center gap-1 z-10"
                         >
@@ -2175,8 +2270,8 @@ export const DataHarianPage: React.FC = () => {
                       </div>
                     ) : (
                       <div className="rounded-2xl border border-dashed border-slate-800/80 bg-slate-900/20 aspect-video flex flex-col items-center justify-center text-center p-4 w-full">
-                        <span className="text-xl text-slate-600 mb-1">📹</span>
-                        <p className="text-xs text-slate-500 font-medium">Belum ada video/foto bukti yang dipilih.</p>
+                        <span className="text-xl text-slate-600 mb-1">🎥</span>
+                        <p className="text-xs text-slate-500 font-medium">Belum ada video bukti pelamar yang dipilih.</p>
                       </div>
                     )}
                   </div>
@@ -2190,8 +2285,8 @@ export const DataHarianPage: React.FC = () => {
                   fullWidth
                   onClick={() => {
                     if (!formData.videoUrl) {
-                      setError('Bukti Foto / Video pelamar wajib diupload terlebih dahulu.');
-                      showAlert('warning', 'Video / Bukti Belum Diupload ⚠️', 'Harap upload video atau foto bukti pelamar terlebih dahulu sebelum melanjutkan ke pengisian data!');
+                      setError('Video bukti pelamar wajib diupload terlebih dahulu.');
+                      showAlert('warning', 'Video Bukti Belum Diupload ⚠️', 'Harap upload video bukti pelamar terlebih dahulu sebelum melanjutkan ke pengisian data!');
                       return;
                     }
                     setError(null);
@@ -2793,6 +2888,11 @@ export const DataHarianPage: React.FC = () => {
                 </span>
               </div>
               <div className="flex items-center gap-2">
+                <span className="text-[10px] bg-amber-500/10 text-amber-300 px-2.5 py-0.5 rounded-full font-bold border border-amber-500/20">
+                  {activeDayTab === 'Semua' 
+                    ? `Total Postingan: ${totalPostingMingguIni}` 
+                    : `Postingan: ${totalPostingFilteredMingguIni}`}
+                </span>
                 <span className="text-[10px] bg-slate-800 text-slate-300 px-2.5 py-0.5 rounded-full font-bold">
                   {activeDayTab === 'Semua' 
                     ? `Total ${reportsMingguIni.length}` 
@@ -2895,71 +2995,56 @@ export const DataHarianPage: React.FC = () => {
                 </button>
               )}
 
-              {/* Sub-tabs: Semua, Pending, Bekerja, Tidak Bekerja */}
+              {/* Sub-tabs: Pending, Bekerja, Tidak Bekerja */}
               <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800 gap-1 overflow-x-auto no-scrollbar shrink-0">
-              <button
-                type="button"
-                onClick={() => {
-                  setPemeriksaanFilter('semua');
-                  setCurrentPage(1);
-                  triggerHaptic('selection');
-                }}
-                className={`py-1.5 px-3 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
-                  pemeriksaanFilter === 'semua'
-                    ? 'bg-slate-800 text-white border border-slate-700 shadow-sm'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
-                }`}
-              >
-                <span>Semua ({reportsPemeriksaan.length})</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setPemeriksaanFilter('pending');
-                  setCurrentPage(1);
-                  triggerHaptic('selection');
-                }}
-                className={`py-1.5 px-3 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
-                  pemeriksaanFilter === 'pending'
-                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
-                }`}
-              >
-                <span>Pending ({countPemeriksaanPending})</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setPemeriksaanFilter('bekerja');
-                  setCurrentPage(1);
-                  triggerHaptic('selection');
-                }}
-                className={`py-1.5 px-3 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
-                  pemeriksaanFilter === 'bekerja'
-                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
-                }`}
-              >
-                <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                <span>Bekerja ({countPemeriksaanBekerja})</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setPemeriksaanFilter('tidak_bekerja');
-                  setCurrentPage(1);
-                  triggerHaptic('selection');
-                }}
-                className={`py-1.5 px-3 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
-                  pemeriksaanFilter === 'tidak_bekerja'
-                    ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 shadow-sm'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
-                }`}
-              >
-                <UserX className="w-3 h-3 text-rose-400" />
-                <span>Tidak Bekerja ({countPemeriksaanTidakBekerja})</span>
-              </button>
-            </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPemeriksaanFilter('pending');
+                    setCurrentPage(1);
+                    triggerHaptic('selection');
+                  }}
+                  className={`py-1.5 px-3 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                    pemeriksaanFilter === 'pending'
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
+                  }`}
+                >
+                  <span>Pending ({countPemeriksaanPending})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPemeriksaanFilter('bekerja');
+                    setCurrentPage(1);
+                    triggerHaptic('selection');
+                  }}
+                  className={`py-1.5 px-3 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                    pemeriksaanFilter === 'bekerja'
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
+                  }`}
+                >
+                  <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                  <span>Bekerja ({countPemeriksaanBekerja})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPemeriksaanFilter('tidak_bekerja');
+                    setCurrentPage(1);
+                    triggerHaptic('selection');
+                  }}
+                  className={`py-1.5 px-3 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                    pemeriksaanFilter === 'tidak_bekerja'
+                      ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
+                  }`}
+                >
+                  <UserX className="w-3 h-3 text-rose-400" />
+                  <span>Tidak Bekerja ({countPemeriksaanTidakBekerja})</span>
+                </button>
+              </div>
           </div>
           </div>
 
@@ -3150,10 +3235,10 @@ export const DataHarianPage: React.FC = () => {
               </button>
             </div>
 
-            {/* Foto/Video Bukti Preview */}
+            {/* Video Bukti Preview */}
             <div className="space-y-2">
               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
-                <span>🖼️ Bukti Foto / Video</span>
+                <span>🎥 Video Bukti Pelamar</span>
               </span>
               {formData.videoUrl ? (
                 <div className="relative rounded-2xl overflow-hidden border border-slate-800/80 bg-black aspect-video max-h-48 flex items-center justify-center shadow-inner">
@@ -3173,7 +3258,7 @@ export const DataHarianPage: React.FC = () => {
                 </div>
               ) : (
                 <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-950/40 p-4 text-center text-xs text-slate-500">
-                  Tidak ada bukti foto / video yang dilampirkan.
+                  Tidak ada video bukti pelamar yang dilampirkan.
                 </div>
               )}
             </div>

@@ -84,6 +84,20 @@ export const LaporanHarianPage: React.FC = () => {
     });
   }, [reports, formData.date, effectiveTelegramId]);
 
+  const currentWeekReports = useMemo(() => {
+    return reports.filter(
+      r =>
+        r.telegramId === effectiveTelegramId &&
+        !r.applicantWhatsapp &&
+        !r.uid9Kucing &&
+        getWIBMondayOfDate(r.date) === getWIBMondayOfDate(getWIBDate())
+    );
+  }, [reports, effectiveTelegramId]);
+
+  const totalPostingCurrentWeek = useMemo(() => {
+    return currentWeekReports.reduce((sum, r) => sum + (r.posting || 0), 0);
+  }, [currentWeekReports]);
+
   // Auto-reset Izin status if they already had Izin this week and are not Admin/Owner
   useEffect(() => {
     if (alreadyHasIzinThisWeek && !isAdminOrOwner && formData.permission === 1) {
@@ -192,8 +206,8 @@ export const LaporanHarianPage: React.FC = () => {
   }, [nowWib]);
 
 
-  // Lock status: locked if past 10:00 WIB and NOT Admin/Owner
-  const isLocked = nowWib.isPast10 && !isAdminOrOwner;
+  // Lock status: we no longer lock the form completely, we allow late submissions with a fine of 5000
+  const isLocked = false;
 
   // Subscribe to system settings for Telegram group and topic IDs
   useEffect(() => {
@@ -300,10 +314,6 @@ export const LaporanHarianPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isLocked) {
-      setError('Formulir harian telah terkunci karena sudah melewati batas waktu pukul 10.00 WIB.');
-      return;
-    }
 
     if (!formData.date) {
       setError('Tanggal wajib diisi.');
@@ -315,13 +325,20 @@ export const LaporanHarianPage: React.FC = () => {
       return;
     }
 
+    const isLateSubmission = nowWib.isPast10;
+    const finalReportData = {
+      ...formData,
+      isLate: isLateSubmission,
+      fine: isLateSubmission ? 5000 : 0
+    };
+
     setError(null);
     setSuccessMsg(null);
     setIsSubmitting(true);
 
     try {
-      const reportText = generateReportText();
-      const newReport = await submitReport(formData);
+      const reportText = generateReportText(isLateSubmission);
+      const newReport = await submitReport(finalReportData);
 
       // Fetch system settings as fallback if state settings is missing or incomplete
       let currentSettings = settings;
@@ -388,7 +405,7 @@ export const LaporanHarianPage: React.FC = () => {
     return dateStr;
   };
 
-  const generateReportText = () => {
+  const generateReportText = (isLateSubmission: boolean = false) => {
     const rawUsername = userProfile?.username || telegramUser?.username || 'Recruiter';
     const username = rawUsername.replace(/^@/, '');
 
@@ -401,7 +418,7 @@ Jumlah pelamar yang disetujui: <b>${formData.quality || 0}</b>
 Jumlah postingan yang disubmit: <b>${formData.posting || 0}</b>
 
 Izin tidak bekerja? <b>${formData.permission === 1 ? 'YA (IZIN)' : 'TIDAK (AKTIF)'}</b>
-Status Target & Efektif? <b>${formData.effectiveStatus || 'YES'}</b>`;
+Status Target & Efektif? <b>${formData.effectiveStatus || 'YES'}</b>${isLateSubmission ? '\nTerlambat? <b>YA (DENDA Rp 5.000)</b>' : ''}`;
   };
 
   return (
@@ -766,9 +783,13 @@ Status Target & Efektif? <b>${formData.effectiveStatus || 'YES'}</b>`;
               <div className="p-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20">
                 <Calendar className="w-5 h-5 text-indigo-400" />
               </div>
-              <div>
+              <div className="flex-1">
                 <h3 className="text-sm font-bold text-white">Laporan Minggu Ini</h3>
                 <p className="text-[10px] text-slate-500">Daftar laporan Anda untuk minggu ini.</p>
+              </div>
+              <div className="text-right shrink-0 bg-indigo-500/10 border border-indigo-500/20 px-3 py-1 rounded-xl">
+                <span className="block text-[8px] font-black uppercase text-indigo-300 tracking-wider">Total Postingan</span>
+                <span className="text-base font-black text-white">{totalPostingCurrentWeek}</span>
               </div>
             </div>
             
@@ -780,12 +801,22 @@ Status Target & Efektif? <b>${formData.effectiveStatus || 'YES'}</b>`;
                   <div key={idx} className="p-3 rounded-2xl bg-slate-900/50 border border-slate-800/80 flex items-center justify-between">
                     <div className="flex flex-col">
                       <span className="text-[10px] font-bold text-slate-400">{formatDateDisplay(r.date)}</span>
-                      <div className="flex items-center gap-2 mt-0.5">
+                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                         <span className="text-xs font-bold text-white">{r.visit} Visit</span>
                         <span className="text-slate-700">•</span>
                         <span className="text-xs font-bold text-sky-400">{r.applicant} Data</span>
                         <span className="text-slate-700">•</span>
                         <span className="text-xs font-bold text-emerald-400">{r.quality} ACC</span>
+                        <span className="text-slate-700">•</span>
+                        <span className="text-xs font-bold text-indigo-400">{r.posting || 0} Posting</span>
+                        {(r.isLate || (r.fine && r.fine > 0)) && (
+                          <>
+                            <span className="text-slate-700">•</span>
+                            <span className="text-xs font-extrabold text-rose-400 flex items-center gap-0.5" title="Terlambat Kirim Laporan">
+                              ⚠️ Terlambat (Denda Rp {(r.fine || 5000).toLocaleString('id-ID')})
+                            </span>
+                          </>
+                        )}
                       </div>
                     </div>
                     <div className="flex flex-col items-end">
@@ -834,12 +865,22 @@ Status Target & Efektif? <b>${formData.effectiveStatus || 'YES'}</b>`;
                   <div key={idx} className="p-3 rounded-2xl bg-slate-900/50 border border-slate-800/80 flex items-center justify-between">
                     <div className="flex flex-col">
                       <span className="text-[10px] font-bold text-slate-400">{formatDateDisplay(r.date)}</span>
-                      <div className="flex items-center gap-2 mt-0.5">
+                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                         <span className="text-xs font-bold text-white">{r.visit} Visit</span>
                         <span className="text-slate-700">•</span>
                         <span className="text-xs font-bold text-sky-400">{r.applicant} Data</span>
                         <span className="text-slate-700">•</span>
                         <span className="text-xs font-bold text-emerald-400">{r.quality} ACC</span>
+                        <span className="text-slate-700">•</span>
+                        <span className="text-xs font-bold text-indigo-400">{r.posting || 0} Posting</span>
+                        {(r.isLate || (r.fine && r.fine > 0)) && (
+                          <>
+                            <span className="text-slate-700">•</span>
+                            <span className="text-xs font-extrabold text-rose-400 flex items-center gap-0.5" title="Terlambat Kirim Laporan">
+                              ⚠️ Terlambat (Denda Rp {(r.fine || 5000).toLocaleString('id-ID')})
+                            </span>
+                          </>
+                        )}
                       </div>
                     </div>
                     <div className="flex flex-col items-end">

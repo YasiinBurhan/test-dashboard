@@ -70,7 +70,10 @@ export function subscribeToNotifications(
   onUpdate: (notifs: AppNotification[]) => void,
   onError?: (error: Error) => void
 ): () => void {
-  requestNotificationPermission();
+  const isAdminOrOwner = userRole === 'Admin' || userRole === 'Owner';
+  if (isAdminOrOwner) {
+    requestNotificationPermission();
+  }
 
   const notifsRef = collection(db, COLLECTION_NAME);
   // Get recent 100 notifications ordered by createdAt desc
@@ -110,16 +113,18 @@ export function subscribeToNotifications(
       filtered.forEach((n) => notifiedNotifIds.add(n.id));
       isFirstLoad = false;
     } else {
-      // Trigger system notification for new unread notifications
-      filtered.forEach((notif) => {
-        if (!notifiedNotifIds.has(notif.id)) {
-          notifiedNotifIds.add(notif.id);
-          const isUnread = !notif.readBy || !notif.readBy.includes(userTelegramId);
-          if (isUnread) {
-            triggerSystemNotification(notif.title, notif.message);
+      // Trigger browser system push notification ONLY for Admin & Owner
+      if (isAdminOrOwner) {
+        filtered.forEach((notif) => {
+          if (!notifiedNotifIds.has(notif.id)) {
+            notifiedNotifIds.add(notif.id);
+            const isUnread = !notif.readBy || !notif.readBy.includes(userTelegramId);
+            if (isUnread) {
+              triggerSystemNotification(notif.title, notif.message);
+            }
           }
-        }
-      });
+        });
+      }
     }
 
     onUpdate(filtered);
@@ -168,11 +173,15 @@ export async function deleteNotification(notificationId: string): Promise<void> 
   }
 }
 
-export async function sendAuditCompleteBroadcast(senderName: string): Promise<void> {
+export async function sendAuditCompleteBroadcast(senderName: string, dateString?: string): Promise<void> {
+  const messageText = dateString
+    ? `Pemeriksaan data rekrutan tanggal ${dateString} telah selesai dilakukan oleh Admin/Owner. Silakan cek hasil status rekrutan Anda.`
+    : 'Pemeriksaan data rekrutan telah selesai dilakukan oleh Admin/Owner. Silakan cek hasil status rekrutan Anda.';
+
   await createNotification({
     targetRole: 'ALL',
     title: 'Pemeriksaan Rekrutan Selesai! ✅',
-    message: 'Pemeriksaan data rekrutan minggu ini telah selesai dilakukan oleh Admin/Owner. Silakan cek hasil status rekrutan Anda.',
+    message: messageText,
     type: 'AUDIT_COMPLETE',
     senderName: senderName || 'Admin'
   });

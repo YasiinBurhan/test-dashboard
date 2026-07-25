@@ -5,6 +5,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { NotificationDrawer } from './NotificationDrawer';
 import { Bell } from 'lucide-react';
 import { subscribeToNotifications } from '../../firebase/services/notificationService';
+import { isTelegramEnvironment, isStandaloneApp } from '../../telegram/webapp';
 
 interface HeaderProps {
   title?: string;
@@ -15,9 +16,24 @@ export const Header: React.FC<HeaderProps> = ({ title, showUserBadge = true }) =
   const { userProfile, telegramUser } = useAuth();
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [isTelegramBotMode, setIsTelegramBotMode] = useState(false);
 
   const userTelegramId = userProfile?.telegramId || (telegramUser?.id ? String(telegramUser.id) : '');
   const userRole = userProfile?.role || 'Recruiter';
+
+  useEffect(() => {
+    // Detect if running inside Telegram Mini App vs Standalone PWA / Web Browser
+    const checkMode = () => {
+      const inTelegram = isTelegramEnvironment();
+      const standalone = isStandaloneApp();
+      // If inside Telegram WebApp and NOT standalone home screen shortcut
+      setIsTelegramBotMode(inTelegram && !standalone);
+    };
+
+    checkMode();
+    window.addEventListener('resize', checkMode);
+    return () => window.removeEventListener('resize', checkMode);
+  }, []);
 
   useEffect(() => {
     if (!userTelegramId) return;
@@ -42,10 +58,11 @@ export const Header: React.FC<HeaderProps> = ({ title, showUserBadge = true }) =
         style={{
           backgroundColor: 'var(--tg-header-bg-color, var(--tg-bg-color, #030712))',
           borderColor: 'var(--tg-secondary-bg-color, rgba(255, 255, 255, 0.1))',
-          paddingTop: 'calc(max(12px, var(--tg-safe-area-inset-top, env(safe-area-inset-top, 0px))) + 8px)',
-          paddingBottom: '10px'
+          paddingTop: '12px',
+          paddingBottom: '12px',
+          top: 'var(--tg-safe-area-inset-top, env(safe-area-inset-top, 0px))'
         }}
-        className="sticky top-0 z-40 w-full backdrop-blur-xl border-b px-4 md:px-8 transition-colors duration-300"
+        className="sticky z-40 w-full backdrop-blur-xl border-b px-4 md:px-8 transition-colors duration-300"
       >
         <div className="w-full max-w-7xl mx-auto flex items-center justify-between gap-3">
 

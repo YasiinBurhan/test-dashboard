@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { GlassCard } from './GlassCard';
-import { X, PlusSquare, Smartphone, Check, Share, MoreVertical } from 'lucide-react';
+import { X, PlusSquare, Check, Share, MoreVertical } from 'lucide-react';
+import appIconImg from '../../assets/images/azurlize_app_icon_1784976691348.jpg';
 
 interface AddToHomeScreenModalProps {
   isOpen: boolean;
@@ -41,9 +42,13 @@ export const AddToHomeScreenModal: React.FC<AddToHomeScreenModalProps> = ({ isOp
       <GlassCard className="max-w-md w-full p-0 border-sky-500/30 overflow-hidden shadow-2xl">
         {/* Modal Header */}
         <div className="p-4 md:p-5 border-b border-slate-800 bg-slate-900/90 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-sky-500/10 text-sky-400 border border-sky-500/20">
-              <PlusSquare className="w-5 h-5" />
+          <div className="flex items-center gap-3">
+            <div className="p-0.5 rounded-xl bg-gradient-to-br from-sky-500 to-blue-600 shrink-0">
+              <img
+                src={appIconImg}
+                alt="AzurLize Logo"
+                className="w-8 h-8 rounded-lg object-cover"
+              />
             </div>
             <div>
               <h3 className="text-base font-bold text-white tracking-tight">Tambah ke Beranda</h3>
@@ -60,13 +65,23 @@ export const AddToHomeScreenModal: React.FC<AddToHomeScreenModalProps> = ({ isOp
 
         {/* Modal Body */}
         <div className="p-5 space-y-4 text-xs text-slate-300">
+          {/* App Preview Card */}
+          <div className="p-3.5 rounded-2xl bg-slate-900/90 border border-slate-800 flex items-center gap-3.5 shadow-inner">
+            <img
+              src={appIconImg}
+              alt="AzurLize App Icon"
+              className="w-12 h-12 rounded-2xl object-cover shadow-lg shadow-sky-500/20 border border-sky-500/40 shrink-0"
+            />
+            <div>
+              <h4 className="text-xs font-bold text-white">AzurLize Recruitment Platform</h4>
+              <p className="text-[11px] text-slate-400">AzurLizeTeam Official Mini App</p>
+            </div>
+          </div>
+
           {deferredPrompt ? (
             <div className="text-center space-y-3 py-2">
-              <div className="w-12 h-12 rounded-2xl bg-sky-500/20 border border-sky-500/40 text-sky-400 flex items-center justify-center mx-auto">
-                <Smartphone className="w-6 h-6" />
-              </div>
               <p className="text-slate-300">
-                Pintasan aplikasi siap dipasang langsung ke layar utama Android / HP Anda.
+                Pintasan aplikasi dengan ikon resmi AzurLize siap dipasang ke layar utama HP Anda.
               </p>
               <button
                 type="button"
@@ -81,12 +96,12 @@ export const AddToHomeScreenModal: React.FC<AddToHomeScreenModalProps> = ({ isOp
               <div className="w-12 h-12 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center mx-auto">
                 <Check className="w-6 h-6" />
               </div>
-              <p>Aplikasi berhasil ditambahkan ke Beranda!</p>
+              <p>Ikon aplikasi berhasil ditambahkan ke Beranda!</p>
             </div>
           ) : (
             <div className="space-y-3">
               <p className="text-slate-300 leading-relaxed">
-                Untuk kemudahan akses cepat tanpa membuka chat Telegram, Anda dapat menambahkan pintasan aplikasi ke layar utama (Home Screen) smartphone Anda:
+                Untuk kemudahan akses cepat tanpa membuka chat Telegram, Anda dapat menambahkan pintasan aplikasi dengan foto ikon AzurLize ke layar utama (Home Screen) smartphone Anda:
               </p>
 
               <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2">
@@ -105,7 +120,7 @@ export const AddToHomeScreenModal: React.FC<AddToHomeScreenModalProps> = ({ isOp
                 <div className="flex items-start gap-2.5">
                   <span className="w-5 h-5 rounded-full bg-sky-500/20 text-sky-400 font-bold text-[10px] flex items-center justify-center shrink-0 mt-0.5">3</span>
                   <p className="text-slate-300 text-[11px]">
-                    Ikon AzurLize akan muncul di layar utama smartphone untuk akses instan!
+                    Foto ikon AzurLize akan muncul di layar utama smartphone untuk akses instan!
                   </p>
                 </div>
               </div>

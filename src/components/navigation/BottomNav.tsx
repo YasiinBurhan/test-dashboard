@@ -121,7 +121,10 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab })
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: '100%', opacity: 0 }}
               transition={{ type: 'spring', damping: 25, stiffness: 280 }}
-              className="fixed bottom-0 left-0 right-0 z-50 p-4 pb-safe max-w-lg mx-auto"
+              style={{
+                paddingBottom: 'calc(var(--tg-safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) + 8px)'
+              }}
+              className="fixed bottom-0 left-0 right-0 z-50 p-4 max-w-lg mx-auto"
             >
               <div 
                 style={{
@@ -224,7 +227,12 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab })
       </AnimatePresence>
 
       {/* Floating Bottom Nav Bar (5 Spacious Buttons) */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 px-3 md:px-6 pb-safe mb-2.5 pointer-events-none">
+      <div 
+        style={{
+          paddingBottom: 'calc(var(--tg-safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) + 8px)'
+        }}
+        className="fixed bottom-0 left-0 right-0 z-40 px-3 md:px-6 pointer-events-none"
+      >
         <nav 
           style={{
             backgroundColor: 'var(--tg-secondary-bg-color, var(--tg-bg-color, rgba(15, 23, 42, 0.96)))'

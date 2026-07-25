@@ -76,6 +76,9 @@ export interface DailyReport {
   videoUrl?: string;
   applicantPhotoUrl?: string;
   createdAt: string;
+  updatedAt?: string;
+  isLate?: boolean;
+  fine?: number;
 }
 
 export interface DailyReportFormData {
@@ -96,6 +99,8 @@ export interface DailyReportFormData {
   note?: string;
   videoUrl?: string;
   applicantPhotoUrl?: string;
+  isLate?: boolean;
+  fine?: number;
 }
 
 export interface AppNotification {

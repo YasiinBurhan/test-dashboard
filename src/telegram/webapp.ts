@@ -65,6 +65,12 @@ declare global {
         sendData: (data: string) => void;
         openTelegramLink: (url: string) => void;
         openLink: (url: string) => void;
+        safeAreaInset?: {
+          top: number;
+          bottom: number;
+          left: number;
+          right: number;
+        };
       };
     };
   }
@@ -82,7 +88,18 @@ export function isTelegramEnvironment(): boolean {
   return Boolean(
     webApp &&
     ((webApp.initData && webApp.initData.length > 0) ||
-      (webApp.initDataUnsafe && Object.keys(webApp.initDataUnsafe).length > 0))
+      (webApp.initDataUnsafe && Object.keys(webApp.initDataUnsafe).length > 0) ||
+      (webApp.platform && webApp.platform !== 'unknown'))
+  );
+}
+
+export function isStandaloneApp(): boolean {
+  if (typeof window === 'undefined') return false;
+  return (
+    window.matchMedia('(display-mode: standalone)').matches ||
+    window.matchMedia('(display-mode: fullscreen)').matches ||
+    Boolean((navigator as any).standalone) ||
+    document.referrer.includes('android-app://')
   );
 }
 

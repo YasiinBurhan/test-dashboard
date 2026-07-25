@@ -17,7 +17,7 @@ import { ProfilPage } from './pages/ProfilPage';
 import { AdminPage } from './pages/AdminPage';
 import { OwnerPage } from './pages/OwnerPage';
 import { GajiPage } from './pages/GajiPage';
-import { MainLayout } from './layouts/MainLayout';
+import { AppLayout } from './layouts/AppLayout';
 import { TabType } from './components/navigation/BottomNav';
 import { GlassCard } from './components/common/GlassCard';
 import { ShieldAlert, LogOut } from 'lucide-react';
@@ -113,9 +113,9 @@ const AppContent: React.FC = () => {
   };
 
   return (
-    <MainLayout activeTab={activeTab} setActiveTab={setActiveTab}>
+    <AppLayout activeTab={activeTab} setActiveTab={setActiveTab}>
       {renderTabContent()}
-    </MainLayout>
+    </AppLayout>
   );
 };
 
