@@ -119,5 +119,15 @@ export function initTelegramApp() {
   if (webApp) {
     webApp.ready();
     webApp.expand();
+    try {
+      if (webApp.setHeaderColor) {
+        webApp.setHeaderColor('#030712');
+      }
+      if (webApp.setBackgroundColor) {
+        webApp.setBackgroundColor('#030712');
+      }
+    } catch {
+      // Ignore if unsupported
+    }
   }
 }
