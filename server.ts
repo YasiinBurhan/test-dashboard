@@ -609,26 +609,10 @@ app.post('/api/telegram/send-post', async (req: Request, res: Response) => {
     const header = `${dateDisplay}\n\n${rangeStr}\n\n`;
     const footer = `\n\n👤 <b>Recruiter:</b> ${recTag}`;
     
-    // Telegram limit is 1024. Let's aim for 1000 for safety.
-    const maxCaptionLen = 1000;
-    const availableLen = maxCaptionLen - header.length - footer.length;
-    
     let linkList = linkArray.map((l: string, i: number) => {
       const cleanUrl = String(l || '').trim();
       return `${safeStartNum + i}. ${cleanUrl}`;
     }).join('\n');
-
-    if (linkList.length > availableLen) {
-      // Truncate link list and add notice
-      const notice = '\n... (beberapa link dipotong karena terlalu panjang)';
-      linkList = linkList.substring(0, availableLen - notice.length);
-      // Try to cut at the last newline to be clean
-      const lastNewline = linkList.lastIndexOf('\n');
-      if (lastNewline > 0) {
-        linkList = linkList.substring(0, lastNewline);
-      }
-      linkList += notice;
-    }
 
     const fullCaption = `${header}${linkList}${footer}`.trim();
 
@@ -656,42 +640,106 @@ app.post('/api/telegram/send-post', async (req: Request, res: Response) => {
         
         mediaArray.push({
           type: 'photo',
-          media: `attach://${fileKey}`,
-          caption: i === 0 ? fullCaption : '', // Caption only on the first photo
-          parse_mode: 'HTML'
+          media: `attach://${fileKey}`
         });
       }
     }
 
-    formData.append('media', JSON.stringify(mediaArray));
+    let result;
+    if (mediaArray.length === 1) {
+      const photoFormData = new FormData();
+      photoFormData.append('chat_id', targetGroup);
+      if (targetTopic) photoFormData.append('message_thread_id', String(targetTopic));
+      
+      const photoBlob = formData.get('photo0');
+      if (photoBlob) photoFormData.append('photo', photoBlob);
 
-    let response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMediaGroup`, {
-      method: 'POST',
-      body: formData
-    });
+      let response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
+        method: 'POST',
+        body: photoFormData
+      });
+      result = await response.json();
 
-    let result = await response.json();
+      if (!result.ok && targetTopic && result.description && (
+        result.description.toLowerCase().includes('thread') ||
+        result.description.toLowerCase().includes('topic') ||
+        result.description.toLowerCase().includes('message_thread_id')
+      )) {
+        photoFormData.delete('message_thread_id');
+        response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
+          method: 'POST',
+          body: photoFormData
+        });
+        result = await response.json();
+      }
+    } else {
+      formData.append('media', JSON.stringify(mediaArray));
 
-    // Fallback if topic thread error occurs on sendMediaGroup
-    if (!result.ok && targetTopic && result.description && (
-      result.description.toLowerCase().includes('thread') ||
-      result.description.toLowerCase().includes('topic') ||
-      result.description.toLowerCase().includes('message_thread_id')
-    )) {
-      console.warn('[Telegram API] sendMediaGroup thread error, retrying without message_thread_id:', result.description);
-      formData.delete('message_thread_id');
-      response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMediaGroup`, {
+      let response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMediaGroup`, {
         method: 'POST',
         body: formData
       });
+
       result = await response.json();
+
+      if (!result.ok && targetTopic && result.description && (
+        result.description.toLowerCase().includes('thread') ||
+        result.description.toLowerCase().includes('topic') ||
+        result.description.toLowerCase().includes('message_thread_id')
+      )) {
+        console.warn('[Telegram API] sendMediaGroup thread error, retrying without message_thread_id:', result.description);
+        formData.delete('message_thread_id');
+        response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMediaGroup`, {
+          method: 'POST',
+          body: formData
+        });
+        result = await response.json();
+      }
     }
 
-    if (result.ok) {
-      res.json({ success: true, data: result.result });
-    } else {
-      console.error('[Telegram API] sendMediaGroup Error:', result);
+    if (!result.ok) {
+      console.error('[Telegram API] sendMediaGroup/sendPhoto failed:', result);
       res.status(400).json({ success: false, error: `Telegram Error: ${result.description}` });
+      return;
+    }
+
+    // Now send the text via sendMessage to avoid caption length limits
+    let textPayload: Record<string, unknown> = {
+      chat_id: targetGroup,
+      text: fullCaption,
+      parse_mode: 'HTML',
+      link_preview_options: { is_disabled: true }
+    };
+    if (targetTopic) textPayload.message_thread_id = targetTopic;
+
+    let textResponse = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(textPayload)
+    });
+    
+    let textResult = await textResponse.json();
+    
+    if (!textResult.ok && targetTopic && textResult.description && (
+      textResult.description.toLowerCase().includes('thread') ||
+      textResult.description.toLowerCase().includes('topic') ||
+      textResult.description.toLowerCase().includes('message_thread_id')
+    )) {
+      console.warn('[Telegram API] sendMessage thread error, retrying without message_thread_id:', textResult.description);
+      delete textPayload.message_thread_id;
+      textResponse = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(textPayload)
+      });
+      textResult = await textResponse.json();
+    }
+
+    if (textResult.ok) {
+      res.json({ success: true, data: textResult.result });
+    } else {
+      console.error('[Telegram API] sendMessage Error:', textResult);
+      res.status(400).json({ success: false, error: `Telegram Error: ${textResult.description}` });
     }
   } catch (err) {
     console.error('[Telegram API] Error sending post:', err);

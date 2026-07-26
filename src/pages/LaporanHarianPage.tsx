@@ -9,9 +9,10 @@ import { useRecruiters } from '../hooks/useRecruiters';
 import { subscribeToRecruiterPosts } from '../firebase/services/postService';
 import { subscribeToSystemSettings, getSystemSettings } from '../firebase/services/settingService';
 import { sendReportToTelegramApi } from '../services/api';
+import { triggerHaptic } from '../telegram/webapp';
 import { DailyReportFormData, BatchPost, SystemSettings } from '../types';
-import { Calendar, Eye, UserCheck, Star, Share2, AlertCircle, FileText, CheckCircle2, Sparkles, RefreshCw, Copy, Clock, Lock, Unlock, Timer, Users, UserX } from 'lucide-react';
-import { getWIBDate, getWIBMondayOfDate } from '../utils/format';
+import { Calendar, Eye, UserCheck, Star, Share2, AlertCircle, FileText, CheckCircle2, Sparkles, RefreshCw, Copy, Clock, Lock, Unlock, Timer, Users, UserX, ChevronDown } from 'lucide-react';
+import { getWIBDate, getWIBMonday, getWIBMondayOfDate, getIndonesianDayName, formatDateDisplay, formatUsername } from '../utils/format';
 
 export const LaporanHarianPage: React.FC = () => {
   const { submitReport, isLoading, reports } = useReports();
@@ -41,6 +42,25 @@ export const LaporanHarianPage: React.FC = () => {
   const isAdminOrOwner = userProfile?.role === 'Admin' || userProfile?.role === 'Owner';
   const { users } = useRecruiters();
   const [activeTab, setActiveTab] = useState<'form' | 'weekly' | 'archive' | 'status'>('form');
+  const [statusSubTab, setStatusSubTab] = useState<'izin' | 'sudah' | 'belum'>('sudah');
+  const [expandedWeeks, setExpandedWeeks] = useState<Record<string, boolean>>({});
+  const [expandedArchiveDays, setExpandedArchiveDays] = useState<Record<string, boolean>>({});
+
+  const toggleWeek = (weekStart: string) => {
+    setExpandedWeeks(prev => ({
+      ...prev,
+      [weekStart]: !prev[weekStart]
+    }));
+    triggerHaptic('selection');
+  };
+
+  const toggleDay = (dayKey: string) => {
+    setExpandedArchiveDays(prev => ({
+      ...prev,
+      [dayKey]: !prev[dayKey]
+    }));
+    triggerHaptic('selection');
+  };
 
   const [formData, setFormData] = useState<DailyReportFormData>({
     date: initialDateStr,
@@ -57,19 +77,61 @@ export const LaporanHarianPage: React.FC = () => {
     return users.filter(u => u.role === 'Recruiter');
   }, [users]);
 
-  const { submittedRecruiters, unsubmittedRecruiters } = useMemo(() => {
+  const { sudahLaporan, belumLaporan, izinRecruiters } = useMemo(() => {
     const targetDate = formData.date || initialDateStr;
-    const submittedIds = new Set(
-      reports
-        .filter(r => r.date === targetDate && !r.applicantWhatsapp && !r.uid9Kucing)
-        .map(r => r.telegramId)
+    const dailyReports = reports.filter(r => 
+      r.date === targetDate && 
+      !r.applicantWhatsapp && 
+      !r.uid9Kucing && 
+      !r.applicantTelegramUsername
     );
     
+    const submittedIds = new Set(dailyReports.map(r => r.telegramId));
+    const izinIds = new Set(dailyReports.filter(r => r.permission === 1).map(r => r.telegramId));
+    
     return {
-      submittedRecruiters: recruiters.filter(u => submittedIds.has(u.telegramId)),
-      unsubmittedRecruiters: recruiters.filter(u => !submittedIds.has(u.telegramId))
+      sudahLaporan: recruiters.filter(u => submittedIds.has(u.telegramId) && !izinIds.has(u.telegramId)),
+      izinRecruiters: recruiters.filter(u => izinIds.has(u.telegramId)),
+      belumLaporan: recruiters.filter(u => !submittedIds.has(u.telegramId))
     };
   }, [recruiters, reports, formData?.date, initialDateStr]);
+
+  const currentMondayStr = getWIBMonday(0);
+  const lastMondayStr = getWIBMonday(-7);
+
+  const archivedWeeks = useMemo(() => {
+    const archivedReports = reports.filter(r => 
+      r.telegramId === effectiveTelegramId && 
+      !r.applicantWhatsapp && 
+      !r.uid9Kucing && 
+      !r.applicantTelegramUsername && 
+      r.date < currentMondayStr
+    );
+
+    const groups: Record<string, typeof archivedReports> = {};
+    archivedReports.forEach(r => {
+      const monday = getWIBMondayOfDate(r.date);
+      if (!groups[monday]) groups[monday] = [];
+      groups[monday].push(r);
+    });
+
+    return Object.entries(groups)
+      .sort(([a], [b]) => b.localeCompare(a))
+      .map(([monday, reports]) => {
+        // Group reports by date within the week
+        const dayGroups = reports.reduce((acc, r) => {
+          if (!acc[r.date]) acc[r.date] = [];
+          acc[r.date].push(r);
+          return acc;
+        }, {} as Record<string, typeof reports>);
+
+        return {
+          monday,
+          dayGroups: Object.entries(dayGroups).sort(([a], [b]) => a.localeCompare(b)),
+          totalReports: reports.length
+        };
+      });
+  }, [reports, effectiveTelegramId, currentMondayStr]);
 
   const alreadyHasIzinThisWeek = useMemo(() => {
     if (!formData.date || !reports || reports.length === 0) return false;
@@ -79,7 +141,7 @@ export const LaporanHarianPage: React.FC = () => {
     return reports.some(r => {
       if (r.permission !== 1) return false;
       if (r.telegramId !== effectiveTelegramId) return false;
-      if (r.applicantWhatsapp || r.uid9Kucing) return false; // Must be summary report
+      if (r.applicantWhatsapp || r.uid9Kucing || r.applicantTelegramUsername) return false; // Must be summary report
       return getWIBMondayOfDate(r.date) === targetMonday;
     });
   }, [reports, formData.date, effectiveTelegramId]);
@@ -90,12 +152,17 @@ export const LaporanHarianPage: React.FC = () => {
         r.telegramId === effectiveTelegramId &&
         !r.applicantWhatsapp &&
         !r.uid9Kucing &&
-        getWIBMondayOfDate(r.date) === getWIBMondayOfDate(getWIBDate())
+        !r.applicantTelegramUsername &&
+        r.date >= currentMondayStr
     );
-  }, [reports, effectiveTelegramId]);
+  }, [reports, effectiveTelegramId, currentMondayStr]);
 
   const totalPostingCurrentWeek = useMemo(() => {
     return currentWeekReports.reduce((sum, r) => sum + (r.posting || 0), 0);
+  }, [currentWeekReports]);
+
+  const totalFineCurrentWeek = useMemo(() => {
+    return currentWeekReports.reduce((sum, r) => sum + (r.fine || 0), 0);
   }, [currentWeekReports]);
 
   // Auto-reset Izin status if they already had Izin this week and are not Admin/Owner
@@ -276,6 +343,18 @@ export const LaporanHarianPage: React.FC = () => {
     return userReports.length;
   }, [reports, formData.date, effectiveTelegramId]);
 
+  // Compute pending applicant reports count
+  const pendingReportsCount = useMemo(() => {
+    const targetDate = normalizeDate(formData.date);
+    const userReports = reports.filter(r => 
+      normalizeDate(r.date) === targetDate && 
+      r.telegramId === effectiveTelegramId &&
+      (r.applicantWhatsapp || r.uid9Kucing) && // Individual applicant reports
+      (!r.result || r.result === 'Pending')
+    );
+    return userReports.length;
+  }, [reports, formData.date, effectiveTelegramId]);
+
   // Sync auto counts with formData
   useEffect(() => {
     setFormData(prev => ({
@@ -322,6 +401,27 @@ export const LaporanHarianPage: React.FC = () => {
 
     if (formData.permission === 1 && alreadyHasIzinThisWeek && !isAdminOrOwner) {
       setError('Batas izin Anda minggu ini sudah terpakai (Maksimal 1x per minggu, Senin - Minggu).');
+      return;
+    }
+
+    // Check if a report for this date already exists for this user (Daily Summary)
+    const normalizedTargetDate = normalizeDate(formData.date);
+    const alreadySubmitted = reports.some(r => 
+      normalizeDate(r.date) === normalizedTargetDate && 
+      r.telegramId === effectiveTelegramId && 
+      !r.applicantWhatsapp && 
+      !r.uid9Kucing && 
+      !r.applicantTelegramUsername
+    );
+
+    if (alreadySubmitted && !isAdminOrOwner) {
+      setError(`Anda sudah mengirimkan laporan harian untuk tanggal ${formatDateDisplay(formData.date)}. Laporan hanya dapat dikirim sekali per hari.`);
+      setAlertState({
+        isOpen: true,
+        type: 'error',
+        title: 'Duplikat Laporan',
+        message: `Anda sudah pernah mengirimkan laporan harian untuk tanggal ${formatDateDisplay(formData.date)}. Jika ada kesalahan data, silakan hubungi Admin.`
+      });
       return;
     }
 
@@ -395,18 +495,16 @@ export const LaporanHarianPage: React.FC = () => {
     }
   };
 
-  const formatDateDisplay = (dateStr: string) => {
-    if (!dateStr) return '';
-    const parts = dateStr.split('-');
-    if (parts.length === 3) {
-      // YYYY-MM-DD to DD/MM/YYYY
-      return `${parts[2]}/${parts[1]}/${parts[0]}`;
-    }
-    return dateStr;
-  };
-
   const generateReportText = (isLateSubmission: boolean = false) => {
-    const rawUsername = userProfile?.username || telegramUser?.username || 'Recruiter';
+    const rawUsername = userProfile?.username 
+      ? formatUsername(userProfile.username)
+      : telegramUser?.username 
+      ? formatUsername(telegramUser.username)
+      : userProfile?.firstName 
+      ? (userProfile.lastName ? `${userProfile.firstName} ${userProfile.lastName}` : userProfile.firstName)
+      : telegramUser?.first_name 
+      ? (telegramUser.last_name ? `${telegramUser.first_name} ${telegramUser.last_name}` : telegramUser.first_name)
+      : 'Recruiter';
     const username = rawUsername.replace(/^@/, '');
 
     return `Laporan Recruiter @<b>${username}</b>
@@ -426,115 +524,117 @@ Status Target & Efektif? <b>${formData.effectiveStatus || 'YES'}</b>${isLateSubm
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
-      className="space-y-5 pb-28"
+      className="space-y-5"
     >
       {/* Live WIB Timer & Lock Status */}
-      <GlassCard className="p-4 bg-slate-950/80 border-slate-800/80 shadow-xl space-y-4">
+      <GlassCard className="p-4 bg-white/90 dark:bg-slate-950/80 border-slate-200/80 dark:border-slate-800/80 shadow-xl space-y-4">
         {/* Header Row */}
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/60 pb-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-800/60 pb-3">
           <div className="flex items-center gap-2">
-            <Timer className="w-4 h-4 text-sky-400 animate-pulse" />
-            <h3 className="text-[11px] sm:text-xs font-black text-white uppercase tracking-wider">Status Laporan & Jadwal</h3>
+            <Timer className="w-4 h-4 text-sky-600 dark:text-sky-400 animate-pulse" />
+            <h3 className="text-[11px] sm:text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider">Status Laporan & Jadwal</h3>
           </div>
           <div className="flex items-center gap-1.5">
             <span className={`text-[8px] sm:text-[9px] font-black uppercase px-2 py-0.5 rounded-full border ${
               nowWib.isPast10 
-                ? 'bg-rose-500/10 text-rose-300 border-rose-500/20' 
-                : 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'
+                ? 'bg-rose-500/10 text-rose-600 dark:text-rose-300 border-rose-500/20' 
+                : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 border-emerald-500/20'
             }`}>
               {nowWib.isPast10 ? '🔴 Form Ditutup' : '🟢 Form Dibuka'}
             </span>
           </div>
         </div>
 
-        {/* Single Dynamic Timer Block */}
-        <div className="p-4 rounded-2xl bg-slate-900/40 border border-slate-800/60 flex flex-col md:flex-row md:items-center justify-between gap-4 text-center md:text-left">
-          <div className="space-y-1">
-            <span className="text-[10px] font-black uppercase tracking-wider text-sky-400 block">
-              {nowWib.isPast10 ? 'Sisa Waktu Pembukaan Laporan' : 'Sisa Waktu Pengisian Hari Ini'}
-            </span>
-            <p className="text-[9.5px] text-slate-400 font-medium max-w-md leading-normal mx-auto md:mx-0">
+        {/* Modern Mobile-Optimized Timer Block */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-5 relative z-10 px-1 py-1">
+          <div className="text-center sm:text-left space-y-1.5 flex-1">
+            <div className="flex items-center justify-center sm:justify-start gap-2">
+              <div className={`w-2 h-2 rounded-full animate-pulse ${nowWib.isPast10 ? 'bg-amber-500 shadow-[0_0_8px_rgba(251,191,36,0.5)]' : 'bg-emerald-500 shadow-[0_0_8px_rgba(52,211,153,0.5)]'}`} />
+              <h2 className={`text-[11px] font-black uppercase tracking-[0.15em] ${nowWib.isPast10 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                {nowWib.isPast10 ? 'Form Ditutup' : 'Form Dibuka'}
+              </h2>
+            </div>
+            <p className="text-[10px] text-slate-600 dark:text-slate-400 font-bold max-w-[280px] leading-relaxed mx-auto sm:mx-0">
               {nowWib.isPast10 
-                ? 'Formulir saat ini ditutup karena telah melewati pukul 10:00 WIB. Pendaftaran laporan berikutnya akan dibuka kembali tepat pukul 00:00 WIB.' 
-                : 'Mohon kirimkan laporan harian Anda sebelum batas waktu pengerjaan berakhir pada pukul 10:00 WIB Pagi.'}
+                ? 'Laporan berikutnya akan dibuka kembali pada pukul 00:00 WIB.' 
+                : 'Kirimkan laporan Anda sebelum batas waktu pukul 10:00 WIB Pagi.'}
             </p>
           </div>
           
-          <div className="flex items-center justify-center gap-1.5 font-mono shrink-0 mx-auto md:mx-0">
-            <div className="text-center bg-slate-950/90 px-3 py-2 rounded-xl border border-slate-800/80 min-w-[48px] shadow-inner">
-              <span className={`text-xl sm:text-2xl font-black tracking-tighter ${nowWib.isPast10 ? 'text-amber-400' : 'text-white'}`}>
-                {nowWib.isPast10 ? reopenTimeInfo.hours : hours}
-              </span>
-              <span className="block text-[7px] font-bold text-slate-500 uppercase font-sans mt-0.5">Jam</span>
-            </div>
-            <span className="text-xl font-black text-slate-700 animate-pulse">:</span>
-            <div className="text-center bg-slate-950/90 px-3 py-2 rounded-xl border border-slate-800/80 min-w-[48px] shadow-inner">
-              <span className={`text-xl sm:text-2xl font-black tracking-tighter ${nowWib.isPast10 ? 'text-amber-400' : 'text-white'}`}>
-                {nowWib.isPast10 ? reopenTimeInfo.minutes : minutes}
-              </span>
-              <span className="block text-[7px] font-bold text-slate-500 uppercase font-sans mt-0.5">Min</span>
-            </div>
-            <span className="text-xl font-black text-slate-700 animate-pulse">:</span>
-            <div className="text-center bg-slate-950/90 px-3 py-2 rounded-xl border border-slate-800/80 min-w-[48px] shadow-inner">
-              <span className={`text-xl sm:text-2xl font-black tracking-tighter ${nowWib.isPast10 ? 'text-amber-300' : 'text-sky-400'}`}>
-                {nowWib.isPast10 ? reopenTimeInfo.seconds : seconds}
-              </span>
-              <span className="block text-[7px] font-bold text-slate-500 uppercase font-sans mt-0.5">Detik</span>
-            </div>
+          <div className="flex items-center gap-1.5 font-mono shrink-0 scale-95 sm:scale-100">
+            {[
+              { val: nowWib.isPast10 ? reopenTimeInfo.hours : hours, label: 'Jam' },
+              { val: nowWib.isPast10 ? reopenTimeInfo.minutes : minutes, label: 'Min' },
+              { val: nowWib.isPast10 ? reopenTimeInfo.seconds : seconds, label: 'Det' }
+            ].map((unit, uIdx) => (
+              <React.Fragment key={uIdx}>
+                <div className="text-center bg-slate-100 dark:bg-slate-900/90 px-3 py-2.5 rounded-[20px] border border-slate-300 dark:border-slate-800 shadow-2xl min-w-[56px] flex flex-col items-center">
+                  <span className={`text-2xl font-black tracking-tighter block leading-none ${nowWib.isPast10 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-900 dark:text-white'}`}>
+                    {unit.val}
+                  </span>
+                  <span className="text-[7px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mt-1.5 block leading-none">
+                    {unit.label}
+                  </span>
+                </div>
+                {uIdx < 2 && <span className="text-xl font-black text-slate-600 dark:text-slate-400 dark:text-slate-800 self-center mb-4">:</span>}
+              </React.Fragment>
+            ))}
           </div>
         </div>
       </GlassCard>
 
-
-
-      <div className="flex bg-slate-900/80 p-1 rounded-2xl border border-slate-800 shrink-0 gap-1 overflow-x-auto no-scrollbar">
+      <div className="flex bg-slate-100 dark:bg-slate-900/80 p-1.5 rounded-2xl border border-slate-200 dark:border-slate-800 shrink-0 gap-1 overflow-x-auto no-scrollbar scroll-smooth">
         <button
           type="button"
-          onClick={() => setActiveTab('form')}
-          className={`flex-1 min-w-[100px] flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-[11px] font-bold transition-all ${
-            activeTab === 'form'
-              ? 'bg-sky-500 text-white shadow-lg shadow-sky-500/20'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+          onClick={() => {
+            setActiveTab('form');
+            triggerHaptic('selection');
+          }}
+          className={`shrink-0 flex-1 min-w-[100px] py-2 px-3 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
+            activeTab === 'form' ? 'bg-sky-500 text-white shadow-lg scale-[1.02]' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
           }`}
         >
-          <FileText className="w-3.5 h-3.5" />
+          <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           <span>Formulir</span>
         </button>
         <button
           type="button"
-          onClick={() => setActiveTab('weekly')}
-          className={`flex-1 min-w-[100px] flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-[11px] font-bold transition-all ${
-            activeTab === 'weekly'
-              ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/20'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+          onClick={() => {
+            setActiveTab('weekly');
+            triggerHaptic('selection');
+          }}
+          className={`shrink-0 flex-1 min-w-[110px] py-2 px-3 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
+            activeTab === 'weekly' ? 'bg-indigo-500 text-white shadow-lg scale-[1.02]' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
           }`}
         >
-          <Calendar className="w-3.5 h-3.5" />
+          <Calendar className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           <span>Minggu Ini</span>
         </button>
         <button
           type="button"
-          onClick={() => setActiveTab('archive')}
-          className={`flex-1 min-w-[100px] flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-[11px] font-bold transition-all ${
-            activeTab === 'archive'
-              ? 'bg-purple-500 text-white shadow-lg shadow-purple-500/20'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+          onClick={() => {
+            setActiveTab('archive');
+            triggerHaptic('selection');
+          }}
+          className={`shrink-0 flex-1 min-w-[100px] py-2 px-3 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
+            activeTab === 'archive' ? 'bg-purple-500 text-white shadow-lg scale-[1.02]' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
           }`}
         >
-          <Clock className="w-3.5 h-3.5" />
+          <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           <span>Arsip</span>
         </button>
         {isAdminOrOwner && (
           <button
             type="button"
-            onClick={() => setActiveTab('status')}
-            className={`flex-1 min-w-[120px] flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-[11px] font-bold transition-all ${
-              activeTab === 'status'
-                ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/20'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+            onClick={() => {
+              setActiveTab('status');
+              triggerHaptic('selection');
+            }}
+            className={`shrink-0 flex-1 min-w-[130px] py-2 px-3 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
+              activeTab === 'status' ? 'bg-amber-500 text-slate-950 shadow-lg scale-[1.02]' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
-            <Users className="w-3.5 h-3.5" />
+            <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             <span>Status Recruiter</span>
           </button>
         )}
@@ -542,16 +642,16 @@ Status Target & Efektif? <b>${formData.effectiveStatus || 'YES'}</b>${isLateSubm
 
       {activeTab === 'form' && (
         <div className="space-y-5">
-          <GlassCard className="border-slate-800/80 shadow-sm">
+          <GlassCard className="border-slate-200/80 dark:border-slate-800/80 shadow-sm">
         <form onSubmit={handleSubmit} className="space-y-4">
 
           {nowWib.isPast10 && (
             <div className={`p-3.5 rounded-2xl flex items-start gap-3 border text-xs font-medium ${
               isLocked 
-                ? 'bg-rose-500/15 border-rose-500/30 text-rose-300' 
-                : 'bg-amber-500/15 border-amber-500/30 text-amber-300'
+                ? 'bg-rose-500/15 border-rose-500/30 text-rose-700 dark:text-rose-300' 
+                : 'bg-amber-500/15 border-amber-500/30 text-amber-800 dark:text-amber-300'
             }`}>
-              <Lock className={`w-5 h-5 shrink-0 mt-0.5 ${isLocked ? 'text-rose-400' : 'text-amber-400'}`} />
+              <Lock className={`w-5 h-5 shrink-0 mt-0.5 ${isLocked ? 'text-rose-600 dark:text-rose-400' : 'text-amber-600 dark:text-amber-400'}`} />
               <div className="space-y-1">
                 <strong className="block font-bold">
                   {isLocked ? '🔒 Formulir Laporan Harian Terkunci' : '⚠️ Batas Waktu 10.00 WIB telah Lewat'}
@@ -560,8 +660,8 @@ Status Target & Efektif? <b>${formData.effectiveStatus || 'YES'}</b>${isLateSubm
                   Batas waktu pengiriman laporan harian (00.00 - 10.00 WIB) telah lewat untuk hari ini.
                 </p>
                 {isAdminOrOwner && (
-                  <p className="text-[10px] text-emerald-400 font-semibold flex items-center gap-1 pt-0.5">
-                    <Unlock className="w-3 h-3 text-emerald-400 shrink-0" />
+                  <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1 pt-0.5">
+                    <Unlock className="w-3 h-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
                     <span>Akses Admin/Owner: Anda dapat tetap mengisi/mengirimkan laporan ini.</span>
                   </p>
                 )}
@@ -570,29 +670,29 @@ Status Target & Efektif? <b>${formData.effectiveStatus || 'YES'}</b>${isLateSubm
           )}
 
           {error && (
-            <div className="bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs p-3.5 rounded-2xl flex items-center gap-2 font-medium">
+            <div className="bg-rose-500/15 border border-rose-500/30 text-rose-700 dark:text-rose-300 text-xs p-3.5 rounded-2xl flex items-center gap-2 font-medium">
               <span>⚠️</span>
               <span>{error}</span>
             </div>
           )}
 
           {successMsg && (
-            <div className="bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs p-3.5 rounded-2xl flex items-center gap-2 font-medium">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            <div className="bg-emerald-500/15 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-xs p-3.5 rounded-2xl flex items-center gap-2 font-medium">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
               <span>{successMsg}</span>
             </div>
           )}
 
           <div className="relative group mb-4">
             <div className="absolute -inset-0.5 bg-gradient-to-r from-sky-500/10 to-indigo-500/10 rounded-[24px] blur opacity-75 transition duration-1000"></div>
-            <div className="relative flex items-center justify-between p-4 bg-slate-950/40 rounded-[20px] border border-slate-800/50 backdrop-blur-xl">
+            <div className="relative flex items-center justify-between p-4 bg-slate-50/90 dark:bg-slate-950/40 rounded-[20px] border border-slate-200 dark:border-slate-800/50 backdrop-blur-xl">
               <div className="flex items-center gap-4">
                 <div className="p-3 rounded-2xl bg-sky-500/10 border border-sky-500/20 shadow-inner">
-                  <Calendar className="w-5 h-5 text-sky-400" />
+                  <Calendar className="w-5 h-5 text-sky-600 dark:text-sky-400" />
                 </div>
                 <div>
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] leading-none mb-1.5">Periode Laporan</p>
-                  <p className="text-xl font-black text-white tracking-tight leading-none">
+                  <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-[0.2em] leading-none mb-1.5">Periode Laporan</p>
+                  <p className="text-xl font-black text-slate-900 dark:text-white tracking-tight leading-none">
                     {formatDateDisplay(formData.date)}
                   </p>
                 </div>
@@ -602,7 +702,7 @@ Status Target & Efektif? <b>${formData.effectiveStatus || 'YES'}</b>${isLateSubm
                   <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.5)]" />
                   <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest">Active</span>
                 </div>
-                <span className="text-[9px] text-slate-500 font-bold uppercase tracking-tighter opacity-60">
+                <span className="text-[9px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-tighter opacity-60">
                   Shift Auto-Reset 10:01
                 </span>
               </div>
@@ -660,13 +760,29 @@ Status Target & Efektif? <b>${formData.effectiveStatus || 'YES'}</b>${isLateSubm
             </div>
           </div>
 
+          {/* Pending Data Notice Alert Box */}
+          {pendingReportsCount > 0 && (
+            <div className="bg-amber-500/10 border border-amber-500/30 rounded-[20px] p-4 text-xs text-amber-300 flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <span className="font-extrabold block text-sm">⚠️ Ada Data Pelamar yang Masih Pending</span>
+                <p className="leading-relaxed text-[11px] text-slate-700 dark:text-slate-300">
+                  Terdapat <strong className="text-amber-300 font-extrabold">{pendingReportsCount} data pelamar</strong> Anda hari ini yang masih dalam proses pemeriksaan oleh Admin/Owner.
+                </p>
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-normal">
+                  Jumlah pelamar disetujui (ACC) dan status target Anda akan otomatis diperbarui begitu pemeriksaan selesai.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Section 1: Izin Tidak Bekerja */}
           <div className="space-y-1.5">
-            <label className="text-xs font-bold tracking-wider text-slate-400 uppercase px-1 flex items-center gap-1.5">
+            <label className="text-xs font-bold tracking-wider text-slate-600 dark:text-slate-400 uppercase px-1 flex items-center gap-1.5">
               <AlertCircle className="w-4 h-4 text-amber-400" />
               <span>Izin Tidak Bekerja?</span>
             </label>
-            <span className="text-[10px] text-slate-400 px-1 block mb-2 -mt-1">
+            <span className="text-[10px] text-slate-600 dark:text-slate-400 px-1 block mb-2 -mt-1">
               {isAdminOrOwner 
                 ? 'Pilih Ya jika izin/libur, pilih Tidak jika aktif bekerja seperti biasa.' 
                 : 'Pilih Ya jika Anda izin/libur hari ini (Maksimal 1x per minggu, Senin - Minggu).'}
@@ -678,10 +794,10 @@ Status Target & Efektif? <b>${formData.effectiveStatus || 'YES'}</b>${isLateSubm
                 onClick={() => setFormData({ ...formData, permission: 0 })}
                 className={`py-2.5 px-4 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-1.5 ${
                   isLocked
-                    ? 'opacity-50 cursor-not-allowed bg-slate-950 text-slate-600 border-slate-900'
+                    ? 'opacity-50 cursor-not-allowed bg-slate-100 dark:bg-slate-950 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-900'
                     : formData.permission === 0
-                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 font-black cursor-pointer'
-                    : 'bg-slate-900/80 text-slate-400 border-slate-800/80 hover:text-slate-300 hover:border-slate-700 cursor-pointer'
+                    ? 'bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border-emerald-500/40 font-black cursor-pointer shadow-sm'
+                    : 'bg-slate-100 dark:bg-slate-900/80 text-slate-700 dark:text-slate-400 border-slate-200 dark:border-slate-800/80 hover:text-slate-900 dark:hover:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700 cursor-pointer'
                 }`}
               >
                 Tidak (Aktif)
@@ -702,10 +818,10 @@ Status Target & Efektif? <b>${formData.effectiveStatus || 'YES'}</b>${isLateSubm
                 }}
                 className={`py-2.5 px-4 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-1.5 ${
                   isLocked || (alreadyHasIzinThisWeek && !isAdminOrOwner)
-                    ? 'opacity-50 cursor-not-allowed bg-slate-950 text-slate-600 border-slate-900'
+                    ? 'opacity-50 cursor-not-allowed bg-slate-100 dark:bg-slate-950 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-900'
                     : formData.permission === 1
-                    ? 'bg-rose-500/20 text-rose-300 border-rose-500/40 font-black cursor-pointer'
-                    : 'bg-slate-900/80 text-slate-400 border-slate-800/80 hover:text-slate-300 hover:border-slate-700 cursor-pointer'
+                    ? 'bg-rose-500/20 text-rose-800 dark:text-rose-300 border-rose-500/40 font-black cursor-pointer shadow-sm'
+                    : 'bg-slate-100 dark:bg-slate-900/80 text-slate-700 dark:text-slate-400 border-slate-200 dark:border-slate-800/80 hover:text-slate-900 dark:hover:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700 cursor-pointer'
                 }`}
               >
                 Ya (Izin)
@@ -733,7 +849,7 @@ Status Target & Efektif? <b>${formData.effectiveStatus || 'YES'}</b>${isLateSubm
 
           {/* Section 2: Karyawan Aktif & Efektif (Mencapai Target) */}
           <div className="space-y-1.5">
-            <label className="text-xs font-bold tracking-wider text-slate-400 uppercase px-1 flex items-center gap-1.5">
+            <label className="text-xs font-bold tracking-wider text-slate-600 dark:text-slate-400 uppercase px-1 flex items-center gap-1.5">
               <Sparkles className="w-4 h-4 text-indigo-400" />
               <span>Status Target & Efektif</span>
             </label>
@@ -746,7 +862,7 @@ Status Target & Efektif? <b>${formData.effectiveStatus || 'YES'}</b>${isLateSubm
                 <span className="text-base">{formData.effectiveStatus === 'YES' ? '🎯' : '⚠️'}</span>
                 <div>
                   <p className="font-extrabold text-sm">{formData.effectiveStatus === 'YES' ? 'YES (Target Tercapai)' : 'NO (Belum Memenuhi Target)'}</p>
-                  <p className="text-[10px] text-slate-400 font-normal mt-0.5">
+                  <p className="text-[10px] text-slate-600 dark:text-slate-400 font-normal mt-0.5">
                     {Number(formData.applicant || 0)} • {Number(formData.posting || 0)} / {
                       Number(formData.applicant || 0) >= 3 ? 0 : Number(formData.applicant || 0) === 2 ? 30 : Number(formData.applicant || 0) === 1 ? 60 : 90
                     } Target Postingan
@@ -778,65 +894,94 @@ Status Target & Efektif? <b>${formData.effectiveStatus || 'YES'}</b>${isLateSubm
 
       {activeTab === 'weekly' && (
         <div className="space-y-4">
-          <GlassCard className="p-4 border-slate-800/80 bg-slate-950/50">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="p-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20">
-                <Calendar className="w-5 h-5 text-indigo-400" />
+          <GlassCard className="p-4 border-slate-200 dark:border-slate-800/80 bg-white dark:bg-slate-950/50">
+            <div className="flex items-center justify-between gap-3 mb-6">
+              <div className="space-y-1">
+                <h3 className="text-[15px] font-black text-slate-900 dark:text-white flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-sky-400" />
+                  Minggu Ini
+                </h3>
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">Laporan aktif Anda.</p>
               </div>
-              <div className="flex-1">
-                <h3 className="text-sm font-bold text-white">Laporan Minggu Ini</h3>
-                <p className="text-[10px] text-slate-500">Daftar laporan Anda untuk minggu ini.</p>
-              </div>
-              <div className="text-right shrink-0 bg-indigo-500/10 border border-indigo-500/20 px-3 py-1 rounded-xl">
-                <span className="block text-[8px] font-black uppercase text-indigo-300 tracking-wider">Total Postingan</span>
-                <span className="text-base font-black text-white">{totalPostingCurrentWeek}</span>
+              <div className="flex gap-2">
+                <div className="flex flex-col items-end bg-indigo-500/10 border border-indigo-500/20 px-2.5 py-1 rounded-xl">
+                  <span className="text-[8px] font-black uppercase text-indigo-300/80 leading-none mb-1">Postingan</span>
+                  <span className="text-[15px] font-black text-slate-900 dark:text-white leading-none tracking-tighter">{totalPostingCurrentWeek}</span>
+                </div>
+                {totalFineCurrentWeek > 0 && (
+                  <div className="flex flex-col items-end bg-rose-500/10 border border-rose-500/20 px-2.5 py-1 rounded-xl">
+                    <span className="text-[8px] font-black uppercase text-rose-300/80 leading-none mb-1">Danda</span>
+                    <span className="text-[13px] font-black text-rose-400 leading-none tracking-tighter">Rp {(totalFineCurrentWeek/1000).toFixed(0)}k</span>
+                  </div>
+                )}
               </div>
             </div>
             
-            <div className="space-y-3">
+            <div className="grid gap-3">
               {reports
-                .filter(r => r.telegramId === effectiveTelegramId && !r.applicantWhatsapp && !r.uid9Kucing && getWIBMondayOfDate(r.date) === getWIBMondayOfDate(getWIBDate()))
+                .filter(r => r.telegramId === effectiveTelegramId && !r.applicantWhatsapp && !r.uid9Kucing && !r.applicantTelegramUsername && r.date >= currentMondayStr)
                 .sort((a, b) => b.date.localeCompare(a.date))
                 .map((r, idx) => (
-                  <div key={idx} className="p-3 rounded-2xl bg-slate-900/50 border border-slate-800/80 flex items-center justify-between">
-                    <div className="flex flex-col">
-                      <span className="text-[10px] font-bold text-slate-400">{formatDateDisplay(r.date)}</span>
-                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                        <span className="text-xs font-bold text-white">{r.visit} Visit</span>
-                        <span className="text-slate-700">•</span>
-                        <span className="text-xs font-bold text-sky-400">{r.applicant} Data</span>
-                        <span className="text-slate-700">•</span>
-                        <span className="text-xs font-bold text-emerald-400">{r.quality} ACC</span>
-                        <span className="text-slate-700">•</span>
-                        <span className="text-xs font-bold text-indigo-400">{r.posting || 0} Posting</span>
-                        {(r.isLate || (r.fine && r.fine > 0)) && (
-                          <>
-                            <span className="text-slate-700">•</span>
-                            <span className="text-xs font-extrabold text-rose-400 flex items-center gap-0.5" title="Terlambat Kirim Laporan">
-                              ⚠️ Terlambat (Denda Rp {(r.fine || 5000).toLocaleString('id-ID')})
-                            </span>
-                          </>
-                        )}
+                  <div key={idx} className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 flex flex-col gap-3 active:scale-[0.98] transition-transform shadow-sm">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center border ${r.permission === 1 ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 'bg-blue-500/10 text-blue-400 border-blue-500/20'}`}>
+                          {r.permission === 1 ? <UserX className="w-5 h-5" /> : <FileText className="w-5 h-5" />}
+                        </div>
+                        <div>
+                          <span className="text-xs font-black text-slate-900 dark:text-white tracking-tight block">{formatDateDisplay(r.date)}</span>
+                          <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">{getIndonesianDayName(r.date)}</span>
+                        </div>
+                      </div>
+                      <div className={`text-[9px] font-black px-2.5 py-1 rounded-full border ${
+                        r.result === 'ACC' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 shadow-[0_0_8px_rgba(52,211,153,0.1)]' :
+                        r.result === 'REJECT' ? 'bg-rose-500/10 text-rose-400 border-rose-500/20 shadow-[0_0_8px_rgba(251,113,133,0.1)]' :
+                        'bg-amber-500/10 text-amber-400 border-amber-500/20 shadow-[0_0_8px_rgba(251,191,36,0.1)]'
+                      }`}>
+                        {r.result || 'PENDING'}
                       </div>
                     </div>
-                    <div className="flex flex-col items-end">
-                      <span className={`text-[10px] font-black px-2 py-0.5 rounded-lg border ${
-                        r.effectiveStatus === 'YES' 
-                          ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20' 
-                          : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                      }`}>
-                        {r.effectiveStatus}
-                      </span>
-                      {r.permission === 1 && (
-                        <span className="text-[8px] font-bold text-rose-400 mt-1 uppercase tracking-widest">Izin</span>
+
+                    <div className="grid grid-cols-4 gap-2">
+                      {[
+                        { label: 'Visit', value: r.visit, color: 'text-slate-900 dark:text-white' },
+                        { label: 'Data', value: r.applicant, color: 'text-sky-400' },
+                        { label: 'ACC', value: r.quality, color: 'text-emerald-400' },
+                        { label: 'Post', value: r.posting || 0, color: 'text-indigo-400' }
+                      ].map((stat, sIdx) => (
+                        <div key={sIdx} className="bg-white dark:bg-slate-950/60 p-2 rounded-xl border border-slate-200 dark:border-slate-800/80 flex flex-col items-center">
+                          <span className="text-[7px] font-black uppercase text-slate-500 dark:text-slate-400 mb-0.5 tracking-tighter">{stat.label}</span>
+                          <span className={`text-sm font-black ${stat.color}`}>{stat.value}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="flex items-center justify-between mt-1">
+                      <div className="flex items-center gap-2">
+                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-md border ${
+                          r.effectiveStatus === 'YES' 
+                            ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20' 
+                            : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                        }`}>
+                          {r.effectiveStatus}
+                        </span>
+                        {r.permission === 1 && (
+                          <span className="text-[9px] font-black text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded-md uppercase tracking-tight">Izin</span>
+                        )}
+                      </div>
+                      {(r.isLate || (r.fine && r.fine > 0)) && (
+                        <span className="text-[10px] font-black text-rose-400 flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3" />
+                          Danda Rp {(r.fine || 5000).toLocaleString('id-ID')}
+                        </span>
                       )}
                     </div>
                   </div>
                 ))}
-              {reports.filter(r => r.telegramId === effectiveTelegramId && !r.applicantWhatsapp && !r.uid9Kucing && getWIBMondayOfDate(r.date) === getWIBMondayOfDate(getWIBDate())).length === 0 && (
-                <div className="py-12 text-center">
-                  <Clock className="w-8 h-8 text-slate-800 mx-auto mb-2 opacity-20" />
-                  <p className="text-xs text-slate-500 italic">Belum ada laporan minggu ini.</p>
+              {reports.filter(r => r.telegramId === effectiveTelegramId && !r.applicantWhatsapp && !r.uid9Kucing && !r.applicantTelegramUsername && r.date >= currentMondayStr).length === 0 && (
+                <div className="py-12 text-center bg-slate-50 dark:bg-slate-900/20 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800/50">
+                  <Clock className="w-8 h-8 text-slate-800 mx-auto mb-2 opacity-30" />
+                  <p className="text-xs text-slate-500 dark:text-slate-400 italic">Belum ada laporan minggu ini.</p>
                 </div>
               )}
             </div>
@@ -846,58 +991,147 @@ Status Target & Efektif? <b>${formData.effectiveStatus || 'YES'}</b>${isLateSubm
 
       {activeTab === 'archive' && (
         <div className="space-y-4">
-          <GlassCard className="p-4 border-slate-800/80 bg-slate-950/50">
-            <div className="flex items-center gap-3 mb-4">
+          <GlassCard className="p-4 border-slate-200 dark:border-slate-800/80 bg-white dark:bg-slate-950/50">
+            <div className="flex items-center gap-3 mb-6 px-1">
               <div className="p-2.5 rounded-xl bg-purple-500/10 border border-purple-500/20">
                 <Clock className="w-5 h-5 text-purple-400" />
               </div>
-              <div>
-                <h3 className="text-sm font-bold text-white">Arsip Laporan</h3>
-                <p className="text-[10px] text-slate-500">Semua riwayat laporan harian Anda.</p>
+              <div className="space-y-1">
+                <h3 className="text-[15px] font-black text-slate-900 dark:text-white">Arsip Laporan</h3>
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">Riwayat laporan lampau Anda.</p>
               </div>
             </div>
 
-            <div className="space-y-3">
-              {reports
-                .filter(r => r.telegramId === effectiveTelegramId && !r.applicantWhatsapp && !r.uid9Kucing)
-                .sort((a, b) => b.date.localeCompare(a.date))
-                .map((r, idx) => (
-                  <div key={idx} className="p-3 rounded-2xl bg-slate-900/50 border border-slate-800/80 flex items-center justify-between">
-                    <div className="flex flex-col">
-                      <span className="text-[10px] font-bold text-slate-400">{formatDateDisplay(r.date)}</span>
-                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                        <span className="text-xs font-bold text-white">{r.visit} Visit</span>
-                        <span className="text-slate-700">•</span>
-                        <span className="text-xs font-bold text-sky-400">{r.applicant} Data</span>
-                        <span className="text-slate-700">•</span>
-                        <span className="text-xs font-bold text-emerald-400">{r.quality} ACC</span>
-                        <span className="text-slate-700">•</span>
-                        <span className="text-xs font-bold text-indigo-400">{r.posting || 0} Posting</span>
-                        {(r.isLate || (r.fine && r.fine > 0)) && (
-                          <>
-                            <span className="text-slate-700">•</span>
-                            <span className="text-xs font-extrabold text-rose-400 flex items-center gap-0.5" title="Terlambat Kirim Laporan">
-                              ⚠️ Terlambat (Denda Rp {(r.fine || 5000).toLocaleString('id-ID')})
-                            </span>
-                          </>
-                        )}
+            <div className="grid gap-3">
+              {archivedWeeks.map((week, wIdx) => {
+                const isExpanded = expandedWeeks[week.monday];
+                const weekEnd = new Date(week.monday);
+                weekEnd.setDate(weekEnd.getDate() + 6);
+                const weekEndStr = weekEnd.toISOString().split('T')[0];
+                
+                return (
+                  <div key={week.monday} className="space-y-2">
+                    <button
+                      onClick={() => toggleWeek(week.monday)}
+                      className={`w-full flex items-center justify-between p-3 rounded-2xl border transition-all ${
+                        isExpanded 
+                          ? 'bg-purple-500/10 border-purple-500/30 shadow-lg shadow-purple-500/5' 
+                          : 'bg-slate-50 dark:bg-slate-900/40 border-slate-200 dark:border-slate-800/60 hover:bg-slate-50 dark:bg-slate-900/60'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`p-2 rounded-xl transition-colors ${
+                          isExpanded ? 'bg-purple-500 text-slate-950' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                        }`}>
+                          <Calendar className="w-3.5 h-3.5" />
+                        </div>
+                        <div className="text-left">
+                          <span className="text-[11px] font-black text-slate-900 dark:text-slate-200 block uppercase tracking-wider">
+                            Minggu {formatDateDisplay(week.monday)} - {formatDateDisplay(weekEndStr)}
+                          </span>
+                          <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400">
+                            {week.totalReports} Laporan Tersimpan
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex flex-col items-end">
-                      <span className={`text-[10px] font-black px-2 py-0.5 rounded-lg border ${
-                        r.effectiveStatus === 'YES' 
-                          ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20' 
-                          : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                      }`}>
-                        {r.effectiveStatus}
-                      </span>
-                    </div>
+                      <motion.div
+                        animate={{ rotate: isExpanded ? 180 : 0 }}
+                        transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+                      >
+                        <ChevronDown className={`w-4 h-4 ${isExpanded ? 'text-purple-400' : 'text-slate-600'}`} />
+                      </motion.div>
+                    </button>
+
+                    <AnimatePresence>
+                      {isExpanded && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.3, ease: 'easeInOut' }}
+                          className="overflow-hidden"
+                        >
+                          <div className="grid gap-2 pl-2 border-l-2 border-purple-500/20 py-1 mt-2">
+                            {week.dayGroups.map(([date, reps], dIdx) => {
+                              const dayKey = `${week.monday}-${date}`;
+                              const isDayExpanded = expandedArchiveDays[dayKey];
+                              const dayName = getIndonesianDayName(date);
+                              
+                              return (
+                                <div key={dIdx} className="space-y-2">
+                                  <button
+                                    onClick={() => toggleDay(dayKey)}
+                                    className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all ${
+                                      isDayExpanded 
+                                        ? 'bg-purple-500/5 border-purple-500/20 text-purple-300' 
+                                        : 'bg-slate-50 dark:bg-slate-900/20 border-slate-200 dark:border-slate-800/40 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:bg-slate-900/40'
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[10px] font-black uppercase tracking-wider">{dayName}, {formatDateDisplay(date)}</span>
+                                      <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">{reps.length}</span>
+                                    </div>
+                                    <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isDayExpanded ? 'rotate-180' : ''}`} />
+                                  </button>
+
+                                  <AnimatePresence>
+                                    {isDayExpanded && (
+                                      <motion.div
+                                        initial={{ height: 0, opacity: 0 }}
+                                        animate={{ height: 'auto', opacity: 1 }}
+                                        exit={{ height: 0, opacity: 0 }}
+                                        className="overflow-hidden"
+                                      >
+                                        <div className="space-y-2 pl-2 border-l border-slate-200 dark:border-slate-800/50 py-1">
+                                          {reps.map((r, idx) => (
+                                            <div key={idx} className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900/30 border border-slate-200 dark:border-slate-800/40 flex items-center justify-between opacity-90 active:scale-[0.99] transition-transform">
+                                              <div className="flex items-center gap-3">
+                                                <div className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800/50 flex items-center justify-center text-slate-500 dark:text-slate-400 border border-slate-300 dark:border-slate-700/50">
+                                                  {r.permission === 1 ? <UserX className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
+                                                </div>
+                                                <div>
+                                                  <div className="text-[13px] font-black text-slate-700 dark:text-slate-300 tracking-tight">{formatDateDisplay(r.date)}</div>
+                                                  <div className="flex items-center gap-2 mt-0.5">
+                                                    <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                                                      {r.permission === 1 ? 'Izin' : `${r.posting || 0} Post`}
+                                                    </span>
+                                                    {r.fine && r.fine > 0 && (
+                                                      <>
+                                                        <span className="text-slate-800">•</span>
+                                                        <span className="text-[10px] font-bold text-rose-500/60">Danda Rp {r.fine.toLocaleString('id-ID')}</span>
+                                                      </>
+                                                    )}
+                                                  </div>
+                                                </div>
+                                              </div>
+                                              <div className={`text-[9px] font-black px-2 py-1 rounded-full border ${
+                                                r.result === 'ACC' ? 'bg-emerald-500/5 text-emerald-500/50 border-emerald-500/10' :
+                                                r.result === 'REJECT' ? 'bg-rose-500/5 text-rose-500/50 border-rose-500/10' :
+                                                'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-300 dark:border-slate-700/50'
+                                              }`}>
+                                                {r.result || 'PENDING'}
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </motion.div>
+                                    )}
+                                  </AnimatePresence>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </div>
-                ))}
-              {reports.filter(r => r.telegramId === effectiveTelegramId && !r.applicantWhatsapp && !r.uid9Kucing).length === 0 && (
-                <div className="py-12 text-center">
-                  <Clock className="w-8 h-8 text-slate-800 mx-auto mb-2 opacity-20" />
-                  <p className="text-xs text-slate-500 italic">Belum ada riwayat laporan.</p>
+                );
+              })}
+
+              {archivedWeeks.length === 0 && (
+                <div className="py-12 text-center bg-slate-50 dark:bg-slate-900/10 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800/30">
+                  <Clock className="w-8 h-8 text-slate-800 mx-auto mb-2 opacity-10" />
+                  <p className="text-xs text-slate-600 italic">Belum ada arsip laporan.</p>
                 </div>
               )}
             </div>
@@ -907,62 +1141,124 @@ Status Target & Efektif? <b>${formData.effectiveStatus || 'YES'}</b>${isLateSubm
 
       {activeTab === 'status' && isAdminOrOwner && (
         <div className="space-y-4">
-          <GlassCard className="p-4 border-slate-800/80 space-y-4 bg-slate-950/50">
-            <h3 className="text-sm font-bold text-emerald-400 flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4" />
-              <span>Sudah Laporan ({submittedRecruiters.length})</span>
-            </h3>
-            {submittedRecruiters.length === 0 ? (
-              <p className="text-xs text-slate-500">Belum ada yang mengumpulkan laporan.</p>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {submittedRecruiters.map(r => (
-                  <div key={r.telegramId} className="flex items-center gap-3 p-3 rounded-2xl bg-slate-900 border border-slate-800/80 w-full min-w-0">
-                    <div className="w-10 h-10 rounded-xl overflow-hidden bg-slate-800 shrink-0 border border-slate-700">
-                      {r.photoUrl ? (
-                        <img src={r.photoUrl} alt={r.firstName} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-slate-500 font-bold text-xs uppercase">
-                          {r.firstName.slice(0, 2)}
-                        </div>
-                      )}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-bold text-slate-200 truncate">{r.firstName} {r.lastName}</p>
-                      <p className="text-[10px] text-slate-400 truncate">@{r.username || 'Tanpa username'}</p>
-                    </div>
+          <div className="flex bg-slate-50 dark:bg-slate-900/80 p-1.5 rounded-2xl border border-slate-200 dark:border-slate-800 shrink-0 gap-1 overflow-x-auto no-scrollbar scroll-smooth">
+            <button
+              onClick={() => { setStatusSubTab('izin'); triggerHaptic('selection'); }}
+              className={`flex-1 py-2 px-3 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
+                statusSubTab === 'izin' ? 'bg-amber-500 text-slate-950 shadow-lg scale-[1.02]' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <UserX className="w-3.5 h-3.5" />
+              <span>Izin ({izinRecruiters.length})</span>
+            </button>
+            <button
+              onClick={() => { setStatusSubTab('sudah'); triggerHaptic('selection'); }}
+              className={`flex-1 py-2 px-3 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
+                statusSubTab === 'sudah' ? 'bg-emerald-500 text-slate-950 shadow-lg scale-[1.02]' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span>Sudah ({sudahLaporan.length})</span>
+            </button>
+            <button
+              onClick={() => { setStatusSubTab('belum'); triggerHaptic('selection'); }}
+              className={`flex-1 py-2 px-3 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
+                statusSubTab === 'belum' ? 'bg-rose-500 text-slate-950 shadow-lg scale-[1.02]' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <AlertCircle className="w-3.5 h-3.5" />
+              <span>Belum ({belumLaporan.length})</span>
+            </button>
+          </div>
+
+          <GlassCard className="p-4 border-slate-200 dark:border-slate-800/80 space-y-4 bg-white dark:bg-slate-950/50 min-h-[300px]">
+            {statusSubTab === 'izin' && (
+              <div className="space-y-4">
+                {izinRecruiters.length === 0 ? (
+                  <div className="py-12 text-center bg-slate-50 dark:bg-slate-900/20 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800/50">
+                    <p className="text-xs text-slate-500 dark:text-slate-400 italic">Tidak ada recruiter yang izin hari ini.</p>
                   </div>
-                ))}
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {izinRecruiters.map(r => (
+                      <div key={r.telegramId} className="flex items-center gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800/80 w-full min-w-0">
+                        <div className="w-10 h-10 rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800 shrink-0 border border-slate-300 dark:border-slate-700">
+                          {r.photoUrl ? (
+                            <img src={r.photoUrl} alt={r.firstName} className="w-full h-full object-cover grayscale opacity-70" referrerPolicy="no-referrer" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-slate-500 dark:text-slate-400 font-bold text-xs uppercase">
+                              {r.firstName.slice(0, 2)}
+                            </div>
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-bold text-slate-900 dark:text-slate-200 truncate">{r.firstName} {r.lastName}</p>
+                          <p className="text-[10px] text-amber-500 font-bold uppercase tracking-tighter">Status: Izin</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
-          </GlassCard>
 
-          <GlassCard className="p-4 border-slate-800/80 space-y-4 bg-slate-950/50">
-            <h3 className="text-sm font-bold text-rose-400 flex items-center gap-2">
-              <UserX className="w-4 h-4" />
-              <span>Belum Laporan ({unsubmittedRecruiters.length})</span>
-            </h3>
-            {unsubmittedRecruiters.length === 0 ? (
-              <p className="text-xs text-slate-500">Semua recruiter sudah mengumpulkan laporan.</p>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {unsubmittedRecruiters.map(r => (
-                  <div key={r.telegramId} className="flex items-center gap-3 p-3 rounded-2xl bg-slate-900 border border-slate-800/80 w-full min-w-0">
-                    <div className="w-10 h-10 rounded-xl overflow-hidden bg-slate-800 shrink-0 border border-slate-700">
-                      {r.photoUrl ? (
-                        <img src={r.photoUrl} alt={r.firstName} className="w-full h-full object-cover grayscale opacity-70" referrerPolicy="no-referrer" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-slate-500 font-bold text-xs uppercase">
-                          {r.firstName.slice(0, 2)}
-                        </div>
-                      )}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-bold text-slate-300 truncate">{r.firstName} {r.lastName}</p>
-                      <p className="text-[10px] text-slate-400 truncate">@{r.username || 'Tanpa username'}</p>
-                    </div>
+            {statusSubTab === 'sudah' && (
+              <div className="space-y-4">
+                {sudahLaporan.length === 0 ? (
+                  <div className="py-12 text-center bg-slate-50 dark:bg-slate-900/20 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800/50">
+                    <p className="text-xs text-slate-500 dark:text-slate-400 italic">Belum ada yang mengumpulkan laporan aktif.</p>
                   </div>
-                ))}
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {sudahLaporan.map(r => (
+                      <div key={r.telegramId} className="flex items-center gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800/80 w-full min-w-0">
+                        <div className="w-10 h-10 rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800 shrink-0 border border-slate-300 dark:border-slate-700">
+                          {r.photoUrl ? (
+                            <img src={r.photoUrl} alt={r.firstName} className="w-full h-full object-cover"  />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-slate-500 dark:text-slate-400 font-bold text-xs uppercase">
+                              {r.firstName.slice(0, 2)}
+                            </div>
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-bold text-slate-900 dark:text-slate-200 truncate">{r.firstName} {r.lastName}</p>
+                          <p className="text-[10px] text-emerald-500 font-bold uppercase tracking-tighter">Status: Aktif</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {statusSubTab === 'belum' && (
+              <div className="space-y-4">
+                {belumLaporan.length === 0 ? (
+                  <div className="py-12 text-center bg-slate-50 dark:bg-slate-900/20 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800/50">
+                    <p className="text-xs text-slate-500 dark:text-slate-400 italic">Semua recruiter sudah mengumpulkan laporan.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {belumLaporan.map(r => (
+                      <div key={r.telegramId} className="flex items-center gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800/80 w-full min-w-0">
+                        <div className="w-10 h-10 rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800 shrink-0 border border-slate-300 dark:border-slate-700">
+                          {r.photoUrl ? (
+                            <img src={r.photoUrl} alt={r.firstName} className="w-full h-full object-cover grayscale opacity-70" referrerPolicy="no-referrer" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-slate-500 dark:text-slate-400 font-bold text-xs uppercase">
+                              {r.firstName.slice(0, 2)}
+                            </div>
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate">{r.firstName} {r.lastName}</p>
+                          <p className="text-[10px] text-rose-500 font-bold uppercase tracking-tighter">Status: Belum</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </GlassCard>
@@ -972,12 +1268,12 @@ Status Target & Efektif? <b>${formData.effectiveStatus || 'YES'}</b>${isLateSubm
       {/* Modern Alert Modal Overlay */}
       <AnimatePresence>
         {alertState.isOpen && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-white dark:bg-slate-950/80 backdrop-blur-md">
             <motion.div
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="w-full max-w-sm rounded-[32px] bg-slate-900/95 border border-slate-800 p-8 shadow-2xl space-y-6 text-center relative overflow-hidden"
+              className="w-full max-w-sm rounded-[32px] bg-slate-50 dark:bg-slate-900/95 border border-slate-200 dark:border-slate-800 p-8 shadow-2xl space-y-6 text-center relative overflow-hidden"
             >
               {/* Background Ambient Glow */}
               <div
@@ -1009,10 +1305,10 @@ Status Target & Efektif? <b>${formData.effectiveStatus || 'YES'}</b>${isLateSubm
 
               {/* Content */}
               <div className="space-y-2">
-                <h3 className="text-xl font-black text-white tracking-tight">
+                <h3 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">
                   {alertState.title}
                 </h3>
-                <p className="text-sm font-medium text-slate-400 leading-relaxed">
+                <p className="text-sm font-medium text-slate-600 dark:text-slate-400 leading-relaxed">
                   {alertState.message}
                 </p>
               </div>

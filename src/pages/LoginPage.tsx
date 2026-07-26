@@ -127,14 +127,14 @@ export const LoginPage: React.FC = () => {
     return (
       <div 
         style={{ minHeight: 'var(--tg-viewport-height)' }}
-        className="bg-slate-950 flex flex-col items-center justify-center p-4"
+        className="bg-white dark:bg-slate-950 flex flex-col items-center justify-center p-4"
       >
         <GlassCard className="max-w-md w-full p-8 text-center space-y-4 border-blue-500/20">
           <AzurLizeLogo size="lg" />
           <div className="flex flex-col items-center gap-3 pt-4">
             <div className="w-8 h-8 border-3 border-sky-400 border-t-transparent rounded-full animate-spin" />
-            <p className="text-sm font-bold text-white">Memeriksa Status Akun...</p>
-            <p className="text-xs text-slate-400">Sedang memverifikasi data pendaftaran Telegram Anda.</p>
+            <p className="text-sm font-bold text-slate-900 dark:text-white">Memeriksa Status Akun...</p>
+            <p className="text-xs text-slate-600 dark:text-slate-400">Sedang memverifikasi data pendaftaran Telegram Anda.</p>
           </div>
         </GlassCard>
       </div>
@@ -144,15 +144,15 @@ export const LoginPage: React.FC = () => {
   return (
     <div 
       style={{ minHeight: 'var(--tg-viewport-height)' }}
-      className="bg-slate-950 flex flex-col items-center justify-center p-4 pb-safe pt-safe-header overflow-x-hidden"
+      className="bg-white dark:bg-slate-950 flex flex-col items-center justify-center p-4 pb-safe pt-safe-header overflow-x-hidden"
     >
       <div className="max-w-md w-full space-y-6">
         <div className="flex flex-col items-center text-center space-y-2">
           <AzurLizeLogo size="lg" />
-          <h1 className="text-xl font-extrabold text-white tracking-tight mt-2">
+          <h1 className="text-xl font-extrabold text-slate-900 dark:text-white tracking-tight mt-2">
             Pendaftaran Recruiter
           </h1>
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-slate-600 dark:text-slate-400">
             Lengkapi formulir di bawah untuk mendaftar sebagai tim rekrutmen AzurLize.
           </p>
         </div>
@@ -176,27 +176,25 @@ export const LoginPage: React.FC = () => {
           {telegramUser ? (
             <form onSubmit={handleSubmit} className="space-y-4">
               {/* Auto-detected Telegram User Card */}
-              <div className="bg-slate-900/80 p-3.5 rounded-2xl border border-slate-800 flex items-center gap-3">
+              <div className="bg-slate-50 dark:bg-slate-900/80 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 flex items-center gap-3">
                 {telegramUser.photo_url ? (
-                  <img
-                    src={telegramUser.photo_url}
+                  <img referrerPolicy="no-referrer"                     src={telegramUser.photo_url}
                     alt="Telegram Photo"
-                    referrerPolicy="no-referrer"
-                    className="w-12 h-12 rounded-xl object-cover border border-blue-500/40"
+                                         className="w-12 h-12 rounded-xl object-cover border border-blue-500/40"
                   />
                 ) : (
-                  <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-blue-600 to-sky-400 flex items-center justify-center text-white font-bold text-lg">
+                  <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-blue-600 to-sky-400 flex items-center justify-center text-slate-900 dark:text-white font-bold text-lg">
                     {((telegramUser.first_name || 'U')[0] || 'U').toUpperCase()}
                   </div>
                 )}
                 <div className="flex flex-col text-left overflow-hidden">
-                  <span className="text-sm font-bold text-white truncate">
+                  <span className="text-sm font-bold text-slate-900 dark:text-white truncate">
                     {telegramUser.first_name} {telegramUser.last_name || ''}
                   </span>
                   <span className="text-xs text-sky-400 font-medium">
                     {formatUsername(telegramUser.username)} &bull; ID: {telegramUser.id}
                   </span>
-                  <span className="text-[10px] text-slate-500 flex items-center gap-1 mt-0.5">
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1 mt-0.5">
                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> Terdeteksi Otomatis (Telegram WebApp)
                   </span>
                 </div>
@@ -239,9 +237,9 @@ export const LoginPage: React.FC = () => {
                   type="checkbox"
                   checked={formData.agreedTerms}
                   onChange={(e) => setFormData({ ...formData, agreedTerms: e.target.checked })}
-                  className="mt-0.5 rounded bg-slate-900 border-slate-800 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                  className="mt-0.5 rounded bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
                 />
-                <span className="text-xs text-slate-300 leading-relaxed">
+                <span className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
                   Saya menyetujui seluruh <span className="text-blue-400 font-semibold">syarat & ketentuan</span> sebagai tim rekrutmen AzurLizeTeam.
                 </span>
               </label>
@@ -262,8 +260,8 @@ export const LoginPage: React.FC = () => {
                 ⚠️
               </div>
               <div className="space-y-1">
-                <p className="text-sm font-bold text-white">Akun Telegram Tidak Terdeteksi</p>
-                <p className="text-xs text-slate-400 max-w-xs mx-auto leading-relaxed">
+                <p className="text-sm font-bold text-slate-900 dark:text-white">Akun Telegram Tidak Terdeteksi</p>
+                <p className="text-xs text-slate-600 dark:text-slate-400 max-w-xs mx-auto leading-relaxed">
                   Sistem tidak dapat mendeteksi kredensial Telegram Anda. Silakan buka aplikasi ini melalui Telegram Bot Anda.
                 </p>
               </div>

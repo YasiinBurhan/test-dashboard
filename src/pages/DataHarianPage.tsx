@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { doc, setDoc } from 'firebase/firestore';
+import { db } from '../firebase/config';
 import { motion, AnimatePresence } from 'motion/react';
 import Tesseract from 'tesseract.js';
 import { GlassCard } from '../components/common/GlassCard';
@@ -7,12 +9,25 @@ import { Button } from '../components/common/Button';
 import { useReports } from '../hooks/useReports';
 import { useAuth } from '../hooks/useAuth';
 import { DailyReportFormData, DailyReport, SystemSettings, UserProfile } from '../types';
-import { formatUsername, formatWIBDate, getWIBDate, getWIBMonday, getWIBMondayOfDate, formatDateWithDay, getWIBCurrentWeekDays, WIBWeekDayInfo, getWIBWeekRange } from '../utils/format';
+import { 
+  formatUsername, 
+  formatWIBDate, 
+  getWIBDate, 
+  getWIBMonday, 
+  getWIBMondayOfDate, 
+  formatDateWithDay, 
+  getWIBCurrentWeekDays, 
+  WIBWeekDayInfo, 
+  getWIBWeekRange,
+  getIndonesianDayName,
+  formatDateDisplay
+} from '../utils/format';
 import { subscribeToSystemSettings, getSystemSettings } from '../firebase/services/settingService';
 import { sendReportToTelegramApi } from '../services/api';
 import { checkReportDuplicate } from '../firebase/services/reportService';
 import { subscribeToAllUsers } from '../firebase/services/userService';
 import { sendAuditCompleteBroadcast } from '../firebase/services/notificationService';
+import { triggerHaptic } from '../telegram/webapp';
 import { 
   CalendarClock, 
   CheckCircle2, 
@@ -52,9 +67,14 @@ import {
   X,
   Plus,
   Edit2,
-  RotateCcw
+  RotateCcw,
+  Bell,
+  BookOpen,
+  Target,
+  ListOrdered,
+  History,
+  Trash2
 } from 'lucide-react';
-import { triggerHaptic } from '../telegram/webapp';
 
 const getApiBaseUrl = () => {
   if (import.meta.env.VITE_BACKEND_URL) {
@@ -142,7 +162,7 @@ const ChannelPlatformIcon: React.FC<{ id: string; className?: string }> = ({ id,
       );
     case 'Threads':
       return (
-        <svg className={`${className} text-white fill-current`} viewBox="0 0 24 24">
+        <svg className={`${className} text-slate-900 dark:text-white fill-current`} viewBox="0 0 24 24">
           <path d="M12.186 24c-3.142 0-5.782-1.002-7.587-2.87-1.848-1.91-2.599-4.57-2.599-7.728 0-3.322.95-6.07 2.825-8.17C6.632 3.123 9.29 2 12.723 2c3.488 0 6.208 1.14 8.084 3.388 1.583 1.897 2.392 4.417 2.392 7.488 0 .61-.03 1.256-.09 1.933h-3.411c.045-.487.068-.962.068-1.428 0-2.22-.57-3.992-1.693-5.27-1.196-1.36-2.937-2.05-5.183-2.05-2.298 0-4.093.758-5.337 2.252-1.22 1.466-1.838 3.513-1.838 6.084 0 2.327.534 4.254 1.587 5.727 1.055 1.475 2.585 2.223 4.548 2.223 1.623 0 2.946-.43 3.931-1.28.932-.803 1.488-1.922 1.654-3.328h-5.26v-3.072h8.777c.074.526.111 1.077.111 1.652 0 2.457-.833 4.475-2.477 6.002C18.667 23.23 15.808 24 12.186 24z" />
         </svg>
       );
@@ -185,20 +205,6 @@ const ChannelPlatformIcon: React.FC<{ id: string; className?: string }> = ({ id,
 const parseTelegramUsername = (raw?: string) => {
   if (!raw) return { clean: '', formatted: '', url: '' };
   let clean = raw.trim();
-
-  // Handle special case where user doesn't have a telegram username or it was not found
-  if (
-    clean.toLowerCase().includes('tidak ditemukan') || 
-    clean.toLowerCase().includes('tidak ada') || 
-    clean === '-' ||
-    clean.toLowerCase().includes('no username')
-  ) {
-    return {
-      clean: 'tidak_ada',
-      formatted: 'Username Tidak Ditemukan',
-      url: ''
-    };
-  }
 
   // Extract from full URLs or links like https://t.me/username, t.me/username, telegram.me/username, tg://resolve?domain=username
   if (clean.includes('t.me/') || clean.includes('telegram.me/')) {
@@ -325,9 +331,9 @@ const checkTelegramAvailability = async (cleanUsername: string): Promise<{
 // Channel Platforms with Colors & Active Styles
 const CHANNELS = [
   { id: 'Facebook', label: 'FB (Facebook)', color: 'bg-blue-600/20 border-blue-500/40 text-blue-400', activeBg: 'bg-blue-600 text-white' },
-  { id: 'X (Twitter)', label: 'X (Twitter)', color: 'bg-slate-700/30 border-slate-600/40 text-slate-300', activeBg: 'bg-slate-200 text-slate-900' },
+  { id: 'X (Twitter)', label: 'X (Twitter)', color: 'bg-slate-700/30 border-slate-600/40 text-slate-700 dark:text-slate-300', activeBg: 'bg-slate-200 text-slate-900' },
   { id: 'Threads', label: 'Threads', color: 'bg-zinc-800/40 border-zinc-700/50 text-zinc-300', activeBg: 'bg-zinc-100 text-zinc-950' },
-  { id: 'Instagram', label: 'Instagram', color: 'bg-pink-600/20 border-pink-500/40 text-pink-400', activeBg: 'bg-gradient-to-r from-purple-500 to-pink-500 text-white' },
+  { id: 'Instagram', label: 'Instagram', color: 'bg-pink-600/20 border-pink-500/40 text-pink-400', activeBg: 'bg-gradient-to-r from-purple-500 to-pink-500 text-slate-900 dark:text-white' },
   { id: 'TikTok', label: 'TikTok', color: 'bg-cyan-500/20 border-cyan-400/40 text-cyan-300', activeBg: 'bg-cyan-500 text-slate-950' },
   { id: 'LinkedIn', label: 'LinkedIn', color: 'bg-sky-700/20 border-sky-600/40 text-sky-400', activeBg: 'bg-sky-600 text-white' },
   { id: 'Telegram', label: 'Telegram', color: 'bg-sky-500/20 border-sky-400/40 text-sky-300', activeBg: 'bg-sky-500 text-white' },
@@ -448,77 +454,71 @@ const ReportListCard: React.FC<{
   const isImageMedia = rep.videoUrl && (rep.videoUrl.startsWith('data:image/') || rep.videoUrl.match(/\.(jpeg|jpg|png|webp|gif)($|\?)/i));
 
   return (
-    <div className="bg-slate-950 rounded-2xl border border-slate-800 text-xs overflow-hidden transition-all shadow-md hover:border-slate-700">
+    <div className="bg-white dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 text-xs overflow-hidden transition-all shadow-md hover:border-slate-300 dark:hover:border-slate-300 dark:border-slate-700">
       {/* Header Bar - Always Visible (Click to Collapse/Expand) */}
       <div 
         onClick={() => {
           setIsExpanded(!isExpanded);
           triggerHaptic('selection');
         }}
-        className="p-3 flex items-center justify-between cursor-pointer select-none bg-slate-950 hover:bg-slate-900/60 transition-colors"
+        className="p-3 flex items-center justify-between cursor-pointer select-none bg-slate-50 dark:bg-slate-950 hover:bg-slate-100 dark:hover:bg-slate-50 dark:bg-slate-900/60 transition-colors"
       >
         <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-8 h-8 rounded-full overflow-hidden bg-slate-900 border border-slate-700 shrink-0 flex items-center justify-center shadow-inner">
+          <div className="w-8 h-8 rounded-full overflow-hidden bg-slate-200 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 shrink-0 flex items-center justify-center shadow-inner">
             {rep.applicantPhotoUrl ? (
-              <img 
-                src={rep.applicantPhotoUrl} 
+              <img referrerPolicy="no-referrer"                 src={rep.applicantPhotoUrl} 
                 alt="Foto Pelamar" 
                 className="w-full h-full object-cover" 
-                referrerPolicy="no-referrer"
-              />
+                               />
             ) : applicantPhotoInfo?.photoUrl ? (
-              <img 
-                src={applicantPhotoInfo.photoUrl} 
+              <img referrerPolicy="no-referrer"                 src={applicantPhotoInfo.photoUrl} 
                 alt="Foto Pelamar" 
                 className="w-full h-full object-cover" 
-                referrerPolicy="no-referrer"
-              />
+                               />
             ) : isImageMedia ? (
-              <img 
-                src={rep.videoUrl} 
+              <img referrerPolicy="no-referrer"                 src={rep.videoUrl} 
                 alt="Foto Pelamar" 
                 className="w-full h-full object-cover" 
-                referrerPolicy="no-referrer"
-              />
+                               />
             ) : (
-              <span className="text-[11px] font-black text-amber-400">
+              <span className="text-[11px] font-black text-amber-600 dark:text-amber-400">
                 {(rep.applicantTelegramUsername || rep.applicantWhatsapp || 'P').replace('@', '').charAt(0).toUpperCase()}
               </span>
             )}
           </div>
           <div className="flex flex-col min-w-0">
-            <span className="font-bold text-white text-xs truncate leading-tight flex items-center gap-1.5 flex-wrap">
+            <span className="font-bold text-slate-900 dark:text-white text-xs truncate leading-tight flex items-center gap-1.5 flex-wrap">
               <span>{applicantPhotoInfo?.name || applicantPhotoInfo?.firstName || (clean ? clean : 'Pelamar')}</span>
               {rep.videoUrl && (
-                <span className="text-[9px] px-1.5 py-0.2 bg-sky-500/10 text-sky-400 rounded-md border border-sky-500/20 font-medium shrink-0 flex items-center gap-1">
+                <span className="text-[9px] px-1.5 py-0.2 bg-sky-500/10 text-sky-600 dark:text-sky-400 rounded-md border border-sky-500/20 font-medium shrink-0 flex items-center gap-1">
                   🎥 Video Bukti
                 </span>
               )}
               {rep.posting !== undefined && rep.posting > 0 && (
-                <span className="text-[9px] px-1.5 py-0.2 bg-indigo-500/10 text-indigo-400 rounded-md border border-indigo-500/20 font-bold shrink-0 flex items-center gap-1">
+                <span className="text-[9px] px-1.5 py-0.2 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-md border border-indigo-500/20 font-bold shrink-0 flex items-center gap-1">
                   📦 {rep.posting} Posting
                 </span>
               )}
               {(rep.isLate || (rep.fine && rep.fine > 0)) && (
-                <span className="text-[9px] px-1.5 py-0.2 bg-rose-500/10 text-rose-400 rounded-md border border-rose-500/20 font-black shrink-0 flex items-center gap-1">
+                <span className="text-[9px] px-1.5 py-0.2 bg-rose-500/10 text-rose-600 dark:text-rose-400 rounded-md border border-rose-500/20 font-black shrink-0 flex items-center gap-1">
                   ⚠️ Terlambat (Denda Rp {(rep.fine || 5000).toLocaleString('id-ID')})
                 </span>
               )}
             </span>
-            <div className="flex items-center gap-2 text-[10px] text-slate-400 font-medium flex-wrap">
+            <div className="flex items-center gap-2 text-[10px] text-slate-600 dark:text-slate-400 font-medium flex-wrap">
               {formatted ? (
                 <a 
                   href={url as string} 
                   target="_blank" 
                   rel="noopener noreferrer" 
                   onClick={(e) => e.stopPropagation()}
-                  className="text-sky-400 hover:underline font-mono font-semibold truncate flex items-center gap-0.5"
+                  className="text-sky-600 dark:text-sky-400 hover:underline font-mono font-semibold truncate flex items-center gap-0.5"
                 >
                   <Send className="w-2.5 h-2.5 shrink-0" />
                   <span>{formatted}</span>
                 </a>
               ) : (
-                <span className="text-slate-500 text-[10px]">Tanpa Username Telegram</span>
+                <span className="text-slate-500 dark:text-slate-400 text-[10px]">Tanpa Username Telegram</span>
               )}
             </div>
           </div>
@@ -531,29 +531,29 @@ const ReportListCard: React.FC<{
               onChange={(e) => onUpdateStatus(rep.reportId || '', e.target.value as 'Pending' | 'ACC' | 'REJECT', rep.telegramId, rep.applicantTelegramUsername)}
               className={`px-2 py-0.5 rounded-full text-[10px] font-black border outline-none appearance-none cursor-pointer ${
                 rep.result === 'ACC'
-                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                  ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30'
                   : rep.result === 'REJECT'
-                  ? 'bg-rose-500/20 text-rose-300 border-rose-500/30'
-                  : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                  ? 'bg-rose-500/20 text-rose-700 dark:text-rose-300 border-rose-500/30'
+                  : 'bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/30'
               }`}
             >
-              <option value="Pending" className="bg-slate-900 text-amber-400">
+              <option value="Pending" className="bg-white dark:bg-slate-900 text-amber-600 dark:text-amber-400">
                 {isPemeriksaan ? 'Pending (Belum Diperiksa)' : 'Pending'}
               </option>
-              <option value="ACC" className="bg-slate-900 text-emerald-400">
+              <option value="ACC" className="bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400">
                 {isPemeriksaan ? 'ACC (Bekerja)' : 'ACC'}
               </option>
-              <option value="REJECT" className="bg-slate-900 text-rose-400">
+              <option value="REJECT" className="bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400">
                 {isPemeriksaan ? 'REJECT (Tidak Bekerja)' : 'REJECT'}
               </option>
             </select>
           ) : (
             <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${
               rep.result === 'ACC'
-                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30'
                 : rep.result === 'REJECT'
-                ? 'bg-rose-500/20 text-rose-300 border-rose-500/30'
-                : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                ? 'bg-rose-500/20 text-rose-700 dark:text-rose-300 border-rose-500/30'
+                : 'bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/30'
             }`}>
               {rep.result === 'ACC'
                 ? (isPemeriksaan ? 'ACC (Bekerja)' : 'ACC')
@@ -570,11 +570,11 @@ const ReportListCard: React.FC<{
               setIsExpanded(!isExpanded);
               triggerHaptic('selection');
             }}
-            className="p-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 transition-all flex items-center gap-1 text-[10px] font-bold shadow-sm"
+            className="p-1.5 rounded-xl bg-slate-200 dark:bg-slate-900 hover:bg-slate-300 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white border border-slate-300 dark:border-slate-800 transition-all flex items-center gap-1 text-[10px] font-bold shadow-sm"
             title={isExpanded ? "Sembunyikan Detail" : "Lihat Detail Akun"}
           >
             <span>{isExpanded ? 'Tutup' : 'Detail'}</span>
-            {isExpanded ? <ChevronUp className="w-3.5 h-3.5 text-sky-400" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-400" />}
+            {isExpanded ? <ChevronUp className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />}
           </button>
         </div>
       </div>
@@ -587,38 +587,38 @@ const ReportListCard: React.FC<{
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
             transition={{ duration: 0.2 }}
-            className="px-3.5 pb-3.5 pt-1 space-y-2 border-t border-slate-900/80 bg-slate-950/60"
+            className="px-3.5 pb-3.5 pt-1 space-y-2 border-t border-slate-900/80 bg-white dark:bg-slate-950/60"
           >
             {isEditing ? (
               <div className="space-y-3 pt-1">
                 <div className="grid grid-cols-2 gap-3">
                   <div className="flex flex-col gap-1">
-                    <label className="text-slate-500 font-semibold uppercase text-[9px] tracking-wider">Username Telegram</label>
+                    <label className="text-slate-500 dark:text-slate-400 font-semibold uppercase text-[9px] tracking-wider">Username Telegram</label>
                     <input 
                       type="text" 
                       value={editTg} 
                       onChange={(e) => setEditTg(e.target.value)}
-                      className="bg-slate-900 border border-slate-800 text-slate-200 text-xs rounded-xl px-2.5 py-1.5 focus:border-sky-500 focus:outline-none font-medium"
+                      className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-200 text-xs rounded-xl px-2.5 py-1.5 focus:border-sky-500 focus:outline-none font-medium"
                     />
                   </div>
                   <div className="flex flex-col gap-1">
-                    <label className="text-slate-500 font-semibold uppercase text-[9px] tracking-wider">Nomor WhatsApp</label>
+                    <label className="text-slate-500 dark:text-slate-400 font-semibold uppercase text-[9px] tracking-wider">Nomor WhatsApp</label>
                     <input 
                       type="text" 
                       value={editWa} 
                       onChange={(e) => setEditWa(e.target.value)}
-                      className="bg-slate-900 border border-slate-800 text-slate-200 text-xs rounded-xl px-2.5 py-1.5 focus:border-sky-500 focus:outline-none font-medium"
+                      className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-200 text-xs rounded-xl px-2.5 py-1.5 focus:border-sky-500 focus:outline-none font-medium"
                     />
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div className="flex flex-col gap-1">
-                    <label className="text-slate-500 font-semibold uppercase text-[9px] tracking-wider">Grup</label>
+                    <label className="text-slate-500 dark:text-slate-400 font-semibold uppercase text-[9px] tracking-wider">Grup</label>
                     <select 
                       value={editGrup} 
                       onChange={(e) => setEditGrup(e.target.value as 'T0' | 'V0' | 'RECRUITER' | 'T3')}
-                      className="bg-slate-900 border border-slate-800 text-slate-200 text-xs rounded-xl px-2.5 py-1.5 focus:border-sky-500 focus:outline-none cursor-pointer font-medium"
+                      className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-200 text-xs rounded-xl px-2.5 py-1.5 focus:border-sky-500 focus:outline-none cursor-pointer font-medium"
                     >
                       <option value="T0">T0-MARK</option>
                       <option value="V0">V0</option>
@@ -627,11 +627,11 @@ const ReportListCard: React.FC<{
                     </select>
                   </div>
                   <div className="flex flex-col gap-1">
-                    <label className="text-slate-500 font-semibold uppercase text-[9px] tracking-wider">Channel / Sosmed</label>
+                    <label className="text-slate-500 dark:text-slate-400 font-semibold uppercase text-[9px] tracking-wider">Channel / Sosmed</label>
                     <select 
                       value={editChannel} 
                       onChange={(e) => setEditChannel(e.target.value)}
-                      className="bg-slate-900 border border-slate-800 text-slate-200 text-xs rounded-xl px-2.5 py-1.5 focus:border-sky-500 focus:outline-none cursor-pointer font-medium"
+                      className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-200 text-xs rounded-xl px-2.5 py-1.5 focus:border-sky-500 focus:outline-none cursor-pointer font-medium"
                     >
                       {CHANNELS.map(ch => (
                         <option key={ch.id} value={ch.id}>{ch.label}</option>
@@ -645,7 +645,7 @@ const ReportListCard: React.FC<{
                     type="button"
                     disabled={isSaving}
                     onClick={handleSaveDetails}
-                    className="px-3 py-1.5 bg-sky-500 hover:bg-sky-600 disabled:opacity-50 text-white rounded-xl text-[10px] font-bold transition-all flex items-center gap-1 shadow-sm"
+                    className="px-3 py-1.5 bg-sky-500 hover:bg-sky-600 disabled:opacity-50 text-slate-900 dark:text-white rounded-xl text-[10px] font-bold transition-all flex items-center gap-1 shadow-sm"
                   >
                     {isSaving ? 'Menyimpan...' : 'Simpan'}
                   </button>
@@ -659,7 +659,7 @@ const ReportListCard: React.FC<{
                       setEditGrup(rep.grup || 'T0');
                       setEditChannel(rep.channel || '');
                     }}
-                    className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 rounded-xl text-[10px] font-bold border border-slate-800 transition-all"
+                    className="px-3 py-1.5 bg-slate-50 dark:bg-slate-900 hover:bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-200 rounded-xl text-[10px] font-bold border border-slate-200 dark:border-slate-800 transition-all"
                   >
                     Batal
                   </button>
@@ -667,23 +667,23 @@ const ReportListCard: React.FC<{
               </div>
             ) : (
               <>
-                <div className="grid grid-cols-2 gap-x-3 gap-y-2.5 text-[10px] sm:text-xs md:text-sm text-slate-400 pt-1">
+                <div className="grid grid-cols-2 gap-x-3 gap-y-2.5 text-[10px] sm:text-xs md:text-sm text-slate-600 dark:text-slate-400 pt-1">
                   <div className="flex flex-col gap-0.5">
-                    <span className="text-slate-500 font-semibold uppercase text-[9px] sm:text-[10px] md:text-xs tracking-wider">Tanggal</span>
-                    <strong className="text-slate-200 text-[10px] sm:text-xs md:text-sm">{formatDateWithDay(rep.date)}</strong>
+                    <span className="text-slate-500 dark:text-slate-400 font-semibold uppercase text-[9px] sm:text-[10px] md:text-xs tracking-wider">Tanggal</span>
+                    <strong className="text-slate-900 dark:text-slate-200 text-[10px] sm:text-xs md:text-sm">{formatDateWithDay(rep.date)}</strong>
                   </div>
                   <div className="flex flex-col gap-0.5">
-                    <span className="text-slate-500 font-semibold uppercase text-[9px] sm:text-[10px] md:text-xs tracking-wider">UID 9Kucing</span>
+                    <span className="text-slate-500 dark:text-slate-400 font-semibold uppercase text-[9px] sm:text-[10px] md:text-xs tracking-wider">UID 9Kucing</span>
                     <strong className="text-amber-300 font-mono font-bold text-[10px] sm:text-xs md:text-sm">{rep.uid9Kucing || '-'}</strong>
                   </div>
                   <div className="flex flex-col gap-0.5">
-                    <span className="text-slate-500 font-semibold uppercase text-[9px] sm:text-[10px] md:text-xs tracking-wider">Channel</span>
-                    <strong className="text-slate-200 text-[10px] sm:text-xs md:text-sm">{rep.channel || '-'}</strong>
+                    <span className="text-slate-500 dark:text-slate-400 font-semibold uppercase text-[9px] sm:text-[10px] md:text-xs tracking-wider">Channel</span>
+                    <strong className="text-slate-900 dark:text-slate-200 text-[10px] sm:text-xs md:text-sm">{rep.channel || '-'}</strong>
                   </div>
                   <div className="flex flex-col gap-0.5">
-                    <span className="text-slate-500 font-semibold uppercase text-[9px] sm:text-[10px] md:text-xs tracking-wider">Grup</span>
+                    <span className="text-slate-500 dark:text-slate-400 font-semibold uppercase text-[9px] sm:text-[10px] md:text-xs tracking-wider">Grup</span>
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      <strong className="text-slate-200 text-[10px] sm:text-xs md:text-sm">
+                      <strong className="text-slate-900 dark:text-slate-200 text-[10px] sm:text-xs md:text-sm">
                         {rep.grup === 'T0' ? 'T0-MARK' : rep.grup === 'V0' ? 'V0' : rep.grup === 'RECRUITER' ? 'RECRUITER' : rep.grup === 'T3' ? 'T0-MARK' : (rep.grup || '-')}
                       </strong>
                       {rep.grup === 'T3' && (
@@ -694,7 +694,7 @@ const ReportListCard: React.FC<{
                     </div>
                   </div>
                   <div className="flex flex-col gap-1 pt-1.5 border-t border-slate-900/40 mt-1 min-w-0">
-                    <span className="text-slate-500 font-semibold uppercase text-[9px] sm:text-[10px] md:text-xs tracking-wider">WhatsApp Pelamar</span>
+                    <span className="text-slate-500 dark:text-slate-400 font-semibold uppercase text-[9px] sm:text-[10px] md:text-xs tracking-wider">WhatsApp Pelamar</span>
                     <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
                       <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-emerald-500/10 border border-emerald-500/30 shrink-0 flex items-center justify-center">
                         <Phone className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-400" />
@@ -710,7 +710,7 @@ const ReportListCard: React.FC<{
                             {rep.applicantWhatsapp || 'Tanpa WA'}
                           </a>
                         ) : (
-                          <span className="text-[10px] sm:text-xs md:text-sm text-slate-400 font-mono truncate">
+                          <span className="text-[10px] sm:text-xs md:text-sm text-slate-600 dark:text-slate-400 font-mono truncate">
                             {rep.applicantWhatsapp || '-'}
                           </span>
                         )}
@@ -719,24 +719,22 @@ const ReportListCard: React.FC<{
                   </div>
 
                   <div className="flex flex-col gap-1 pt-1.5 border-t border-slate-900/40 mt-1 min-w-0">
-                    <span className="text-slate-500 font-semibold uppercase text-[9px] sm:text-[10px] md:text-xs tracking-wider">Recruiter</span>
+                    <span className="text-slate-500 dark:text-slate-400 font-semibold uppercase text-[9px] sm:text-[10px] md:text-xs tracking-wider">Recruiter</span>
                     <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
-                      <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-full overflow-hidden bg-slate-900 border border-slate-800 shrink-0 flex items-center justify-center">
+                      <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-full overflow-hidden bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shrink-0 flex items-center justify-center">
                         {recruiterInfo?.photoUrl ? (
-                          <img 
-                            src={recruiterInfo.photoUrl} 
+                          <img referrerPolicy="no-referrer"                             src={recruiterInfo.photoUrl} 
                             alt={recruiterInfo.firstName} 
                             className="w-full h-full object-cover" 
-                            referrerPolicy="no-referrer"
-                          />
+                                                       />
                         ) : (
-                          <div className="w-full h-full flex items-center justify-center text-[10px] sm:text-xs font-black text-slate-400 bg-slate-900">
+                          <div className="w-full h-full flex items-center justify-center text-[10px] sm:text-xs font-black text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-900">
                             {recruiterInfo?.firstName?.charAt(0).toUpperCase() || (rep.recruiterUsername || rep.username || '?').replace(/^@/, '').charAt(0).toUpperCase()}
                           </div>
                         )}
                       </div>
                       <div className="flex flex-col min-w-0">
-                        <span className="text-[10px] sm:text-xs md:text-sm text-slate-200 font-extrabold leading-tight truncate">
+                        <span className="text-[10px] sm:text-xs md:text-sm text-slate-900 dark:text-slate-200 font-extrabold leading-tight truncate">
                           {formatUsername(rep.recruiterUsername || rep.username)}
                         </span>
                       </div>
@@ -748,7 +746,7 @@ const ReportListCard: React.FC<{
                 {rep.videoUrl && (
                   <div className="pt-2 border-t border-slate-900/60 mt-1.5 space-y-1">
                     <div className="flex items-center justify-between">
-                      <span className="text-slate-500 font-semibold uppercase text-[9px] sm:text-[10px] md:text-xs tracking-wider flex items-center gap-1">
+                      <span className="text-slate-500 dark:text-slate-400 font-semibold uppercase text-[9px] sm:text-[10px] md:text-xs tracking-wider flex items-center gap-1">
                         <span>🎥 Video Bukti Pelamar</span>
                       </span>
                       <button
@@ -761,22 +759,20 @@ const ReportListCard: React.FC<{
                     </div>
                     <div 
                       onClick={() => setShowMediaModal(true)}
-                      className="relative rounded-xl overflow-hidden border border-slate-800 bg-slate-900/80 max-h-36 flex items-center justify-center cursor-pointer group hover:border-sky-500/50 transition-all"
+                      className="relative rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/80 max-h-36 flex items-center justify-center cursor-pointer group hover:border-sky-500/50 transition-all"
                     >
                       {isImageMedia ? (
-                        <img 
-                          src={rep.videoUrl} 
+                        <img referrerPolicy="no-referrer"                           src={rep.videoUrl} 
                           alt="Foto Pelamar" 
                           className="w-full max-h-36 object-cover group-hover:scale-105 transition-transform duration-300" 
-                          referrerPolicy="no-referrer"
-                        />
+                                                   />
                       ) : (
                         <video 
                           src={rep.videoUrl} 
                           className="w-full max-h-36 object-contain bg-black"
                         />
                       )}
-                      <div className="absolute inset-0 bg-slate-950/20 group-hover:bg-transparent transition-colors" />
+                      <div className="absolute inset-0 bg-white dark:bg-slate-950/20 group-hover:bg-transparent transition-colors" />
                     </div>
                   </div>
                 )}
@@ -784,8 +780,8 @@ const ReportListCard: React.FC<{
             )}
 
             {/* Action Row: Hubungi Pelamar (Telegram & WhatsApp) & Ubah Data */}
-            <div className="flex items-center justify-between pt-2 border-t border-slate-800/80 mt-1.5 flex-wrap gap-2">
-              <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500">
+            <div className="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-slate-800/80 mt-1.5 flex-wrap gap-2">
+              <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                 Aksi Lanjutan:
               </span>
               <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
@@ -796,7 +792,7 @@ const ReportListCard: React.FC<{
                       setIsEditing(true);
                       triggerHaptic('selection');
                     }}
-                    className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-sky-500/30 text-[10px] text-slate-300 hover:text-white font-bold flex items-center gap-1 transition-all shadow-sm"
+                    className="px-2.5 py-1 rounded-lg bg-slate-50 dark:bg-slate-900 hover:bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 hover:border-sky-500/30 text-[10px] text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:text-white font-bold flex items-center gap-1 transition-all shadow-sm"
                   >
                     <Edit2 className="w-2.5 h-2.5 text-sky-400" />
                     <span>Ubah Data</span>
@@ -835,30 +831,29 @@ const ReportListCard: React.FC<{
       {/* Full Screen Media Modal */}
       {showMediaModal && rep.videoUrl && (
         <div 
-          className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md p-4 flex items-center justify-center"
+          className="fixed inset-0 z-50 bg-white dark:bg-slate-950/90 backdrop-blur-md p-4 flex items-center justify-center"
           onClick={() => setShowMediaModal(false)}
         >
           <div 
-            className="relative max-w-lg w-full bg-slate-900 border border-slate-800 rounded-3xl p-3 overflow-hidden shadow-2xl space-y-3"
+            className="relative max-w-lg w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-3 overflow-hidden shadow-2xl space-y-3"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between pb-2 border-b border-slate-800 px-1">
-              <span className="text-xs font-bold text-white flex items-center gap-1.5">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800 px-1">
+              <span className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
                 <span>🎥 Video Bukti Pelamar</span>
-                <span className="text-[10px] text-slate-400 font-normal">({rep.applicantWhatsapp || 'Pelamar'})</span>
+                <span className="text-[10px] text-slate-600 dark:text-slate-400 font-normal">({rep.applicantWhatsapp || 'Pelamar'})</span>
               </span>
               <button
                 type="button"
                 onClick={() => setShowMediaModal(false)}
-                className="p-1 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors"
+                className="p-1 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-700 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:text-white transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
             <div className="rounded-2xl overflow-hidden bg-black flex items-center justify-center max-h-[75vh]">
               {isImageMedia ? (
-                <img 
-                  src={rep.videoUrl} 
+                <img referrerPolicy="no-referrer"                   src={rep.videoUrl} 
                   alt="Bukti Pelamar" 
                   className="w-full h-full object-contain"
                 />
@@ -881,17 +876,116 @@ const ReportListCard: React.FC<{
 export const DataHarianPage: React.FC = () => {
   const { userProfile, telegramUser } = useAuth();
   const { reports, submitReport, updateStatus, updatePermission, updateDetails, isLoading } = useReports();
-  const [activeTab, setActiveTab] = useState<'formulir' | 'minggu_ini' | 'pemeriksaan' | 'arsip'>('formulir');
+  const [activeTab, setActiveTab] = useState<'formulir' | 'minggu_ini' | 'pemeriksaan'>('formulir');
+  const [pemeriksaanSubTab, setPemeriksaanSubTab] = useState<'pemeriksaan' | 'arsip'>('pemeriksaan');
   const [pemeriksaanFilter, setPemeriksaanFilter] = useState<'pending' | 'bekerja' | 'tidak_bekerja'>('pending');
   const [activeDayTab, setActiveDayTab] = useState<'Semua' | 'Senin' | 'Selasa' | 'Rabu' | 'Kamis' | 'Jumat' | 'Sabtu' | 'Minggu'>('Semua');
   const [selectedRecruiter, setSelectedRecruiter] = useState<string>('Semua');
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [expandedArchiveWeekKey, setExpandedArchiveWeekKey] = useState<string | null>(null);
+  const [expandedArchiveDayKey, setExpandedArchiveDayKey] = useState<string | null>(null);
   const [archiveWeekPage, setArchiveWeekPage] = useState<number>(1);
   const [isChannelDropdownOpen, setIsChannelDropdownOpen] = useState<boolean>(false);
+  const [activeGuideTab, setActiveGuideTab] = useState<'langkah' | 'target' | 'ketentuan'>('langkah');
+  const [isGuideOpen, setIsGuideOpen] = useState<boolean>(false);
   const ITEMS_PER_PAGE = 10;
 
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
+  const [generatingData, setGeneratingData] = useState(false);
+  const [generateProgress, setGenerateProgress] = useState(0);
+
+  const handleAutoGenerateData = async () => {
+    setGeneratingData(true);
+    setGenerateProgress(0);
+    triggerHaptic('notification');
+
+    try {
+      const channels = ['Facebook', 'TikTok', 'Instagram', 'Telegram', 'WhatsApp Group'];
+      const firstNames = ['Agus', 'Budi', 'Chandra', 'Dewi', 'Eka', 'Fajar', 'Gita', 'Hadi', 'Indah', 'Joko', 'Kadek', 'Lani', 'Moko', 'Novi', 'Oki', 'Putu'];
+      const lastNames = ['Santoso', 'Pratama', 'Hidayat', 'Kurniawan', 'Wibowo', 'Sari', 'Wijaya', 'Siregar', 'Lestari', 'Saputra', 'Utami'];
+      const notes = [
+        'Pelamar berminat dengan posisi promotor game.',
+        'Sudah mengisi formulir pendaftaran lengkap dan melampirkan KTP.',
+        'Memiliki pengalaman marketing selama 1 tahun.',
+        'Pelamar aktif bertanya tentang sistem komisi harian.',
+        'Sangat antusias untuk segera mulai bekerja.',
+        'Butuh panduan instalasi aplikasi 9Kucing.',
+        'Bersedia bekerja dengan sistem shift/jadwal fleksibel.',
+        'Pelamar direkomendasikan karena hasil interview yang baik.',
+        'Mempunyai koneksi internet yang stabil untuk bekerja remote.',
+        'Ingin tahu lebih detail mengenai benefit tambahan.'
+      ];
+
+      const recruiters = recruitersList.length > 0 
+        ? recruitersList 
+        : [{ key: '999999999', telegramId: '999999999', username: '@mock_recruiter', name: 'Mock Recruiter' }];
+
+      const totalToGenerate = 10;
+      const today = new Date();
+
+      for (let i = 0; i < totalToGenerate; i++) {
+        const rec = recruiters[Math.floor(Math.random() * recruiters.length)];
+        
+        const randDaysAgo = Math.floor(Math.random() * 5);
+        const reportDate = new Date(today);
+        reportDate.setDate(today.getDate() - randDaysAgo);
+        const dateStr = reportDate.toISOString().split('T')[0];
+
+        const fName = firstNames[Math.floor(Math.random() * firstNames.length)];
+        const lName = lastNames[Math.floor(Math.random() * lastNames.length)];
+        const fullName = `${fName} ${lName}`;
+        const waNum = '628' + Math.floor(100000000 + Math.random() * 900000000);
+        const uid9K = '9K_' + Math.floor(100000 + Math.random() * 900000);
+        const applicantTg = (fName + '_' + lName).toLowerCase();
+        
+        const rand = Math.random();
+        const result: 'ACC' | 'Pending' | 'REJECT' = rand < 0.4 ? 'ACC' : (rand < 0.8 ? 'Pending' : 'REJECT');
+        
+        const groups: ('T0' | 'V0' | 'RECRUITER' | 'T3')[] = ['T0', 'V0', 'RECRUITER', 'T3'];
+        const randomGroup = groups[Math.floor(Math.random() * groups.length)];
+
+        const reportId = `REP_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
+
+        const data: DailyReport = {
+          reportId,
+          telegramId: rec.telegramId || '999999999',
+          username: rec.username ? rec.username.replace(/^@/, '') : 'recruiter',
+          name: rec.name,
+          date: dateStr,
+          recruiterUsername: rec.username || 'recruiter',
+          channel: channels[Math.floor(Math.random() * channels.length)],
+          applicantWhatsapp: waNum,
+          uid9Kucing: uid9K,
+          applicantTelegramUsername: applicantTg,
+          result,
+          grup: randomGroup,
+          visit: Math.floor(Math.random() * 30) + 10,
+          applicant: 1,
+          quality: Math.floor(Math.random() * 5) + 1,
+          posting: Math.floor(Math.random() * 10) + 2,
+          permission: Math.random() > 0.5 ? 1 : 0,
+          effectiveStatus: Math.random() > 0.2 ? 'YES' : 'NO',
+          note: notes[Math.floor(Math.random() * notes.length)],
+          videoUrl: 'https://sample-videos.com/video321/mp4/720/big_buck_bunny_720p_1mb.mp4',
+          applicantPhotoUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=400',
+          createdAt: new Date(reportDate.getTime() + Math.floor(Math.random() * 86400000)).toISOString()
+        };
+
+        await setDoc(doc(db, 'data_harian', reportId), data);
+
+        setGenerateProgress(prev => prev + 1);
+        await new Promise(resolve => setTimeout(resolve, 80));
+      }
+
+      triggerHaptic('notification');
+      alert('Berhasil meng-generate 10 data pelamar ke koleksi data_harian!');
+    } catch (err: any) {
+      console.error('Error generating mock data:', err);
+      alert('Gagal meng-generate data: ' + err.message);
+    } finally {
+      setGeneratingData(false);
+    }
+  };
 
   useEffect(() => {
     const unsubscribe = subscribeToAllUsers((users) => {
@@ -924,7 +1018,7 @@ export const DataHarianPage: React.FC = () => {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [activeTab, activeDayTab, selectedRecruiter]);
+  }, [activeTab, activeDayTab, selectedRecruiter, pemeriksaanSubTab]);
 
   const isAdminOrOwner = userProfile?.role === 'Admin' || userProfile?.role === 'Owner';
   const telegramId = userProfile?.telegramId || String(telegramUser?.id || '');
@@ -932,13 +1026,17 @@ export const DataHarianPage: React.FC = () => {
   const todayStr = getWIBDate();
 
   // Auto-set recruiter username
-  const autoRecruiterUsername = userProfile?.username 
-    ? formatUsername(userProfile.username)
-    : telegramUser?.username
-    ? formatUsername(telegramUser.username)
-    : userProfile?.firstName
-    ? formatUsername(userProfile.firstName)
-    : 'Recruiter';
+  const autoRecruiterUsername = useMemo(() => {
+    if (userProfile?.username) return formatUsername(userProfile.username);
+    if (telegramUser?.username) return formatUsername(telegramUser.username);
+    if (userProfile?.firstName) {
+      return userProfile.lastName ? `${userProfile.firstName} ${userProfile.lastName}` : userProfile.firstName;
+    }
+    if (telegramUser?.first_name) {
+      return telegramUser.last_name ? `${telegramUser.first_name} ${telegramUser.last_name}` : telegramUser.first_name;
+    }
+    return 'Recruiter';
+  }, [userProfile, telegramUser]);
 
   interface RecruiterOption {
     key: string;
@@ -953,12 +1051,23 @@ export const DataHarianPage: React.FC = () => {
   const recruitersList = useMemo(() => {
     const map = new Map<string, RecruiterOption>();
 
-    // 1. Add registered Recruiter users from allUsers (exclude Admin & Owner)
+    const adminOwnerIds = new Set(
+      allUsers
+        .filter(u => u.role === 'Admin' || u.role === 'Owner')
+        .map(u => String(u.telegramId))
+    );
+    const adminOwnerUsernames = new Set(
+      allUsers
+        .filter(u => u.role === 'Admin' || u.role === 'Owner')
+        .map(u => (u.username || '').replace(/@/g, '').toLowerCase().trim())
+        .filter(Boolean)
+    );
+
+    // 1. Add registered users from allUsers
     allUsers.forEach((u) => {
       if (u.role === 'Admin' || u.role === 'Owner') return;
-
       const cleanUname = (u.username || u.firstName || '').replace(/@/g, '').trim().toLowerCase();
-      const formattedUname = formatUsername(u.username || u.firstName || u.telegramId);
+      const formattedUname = u.username ? formatUsername(u.username) : (u.firstName ? (u.lastName ? `${u.firstName} ${u.lastName}` : u.firstName) : 'Recruiter');
       const fullName = u.lastName ? `${u.firstName} ${u.lastName}` : (u.firstName || u.username || 'Recruiter');
       const key = u.telegramId ? String(u.telegramId) : (cleanUname || formattedUname.toLowerCase());
 
@@ -979,7 +1088,12 @@ export const DataHarianPage: React.FC = () => {
       const rTgId = r.telegramId ? String(r.telegramId) : undefined;
 
       const cleanUname = rUsername.replace(/@/g, '').trim().toLowerCase();
-      const formattedUname = formatUsername(rUsername || rTgId || 'Recruiter');
+
+      // Skip admins and owners from reports submitters as well
+      if (rTgId && adminOwnerIds.has(rTgId)) return;
+      if (cleanUname && adminOwnerUsernames.has(cleanUname)) return;
+
+      const formattedUname = rUsername ? formatUsername(rUsername) : (rName || rTgId || 'Recruiter');
       const key = rTgId || (cleanUname || formattedUname.toLowerCase());
 
       if (!map.has(key)) {
@@ -1009,8 +1123,23 @@ export const DataHarianPage: React.FC = () => {
 
   // Admin/Owner sees all reports, regular users see only theirs
   const userReports = useMemo(() => {
+    const adminOwnerIds = new Set(
+      allUsers
+        .filter(u => u.role === 'Admin' || u.role === 'Owner')
+        .map(u => String(u.telegramId))
+    );
+    const adminOwnerUsernames = new Set(
+      allUsers
+        .filter(u => u.role === 'Admin' || u.role === 'Owner')
+        .map(u => (u.username || '').replace(/@/g, '').toLowerCase().trim())
+        .filter(Boolean)
+    );
+
     // Only display individual applicant entries (having whatsapp or uid9kucing), exclude Daily Summary reports
-    const applicantOnlyReports = reports.filter((r) => r.applicantWhatsapp || r.uid9Kucing);
+    const applicantOnlyReports = reports.filter((r) => {
+      if (!r.applicantWhatsapp && !r.uid9Kucing) return false;
+      return true;
+    });
 
     let baseReports = applicantOnlyReports;
     if (!isAdminOrOwner) {
@@ -1195,10 +1324,27 @@ export const DataHarianPage: React.FC = () => {
 
     return sortedWeekKeys.map(weekKey => {
       const weekRange = getWIBWeekRange(weekKey);
+      
+      // Group by day of week
+      const dayGroups: Record<string, DailyReport[]> = {};
+      groups[weekKey].forEach(rep => {
+        const dateKey = rep.date || 'Unknown';
+        if (!dayGroups[dateKey]) {
+          dayGroups[dateKey] = [];
+        }
+        dayGroups[dateKey].push(rep);
+      });
+
+      const sortedDates = Object.keys(dayGroups).sort((a, b) => a.localeCompare(b));
+
       return {
         weekKey,
         rangeText: weekRange.shortFormattedRange,
-        reports: groups[weekKey]
+        reports: groups[weekKey],
+        dayGroups: sortedDates.map(date => ({
+          date,
+          reports: dayGroups[date]
+        }))
       };
     });
   }, [reportsArsip]);
@@ -1220,12 +1366,12 @@ export const DataHarianPage: React.FC = () => {
     const totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE) || 1;
 
     return (
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3 rounded-2xl bg-slate-950/90 border border-slate-800/90 shadow-xl mt-4">
-        <div className="text-[10px] font-bold text-slate-400 text-center sm:text-left flex items-center gap-2 flex-wrap justify-center sm:justify-start">
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3 rounded-2xl bg-white dark:bg-slate-950/90 border border-slate-200 dark:border-slate-800/90 shadow-xl mt-4">
+        <div className="text-[10px] font-bold text-slate-600 dark:text-slate-400 text-center sm:text-left flex items-center gap-2 flex-wrap justify-center sm:justify-start">
           <span>
-            Menampilkan <span className="text-white font-black">{Math.min((currentPage - 1) * ITEMS_PER_PAGE + 1, totalItems)} - {Math.min(currentPage * ITEMS_PER_PAGE, totalItems)}</span> dari <span className="text-white font-black">{totalItems}</span> data
+            Menampilkan <span className="text-slate-900 dark:text-white font-black">{Math.min((currentPage - 1) * ITEMS_PER_PAGE + 1, totalItems)} - {Math.min(currentPage * ITEMS_PER_PAGE, totalItems)}</span> dari <span className="text-slate-900 dark:text-white font-black">{totalItems}</span> data
           </span>
-          <span className="text-[9px] px-2 py-0.5 rounded-full bg-slate-900 border border-slate-800 text-sky-400 font-semibold shadow-inner">
+          <span className="text-[9px] px-2 py-0.5 rounded-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-sky-400 font-semibold shadow-inner">
             10 per halaman
           </span>
         </div>
@@ -1243,8 +1389,8 @@ export const DataHarianPage: React.FC = () => {
               disabled={currentPage === 1}
               className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-1 border ${
                 currentPage === 1
-                  ? 'bg-slate-900/40 text-slate-600 border-slate-800/40 cursor-not-allowed'
-                  : 'bg-slate-900 text-sky-400 border-slate-700 hover:bg-slate-800 hover:text-white shadow-sm cursor-pointer'
+                  ? 'bg-slate-50 dark:bg-slate-900/40 text-slate-600 border-slate-200 dark:border-slate-800/40 cursor-not-allowed'
+                  : 'bg-slate-50 dark:bg-slate-900 text-sky-400 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:bg-slate-800 hover:text-slate-900 dark:text-white shadow-sm cursor-pointer'
               }`}
             >
               <ChevronLeft className="w-3.5 h-3.5" />
@@ -1268,7 +1414,7 @@ export const DataHarianPage: React.FC = () => {
                         className={`w-7 h-7 rounded-xl text-[10px] font-black transition-all border ${
                           currentPage === p
                             ? 'bg-sky-500 text-slate-950 border-sky-400 shadow-md shadow-sky-500/20'
-                            : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white cursor-pointer'
+                            : 'bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:text-slate-900 dark:text-white cursor-pointer'
                         }`}
                       >
                         {p}
@@ -1289,8 +1435,8 @@ export const DataHarianPage: React.FC = () => {
               disabled={currentPage === totalPages}
               className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-1 border ${
                 currentPage === totalPages
-                  ? 'bg-slate-900/40 text-slate-600 border-slate-800/40 cursor-not-allowed'
-                  : 'bg-slate-900 text-sky-400 border-slate-700 hover:bg-slate-800 hover:text-white shadow-sm cursor-pointer'
+                  ? 'bg-slate-50 dark:bg-slate-900/40 text-slate-600 border-slate-200 dark:border-slate-800/40 cursor-not-allowed'
+                  : 'bg-slate-50 dark:bg-slate-900 text-sky-400 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:bg-slate-800 hover:text-slate-900 dark:text-white shadow-sm cursor-pointer'
               }`}
             >
               Next
@@ -1406,7 +1552,6 @@ export const DataHarianPage: React.FC = () => {
       );
 
       const text = result.data.text || '';
-      console.log('Tesseract OCR Result Raw Text:', text);
 
       let extractedUid = '';
 
@@ -1460,7 +1605,6 @@ export const DataHarianPage: React.FC = () => {
               const cleaned = cleanOcrDigits(match);
               if (cleaned.length >= 5 && cleaned.length <= 15 && !isPhoneNumber(cleaned)) {
                 extractedUid = cleaned;
-                console.log(`[OCR Stage 1a] Found on same line as keyword: ${extractedUid} (raw: ${match})`);
                 break;
               }
             }
@@ -1476,7 +1620,6 @@ export const DataHarianPage: React.FC = () => {
                 const cleaned = cleanOcrDigits(match);
                 if (cleaned.length >= 5 && cleaned.length <= 15 && !isPhoneNumber(cleaned)) {
                   extractedUid = cleaned;
-                  console.log(`[OCR Stage 1b] Found on next line: ${extractedUid} (raw: ${match})`);
                   break;
                 }
               }
@@ -1493,7 +1636,6 @@ export const DataHarianPage: React.FC = () => {
                 const cleaned = cleanOcrDigits(match);
                 if (cleaned.length >= 5 && cleaned.length <= 15 && !isPhoneNumber(cleaned)) {
                   extractedUid = cleaned;
-                  console.log(`[OCR Stage 1c] Found on line after next: ${extractedUid} (raw: ${match})`);
                   break;
                 }
               }
@@ -1516,7 +1658,6 @@ export const DataHarianPage: React.FC = () => {
               const cleaned = cleanOcrDigits(keywordMatch[1]);
               if (cleaned.length >= 5 && cleaned.length <= 15 && !isPhoneNumber(cleaned)) {
                 extractedUid = cleaned;
-                console.log(`[OCR Stage 2] Found with spaced-out keyword remover: ${extractedUid}`);
                 break;
               }
             }
@@ -1533,7 +1674,6 @@ export const DataHarianPage: React.FC = () => {
             for (const match of standaloneMatches) {
               if (!isPhoneNumber(match)) {
                 extractedUid = match;
-                console.log(`[OCR Stage 3] Found via standalone digits: ${extractedUid}`);
                 break;
               }
             }
@@ -1550,7 +1690,6 @@ export const DataHarianPage: React.FC = () => {
             const cleaned = cleanOcrDigits(match);
             if (cleaned.length >= 5 && cleaned.length <= 15 && !isPhoneNumber(cleaned)) {
               extractedUid = cleaned;
-              console.log(`[OCR Stage 4] Found via general character scan: ${extractedUid}`);
               break;
             }
           }
@@ -1601,15 +1740,6 @@ export const DataHarianPage: React.FC = () => {
     }
 
     const { clean: cleanTg } = parseTelegramUsername(rawTg);
-
-    if (cleanTg === 'tidak_ada') {
-      setTgStatus({
-        status: 'exists',
-        title: 'Username Tidak Ditemukan',
-        message: 'Pelamar dikonfirmasi tidak memiliki username Telegram.'
-      });
-      return;
-    }
 
     if (!cleanTg || cleanTg.length < 5 || !/^[a-zA-Z0-9_]{5,32}$/.test(cleanTg)) {
       setTgStatus({
@@ -1695,12 +1825,19 @@ export const DataHarianPage: React.FC = () => {
 
   // Keep date & recruiter username always auto-updated
   useEffect(() => {
+    let activeRecName = autoRecruiterUsername;
+    if (isAdminOrOwner && selectedRecruiter !== 'Semua') {
+      const selectedRec = recruitersList.find(r => r.key === selectedRecruiter || r.telegramId === selectedRecruiter);
+      if (selectedRec) {
+        activeRecName = selectedRec.username || selectedRec.name || autoRecruiterUsername;
+      }
+    }
     setFormData((prev) => ({
       ...prev,
       date: todayStr,
-      recruiterUsername: autoRecruiterUsername
+      recruiterUsername: activeRecName
     }));
-  }, [todayStr, autoRecruiterUsername]);
+  }, [todayStr, autoRecruiterUsername, isAdminOrOwner, selectedRecruiter, recruitersList]);
 
   // Live countdown to midnight (00:00)
   const [timeRemainingMs, setTimeRemainingMs] = useState<number>(0);
@@ -1782,7 +1919,13 @@ export const DataHarianPage: React.FC = () => {
       return;
     }
 
-    if (formData.applicantTelegramUsername && formData.applicantTelegramUsername.toLowerCase() !== 'tidak_ada' && formData.applicantTelegramUsername.toLowerCase() !== 'tidak ada') {
+    if (!formData.applicantTelegramUsername || !formData.applicantTelegramUsername.trim()) {
+      setError('Username Telegram pelamar wajib diisi.');
+      showAlert('warning', 'Data Belum Lengkap', 'Username Telegram pelamar wajib diisi.');
+      return;
+    }
+
+    if (formData.applicantTelegramUsername) {
       if (tgStatus.status === 'checking') {
         setError('Sedang mengecek validitas username Telegram, mohon tunggu sebentar.');
         showAlert('warning', 'Pengecekan Telegram', 'Sedang mengecek username Telegram, silakan tunggu sebentar.');
@@ -1845,7 +1988,7 @@ export const DataHarianPage: React.FC = () => {
       const reportData = {
         ...formData,
         date: todayStr, // Ensure auto set date
-        recruiterUsername: autoRecruiterUsername, // Ensure auto set recruiter username
+        recruiterUsername: formData.recruiterUsername || autoRecruiterUsername, // Ensure auto set recruiter username
         applicantTelegramUsername: finalTg,
         result: 'Pending' as 'Pending' | 'ACC' | 'REJECT',
         grup: targetGrup
@@ -1875,14 +2018,28 @@ export const DataHarianPage: React.FC = () => {
           if (targetGrup === 'V0') topicId = currentSettings?.telegramTopicV0 || '';
           if (targetGrup === 'RECRUITER') topicId = currentSettings?.telegramTopicRecruiter || '';
 
-          // Call our proxy server to send the message to Telegram
-          const res = await sendReportToTelegramApi(reportData, formData.videoUrl, groupId, topicId);
-          if (!res.success) {
-            console.error('Failed to send to telegram:', res.error);
-            telegramNotice = ` (Catatan Telegram: ${res.error})`;
-          } else {
-            telegramNotice = ' (Terkirim ke Telegram)';
-          }
+          // Construct custom text identical to preview
+          const tgUname = reportData.applicantTelegramUsername ? `@${reportData.applicantTelegramUsername.replace(/^@/, '')}` : '-';
+          const recr = `@${(reportData.recruiterUsername || '').replace(/^@/, '')}`;
+          const grupDisplay = reportData.grup === 'T0' ? 'T0-MARK' : reportData.grup === 'V0' ? 'V0' : reportData.grup === 'RECRUITER' ? 'RECRUITER' : reportData.grup === 'T3' ? 'T0-MARK (Dipromosikan)' : (reportData.grup || '-');
+          const tgName = tgStatus.title || 'Tidak Diketahui';
+          
+          const customText = `UID : ${reportData.uid9Kucing}
+WA : ${reportData.applicantWhatsapp}
+Nama : <b>${tgName}</b>
+Username Telegram : <b>${tgUname}</b>
+Rekomendasi dari : <b>${recr}</b>
+Info dari sosmed : <b>${reportData.channel || '-'}</b>
+
+Grub : <b>${grupDisplay}</b>`;
+
+          // Send asynchronously to make UI faster
+          sendReportToTelegramApi(reportData, formData.videoUrl, groupId, topicId, customText).then(res => {
+            if (!res.success) {
+              console.error('Failed to send to telegram:', res.error);
+            }
+          });
+          telegramNotice = ' (Sedang dikirim ke Telegram...)';
         } catch (e) {
           console.error('Error sending telegram notification:', e);
           telegramNotice = ` (Error Telegram: ${e instanceof Error ? e.message : 'Koneksi gagal'})`;
@@ -1922,143 +2079,127 @@ export const DataHarianPage: React.FC = () => {
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
-      className="space-y-5 pb-28"
+      className="space-y-5"
     >
       {/* Live Timer Section */}
-      <GlassCard className="p-4 border-sky-500/20 bg-sky-500/5 overflow-hidden relative">
+      <GlassCard className="p-4 border-sky-500/30 dark:border-sky-500/20 bg-sky-50/80 dark:bg-sky-500/5 overflow-hidden relative">
         <div className="absolute top-0 right-0 p-2 opacity-10">
           <Sparkles className="w-12 h-12 text-sky-500" />
         </div>
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between relative z-10 gap-3">
           <div className="flex flex-col min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[10px] font-black text-sky-400 uppercase tracking-widest flex items-center gap-1.5">
-                <Timer className="w-3.5 h-3.5 animate-pulse text-sky-400" />
+              <span className="text-[10px] font-black text-sky-600 dark:text-sky-400 uppercase tracking-widest flex items-center gap-1.5">
+                <Timer className="w-3.5 h-3.5 animate-pulse text-sky-500 dark:text-sky-400" />
                 Batas Waktu Harian
               </span>
-              <span className="text-[8px] font-black uppercase text-sky-300 bg-sky-500/10 px-2 py-0.5 rounded-full border border-sky-500/20">
+              <span className="text-[8px] font-black uppercase text-sky-700 dark:text-sky-300 bg-sky-500/10 px-2 py-0.5 rounded-full border border-sky-500/20">
                 {formatDateWithDay(getWIBDate())}
               </span>
               <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full border ${
                 !hasReportToday 
-                  ? 'bg-amber-500/10 text-amber-300 border-amber-500/20' 
-                  : 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'
+                  ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20' 
+                  : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20'
               }`}>
                 {!hasReportToday ? 'Belum Input Data' : 'Data Hari Ini Tersimpan'}
               </span>
-              <span className="text-[8px] font-black uppercase text-sky-300 bg-sky-500/10 px-2 py-0.5 rounded-full border border-sky-500/20">
+              <span className="text-[8px] font-black uppercase text-sky-700 dark:text-sky-300 bg-sky-500/10 px-2 py-0.5 rounded-full border border-sky-500/20">
                 Maksimal 23:59 WIB (12 Malam)
               </span>
             </div>
-            <p className="text-[9.5px] text-slate-400 font-medium mt-0.5 leading-snug">
+            <p className="text-[9.5px] text-slate-600 dark:text-slate-400 font-medium mt-0.5 leading-snug">
               {!hasReportToday 
                 ? 'Mohon kirimkan data harian Anda sebelum berganti hari pada pukul 00:00 WIB.' 
                 : 'Selamat! Data harian Anda hari ini sudah berhasil dikirim dan tersimpan.'}
             </p>
             <div className="flex items-center gap-1.5 mt-2 font-mono">
               <div className="text-center">
-                <span className="text-2xl font-black text-white tracking-tighter">{hours}</span>
-                <span className="block text-[7px] font-bold text-slate-500 uppercase -mt-1 font-sans">Jam</span>
+                <span className="text-2xl font-black text-slate-900 dark:text-white tracking-tighter">{hours}</span>
+                <span className="block text-[7px] font-bold text-slate-500 dark:text-slate-400 uppercase -mt-1 font-sans">Jam</span>
               </div>
               <span className="text-lg font-black text-sky-500/50 -translate-y-1">:</span>
               <div className="text-center">
-                <span className="text-2xl font-black text-white tracking-tighter">{minutes}</span>
-                <span className="block text-[7px] font-bold text-slate-500 uppercase -mt-1 font-sans">Menit</span>
+                <span className="text-2xl font-black text-slate-900 dark:text-white tracking-tighter">{minutes}</span>
+                <span className="block text-[7px] font-bold text-slate-500 dark:text-slate-400 uppercase -mt-1 font-sans">Menit</span>
               </div>
               <span className="text-lg font-black text-sky-500/50 -translate-y-1">:</span>
               <div className="text-center">
-                <span className="text-2xl font-black text-sky-400 tracking-tighter">{seconds}</span>
-                <span className="block text-[7px] font-bold text-slate-500 uppercase -mt-1 font-sans">Detik</span>
+                <span className="text-2xl font-black text-sky-600 dark:text-sky-400 tracking-tighter">{seconds}</span>
+                <span className="block text-[7px] font-bold text-slate-500 dark:text-slate-400 uppercase -mt-1 font-sans">Detik</span>
               </div>
-              <span className="text-[9px] font-bold text-slate-400 ml-2 font-sans self-center">Sisa Waktu Hari Ini</span>
+              <span className="text-[9px] font-bold text-slate-600 dark:text-slate-400 ml-2 font-sans self-center">Sisa Waktu Hari Ini</span>
             </div>
-          </div>
-          <div className="text-left sm:text-right shrink-0">
-            <div className="text-[9px] font-black text-slate-500 uppercase mb-1">Status Hari Ini</div>
-            <div className="w-24 h-2 bg-slate-900 rounded-full overflow-hidden border border-slate-800">
-              <motion.div 
-                initial={{ width: 0 }}
-                animate={{ width: `${elapsedPercent}%` }}
-                className={`h-full ${
-                  !hasReportToday ? 'bg-gradient-to-r from-amber-600 to-amber-400' : 'bg-gradient-to-r from-emerald-600 to-emerald-400'
-                }`}
-              />
-            </div>
-            <span className={`text-[8px] font-bold mt-1 block ${!hasReportToday ? 'text-amber-400' : 'text-emerald-400'}`}>
-              {Math.round(elapsedPercent)}% Waktu Berjalan
-            </span>
           </div>
         </div>
       </GlassCard>
 
       {/* Header */}
       <div className="space-y-1">
-        <h2 className="text-xl font-black text-white tracking-tight flex items-center gap-2">
-          <div className="p-2 rounded-2xl bg-sky-500/10 text-sky-400 border border-sky-500/20">
+        <h2 className="text-xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
+          <div className="p-2 rounded-2xl bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20">
             <CalendarClock className="w-5 h-5" />
           </div>
           <span>Data Harian</span>
         </h2>
-        <p className="text-xs text-slate-400">
+        <p className="text-xs text-slate-600 dark:text-slate-400">
           Form input data harian recruiter & pelamar dengan siklus pembaruan harian.
         </p>
       </div>
 
       {/* Tabs */}
-      <div className="flex bg-slate-900/80 p-1 rounded-2xl border border-slate-800 shrink-0 gap-1 overflow-x-auto no-scrollbar">
+      <div className="flex bg-slate-200/80 dark:bg-slate-900/80 p-1 rounded-2xl border border-slate-300 dark:border-slate-800 shrink-0 gap-1 overflow-x-auto no-scrollbar scroll-smooth">
         <button
           type="button"
-          onClick={() => setActiveTab('formulir')}
-          className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 whitespace-nowrap ${
-            activeTab === 'formulir' ? 'bg-sky-500 text-slate-950 shadow-md' : 'text-slate-400 hover:text-white hover:bg-white/5'
+          onClick={() => {
+            setActiveTab('formulir');
+            triggerHaptic('selection');
+          }}
+          className={`shrink-0 flex-1 min-w-[100px] py-2 px-3 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
+            activeTab === 'formulir' ? 'bg-sky-500 text-slate-950 shadow-lg shadow-sky-500/20 scale-[1.02]' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-300/50 dark:hover:bg-white/5'
           }`}
         >
-          <FileText className="w-3.5 h-3.5" />
+          <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           <span>Formulir</span>
         </button>
         <button
           type="button"
-          onClick={() => setActiveTab('minggu_ini')}
-          className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 whitespace-nowrap ${
-            activeTab === 'minggu_ini' ? 'bg-amber-500 text-slate-950 shadow-md' : 'text-slate-400 hover:text-white hover:bg-white/5'
+          onClick={() => {
+            setActiveTab('minggu_ini');
+            triggerHaptic('selection');
+          }}
+          className={`shrink-0 flex-1 min-w-[120px] py-2 px-3 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
+            activeTab === 'minggu_ini' ? 'bg-amber-500 text-slate-950 shadow-lg shadow-amber-500/20 scale-[1.02]' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-300/50 dark:hover:bg-white/5'
           }`}
         >
-          <CalendarClock className="w-3.5 h-3.5" />
-          <span>Minggu Ini ({reportsMingguIni.length})</span>
+          <CalendarClock className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+          <span>Minggu Ini</span>
         </button>
         <button
           type="button"
-          onClick={() => setActiveTab('pemeriksaan')}
-          className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 whitespace-nowrap ${
-            activeTab === 'pemeriksaan' ? 'bg-emerald-500 text-slate-950 shadow-md' : 'text-slate-400 hover:text-white hover:bg-white/5'
+          onClick={() => {
+            setActiveTab('pemeriksaan');
+            triggerHaptic('selection');
+          }}
+          className={`shrink-0 flex-1 min-w-[150px] py-2 px-3 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
+            activeTab === 'pemeriksaan' ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/20 scale-[1.02]' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-300/50 dark:hover:bg-white/5'
           }`}
         >
-          <CheckCircle2 className="w-3.5 h-3.5" />
-          <span>Pemeriksaan ({reportsPemeriksaan.length})</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('arsip')}
-          className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 whitespace-nowrap ${
-            activeTab === 'arsip' ? 'bg-purple-500 text-slate-950 shadow-md' : 'text-slate-400 hover:text-white hover:bg-white/5'
-          }`}
-        >
-          <Archive className="w-3.5 h-3.5" />
-          <span>Arsip ({reportsArsip.length})</span>
+          <CheckCircle2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+          <span>Pemeriksaan & Arsip</span>
         </button>
       </div>
 
       {/* Recruiter Filter for Admin/Owner */}
       {isAdminOrOwner && activeTab !== 'formulir' && (
-        <div className="bg-slate-900/60 border border-slate-800/80 p-3 rounded-2xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shadow-sm relative overflow-hidden">
+        <div className="bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800/80 p-3 rounded-2xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shadow-sm relative overflow-hidden">
           <div className="absolute top-0 left-0 w-1 h-full bg-sky-500" />
           <div className="flex items-center gap-2 relative z-10 pl-1.5">
             <div className="p-1.5 rounded-lg bg-sky-500/10 text-sky-400">
               <UserCheck className="w-4 h-4" />
             </div>
             <div>
-              <span className="block text-[8px] font-black uppercase text-slate-500 tracking-wider">Hak Akses Admin / Owner</span>
-              <span className="block text-xs font-bold text-white">Filter Data Recruiter</span>
+              <span className="block text-[8px] font-black uppercase text-slate-500 dark:text-slate-400 tracking-wider">Hak Akses Admin / Owner</span>
+              <span className="block text-xs font-bold text-slate-900 dark:text-white">Filter Data Recruiter</span>
             </div>
           </div>
           <div className="relative shrink-0 sm:w-64">
@@ -2068,7 +2209,7 @@ export const DataHarianPage: React.FC = () => {
                 setSelectedRecruiter(e.target.value);
                 triggerHaptic('selection');
               }}
-              className="w-full pl-11 pr-8 py-2 rounded-xl text-xs font-bold border border-slate-800 bg-slate-950 text-white outline-none focus:border-sky-500 cursor-pointer appearance-none"
+              className="w-full pl-11 pr-8 py-2 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-sky-500 cursor-pointer appearance-none"
             >
               <option value="Semua">Semua Recruiter ({recruitersList.length})</option>
               {recruitersList.map((rec) => (
@@ -2077,14 +2218,14 @@ export const DataHarianPage: React.FC = () => {
                 </option>
               ))}
             </select>
-            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2.5 text-slate-400">
+            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2.5 text-slate-600 dark:text-slate-400">
               <ChevronDown className="w-3.5 h-3.5" />
             </div>
-            <div className="absolute left-2.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-slate-900 overflow-hidden border border-slate-800">
+            <div className="absolute left-2.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-slate-50 dark:bg-slate-900 overflow-hidden border border-slate-200 dark:border-slate-800">
               {(() => {
                 if (selectedRecruiter === 'Semua') {
                   return (
-                    <div className="w-full h-full flex items-center justify-center text-[10px] font-black text-slate-500 bg-slate-900">
+                    <div className="w-full h-full flex items-center justify-center text-[10px] font-black text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900">
                       <Users className="w-3 h-3 text-sky-400" />
                     </div>
                   );
@@ -2095,16 +2236,14 @@ export const DataHarianPage: React.FC = () => {
                                 userPhotoMap.get(selectedRecruiter.toLowerCase());
                 if (matched?.photoUrl) {
                   return (
-                    <img 
-                      src={matched.photoUrl} 
+                    <img                        src={matched.photoUrl} 
                       alt="Recruiter" 
                       className="w-full h-full object-cover"
-                      referrerPolicy="no-referrer"
-                    />
+                      referrerPolicy="no-referrer"                     />
                   );
                 }
                 return (
-                  <div className="w-full h-full flex items-center justify-center text-[10px] font-black text-slate-400 bg-slate-900">
+                  <div className="w-full h-full flex items-center justify-center text-[10px] font-black text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-900">
                     {matched?.firstName?.charAt(0).toUpperCase() || recObj?.name?.charAt(0).toUpperCase() || selectedRecruiter.charAt(0).toUpperCase()}
                   </div>
                 );
@@ -2115,23 +2254,224 @@ export const DataHarianPage: React.FC = () => {
       )}
 
       {activeTab === 'formulir' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          {/* Main Form (col-span-8 on laptop, 12 on mobile) */}
-          <div className="lg:col-span-8 space-y-4">
-            <GlassCard className="border-slate-800/80 shadow-sm space-y-4">
-        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-          <h3 className="text-sm font-extrabold text-white flex items-center gap-2">
+        <div className="max-w-4xl mx-auto space-y-4">
+          {/* Panduan Detail Data Harian Widget */}
+          <GlassCard className="p-4 bg-white/90 dark:bg-slate-950/90 border-slate-200 dark:border-slate-800 shadow-xl space-y-3 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-24 h-24 bg-sky-500/5 rounded-full blur-xl pointer-events-none" />
+            
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center shrink-0 text-sky-600 dark:text-sky-400">
+                  <BookOpen className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-1.5">
+                    Panduan & Cara Kerja Data Harian
+                  </h3>
+                  <p className="text-[10px] text-slate-600 dark:text-slate-400 font-medium">
+                    Pelajari alur laporan, target keringanan link, dan aturan validasi
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setIsGuideOpen(!isGuideOpen); triggerHaptic('selection'); }}
+                className="p-1.5 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
+              >
+                {isGuideOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              </button>
+            </div>
+
+            {isGuideOpen && (
+              <div className="space-y-3 pt-3 border-t border-slate-200 dark:border-slate-800/80">
+                {/* Sub-tabs inside Guide Widget */}
+                <div className="flex p-0.5 bg-slate-100 dark:bg-slate-900/90 rounded-xl border border-slate-200 dark:border-slate-800/80 gap-0.5">
+                  <button
+                    type="button"
+                    onClick={() => { setActiveGuideTab('langkah'); triggerHaptic('selection'); }}
+                    className={`flex-1 py-1.5 rounded-lg text-[9.5px] font-black uppercase transition-all flex items-center justify-center gap-1 ${
+                      activeGuideTab === 'langkah'
+                        ? 'bg-sky-500 text-slate-950 shadow-sm'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <ListOrdered className="w-3.5 h-3.5" />
+                    Langkah
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setActiveGuideTab('target'); triggerHaptic('selection'); }}
+                    className={`flex-1 py-1.5 rounded-lg text-[9.5px] font-black uppercase transition-all flex items-center justify-center gap-1 ${
+                      activeGuideTab === 'target'
+                        ? 'bg-amber-500 text-slate-950 shadow-sm'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <Target className="w-3.5 h-3.5" />
+                    Target
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setActiveGuideTab('ketentuan'); triggerHaptic('selection'); }}
+                    className={`flex-1 py-1.5 rounded-lg text-[9.5px] font-black uppercase transition-all flex items-center justify-center gap-1 ${
+                      activeGuideTab === 'ketentuan'
+                        ? 'bg-emerald-500 text-slate-950 shadow-sm'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <Clock className="w-3.5 h-3.5" />
+                    Aturan
+                  </button>
+                </div>
+
+                <AnimatePresence mode="wait">
+                  {activeGuideTab === 'langkah' && (
+                    <motion.div
+                      key="langkah"
+                      initial={{ opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -4 }}
+                      transition={{ duration: 0.15 }}
+                      className="space-y-3 text-[10.5px] leading-relaxed text-slate-600 dark:text-slate-400"
+                    >
+                      <div className="space-y-2.5">
+                        <div className="flex gap-2">
+                          <span className="flex items-center justify-center w-4 h-4 rounded-full bg-sky-500/10 text-sky-500 text-[10px] font-bold shrink-0 mt-0.5">1</span>
+                          <div>
+                            <strong className="text-slate-900 dark:text-white block font-bold">Upload Video Bukti Pelamar</strong>
+                            <span className="text-[10px]">Pilih/unggah video interaksi Anda dengan pelamar. Format yang diizinkan `.mp4`, `.webm`, `.mov` (maksimal 20MB). Penggunaan foto atau screenshot sebagai bukti video dilarang.</span>
+                          </div>
+                        </div>
+
+                        <div className="flex gap-2">
+                          <span className="flex items-center justify-center w-4 h-4 rounded-full bg-sky-500/10 text-sky-500 text-[10px] font-bold shrink-0 mt-0.5">2</span>
+                          <div>
+                            <strong className="text-slate-900 dark:text-white block font-bold">Scan / Upload Screenshot UID</strong>
+                            <span className="text-[10px]">Tarik-lepas atau paste gambar screenshot profil pelamar. Sistem secara otomatis membaca UID (5-15 digit). Jika pembacaan otomatis kurang tepat, Anda bisa mengeditnya manual.</span>
+                          </div>
+                        </div>
+
+                        <div className="flex gap-2">
+                          <span className="flex items-center justify-center w-4 h-4 rounded-full bg-sky-500/10 text-sky-500 text-[10px] font-bold shrink-0 mt-0.5">3</span>
+                          <div>
+                            <strong className="text-slate-900 dark:text-white block font-bold">Lengkapi Formulir Data Pelamar</strong>
+                            <span className="text-[10px]">Isi data pendukung: pilih asal Channel, tentukan tipe Grup (T0, V0, dsb), masukkan Username Telegram pelamar, serta nomor WhatsApp aktif.</span>
+                          </div>
+                        </div>
+
+                        <div className="flex gap-2">
+                          <span className="flex items-center justify-center w-4 h-4 rounded-full bg-sky-500/10 text-sky-500 text-[10px] font-bold shrink-0 mt-0.5">4</span>
+                          <div>
+                            <strong className="text-slate-900 dark:text-white block font-bold">Simpan & Selesaikan Laporan</strong>
+                            <span className="text-[10px]">Tekan tombol "Simpan Data" di bagian bawah formulir untuk merekam data. Setelah data terkirim, rekrutan Anda hari ini akan langsung terupdate secara real-time.</span>
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {activeGuideTab === 'target' && (
+                    <motion.div
+                      key="target"
+                      initial={{ opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -4 }}
+                      transition={{ duration: 0.15 }}
+                      className="space-y-3 text-[10.5px] leading-relaxed text-slate-600 dark:text-slate-400"
+                    >
+                      <p className="text-[10px] font-medium">
+                        Sistem menghitung total rekrutan valid harian Anda dari menu ini untuk mengurangi beban target posting link harian Anda:
+                      </p>
+                      <div className="space-y-2 pt-1">
+                        <div className="p-2 rounded-xl bg-rose-500/5 border border-rose-500/10 flex items-center justify-between gap-1.5">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="w-2 h-2 rounded-full bg-rose-500 shrink-0" />
+                            <span className="text-slate-900 dark:text-slate-200 font-bold truncate">0 Rekrutan</span>
+                          </div>
+                          <span className="text-rose-600 dark:text-rose-400 font-extrabold text-[10px] shrink-0 bg-rose-500/10 px-2 py-0.5 rounded-lg border border-rose-500/20">Wajib 90 Link</span>
+                        </div>
+
+                        <div className="p-2 rounded-xl bg-amber-500/5 border border-amber-500/10 flex items-center justify-between gap-1.5">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
+                            <span className="text-slate-900 dark:text-slate-200 font-bold truncate">1 Laporan</span>
+                          </div>
+                          <span className="text-amber-600 dark:text-amber-400 font-extrabold text-[10px] shrink-0 bg-amber-500/10 px-2 py-0.5 rounded-lg border border-amber-500/20">Wajib 60 Link</span>
+                        </div>
+
+                        <div className="p-2 rounded-xl bg-sky-500/5 border border-sky-500/10 flex items-center justify-between gap-1.5">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="w-2 h-2 rounded-full bg-sky-500 shrink-0" />
+                            <span className="text-slate-900 dark:text-slate-200 font-bold truncate">2 Laporan</span>
+                          </div>
+                          <span className="text-sky-600 dark:text-sky-400 font-extrabold text-[10px] shrink-0 bg-sky-500/10 px-2 py-0.5 rounded-lg border border-sky-500/20">Wajib 30 Link</span>
+                        </div>
+
+                        <div className="p-2 rounded-xl bg-emerald-500/5 border border-emerald-500/10 flex items-center justify-between gap-1.5">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                            <span className="text-slate-900 dark:text-slate-200 font-bold truncate">3+ Laporan</span>
+                          </div>
+                          <span className="text-emerald-600 dark:text-emerald-400 font-extrabold text-[10px] shrink-0 bg-emerald-500/10 px-2 py-0.5 rounded-lg border border-emerald-500/20">Bebas Posting!</span>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {activeGuideTab === 'ketentuan' && (
+                    <motion.div
+                      key="ketentuan"
+                      initial={{ opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -4 }}
+                      transition={{ duration: 0.15 }}
+                      className="space-y-3 text-[10.5px] leading-relaxed text-slate-600 dark:text-slate-400"
+                    >
+                      <div className="space-y-2">
+                        <div className="p-2 rounded-xl bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-1">
+                          <div className="flex items-center gap-1.5 text-slate-900 dark:text-white font-bold text-[10px] uppercase">
+                            <Clock className="w-3.5 h-3.5 text-emerald-500" />
+                            Batas Waktu Pengiriman
+                          </div>
+                          <p className="text-[9.5px]">Data harian wajib diinput sebelum pukul <strong className="text-slate-900 dark:text-slate-200">23:59 WIB</strong> setiap hari. Sistem akan melakukan reset kumulatif otomatis pada pukul 00:00 WIB.</p>
+                        </div>
+
+                        <div className="p-2 rounded-xl bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-1">
+                          <div className="flex items-center gap-1.5 text-slate-900 dark:text-white font-bold text-[10px] uppercase">
+                            <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />
+                            Audit & Validitas Bukti
+                          </div>
+                          <p className="text-[9.5px]">Setiap video bukti rekrutan akan diaudit oleh Admin/Owner. Laporan dengan video tidak valid atau palsu akan langsung ditolak (<span className="text-rose-500 font-bold">REJECT</span>) dan menggugurkan keringanan target posting.</p>
+                        </div>
+
+                        <div className="p-2 rounded-xl bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-1">
+                          <div className="flex items-center gap-1.5 text-slate-900 dark:text-white font-bold text-[10px] uppercase">
+                            <Archive className="w-3.5 h-3.5 text-sky-500" />
+                            Sistem Pengarsipan
+                          </div>
+                          <p className="text-[9.5px]">Semua laporan harian yang berumur lebih dari satu minggu akan diarsipkan otomatis ke sistem riwayat demi menjaga kecepatan dan kestabilan aplikasi.</p>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+          </GlassCard>
+
+          {/* Form */}
+          <GlassCard className="border-slate-200 dark:border-slate-800/80 shadow-sm space-y-4">
+        <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
+          <h3 className="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
             <FileText className="w-4 h-4 text-sky-400" />
             <span>Form Data Harian</span>
           </h3>
 
-          <span className="text-[10px] text-sky-400 font-bold bg-sky-500/10 px-2.5 py-0.5 rounded-full border border-sky-500/20 flex items-center gap-1">
-            <Sparkles className="w-3 h-3" /> Auto Sync
-          </span>
+
         </div>
 
         {/* Step Navigation Tabs */}
-        <div className="flex items-center p-1 bg-slate-950/80 rounded-2xl border border-slate-900/60 shadow-inner gap-1.5">
+        <div className="flex items-center p-1 bg-white dark:bg-slate-950/80 rounded-2xl border border-slate-900/60 shadow-inner gap-1.5">
           <button
             type="button"
             onClick={() => {
@@ -2142,11 +2482,12 @@ export const DataHarianPage: React.FC = () => {
             className={`flex-1 py-1.5 px-2.5 rounded-xl text-[10px] sm:text-xs font-black uppercase transition-all flex items-center justify-center gap-1.5 border ${
               formStep === 'upload'
                 ? 'bg-sky-500 text-slate-950 border-sky-400 shadow-sm'
-                : 'bg-transparent text-slate-400 border-transparent hover:text-white'
+                : 'bg-transparent text-slate-600 dark:text-slate-400 border-transparent hover:text-slate-900 dark:text-white'
             }`}
           >
             <Video className="w-3.5 h-3.5" />
-            1. Upload Video Bukti {formData.videoUrl ? '✅' : '⚠️'}
+            <span className="hidden sm:inline">1. Upload Video Bukti {formData.videoUrl ? '✅' : '⚠️'}</span>
+            <span className="sm:hidden">1. Video {formData.videoUrl ? '✅' : '⚠️'}</span>
           </button>
 
           <ArrowRight className="w-3 h-3 text-slate-600 shrink-0" />
@@ -2167,11 +2508,12 @@ export const DataHarianPage: React.FC = () => {
             className={`flex-1 py-1.5 px-2.5 rounded-xl text-[10px] sm:text-xs font-black uppercase transition-all flex items-center justify-center gap-1.5 border ${
               formStep === 'data'
                 ? 'bg-sky-500 text-slate-950 border-sky-400 shadow-sm'
-                : 'bg-transparent text-slate-400 border-transparent hover:text-white'
+                : 'bg-transparent text-slate-600 dark:text-slate-400 border-transparent hover:text-slate-900 dark:text-white'
             }`}
           >
             <FileText className="w-3.5 h-3.5" />
-            2. Input Data Pelamar
+            <span className="hidden sm:inline">2. Input Data Pelamar</span>
+            <span className="sm:hidden">2. Data Pelamar</span>
           </button>
         </div>
 
@@ -2180,17 +2522,17 @@ export const DataHarianPage: React.FC = () => {
           {formStep === 'upload' && (
             <div className="space-y-4">
               {/* Metadata Bar (Tanggal, Recruiter, Status) */}
-              <div className="grid grid-cols-3 gap-2 text-[10px] sm:text-xs text-slate-400 bg-slate-950/60 p-3 rounded-2xl border border-slate-900/80">
+              <div className="grid grid-cols-3 gap-2 text-[10px] sm:text-xs text-slate-600 dark:text-slate-400 bg-white dark:bg-slate-950/60 p-3 rounded-2xl border border-slate-900/80">
                 <div className="flex flex-col gap-0.5">
-                  <span className="text-slate-500 font-bold uppercase text-[8px] tracking-wider">Tanggal</span>
+                  <span className="text-slate-500 dark:text-slate-400 font-bold uppercase text-[8px] tracking-wider">Tanggal</span>
                   <span className="text-sky-300 font-black">{formData.date}</span>
                 </div>
-                <div className="flex flex-col gap-0.5 border-l border-slate-800/60 pl-2">
-                  <span className="text-slate-500 font-bold uppercase text-[8px] tracking-wider">Recruiter</span>
+                <div className="flex flex-col gap-0.5 border-l border-slate-200 dark:border-slate-800/60 pl-2">
+                  <span className="text-slate-500 dark:text-slate-400 font-bold uppercase text-[8px] tracking-wider">Recruiter</span>
                   <span className="text-sky-300 font-black truncate">{formData.recruiterUsername}</span>
                 </div>
-                <div className="flex flex-col gap-0.5 border-l border-slate-800/60 pl-2">
-                  <span className="text-slate-500 font-bold uppercase text-[8px] tracking-wider">Status Default</span>
+                <div className="flex flex-col gap-0.5 border-l border-slate-200 dark:border-slate-800/60 pl-2">
+                  <span className="text-slate-500 dark:text-slate-400 font-bold uppercase text-[8px] tracking-wider">Status Default</span>
                   <span className="text-amber-400 font-black flex items-center gap-0.5">
                     <Lock className="w-2.5 h-2.5 shrink-0" /> Pending
                   </span>
@@ -2198,84 +2540,118 @@ export const DataHarianPage: React.FC = () => {
               </div>
 
               {/* Upload Video Bukti FIRST */}
-              <div className="p-4 rounded-2xl border border-slate-800 bg-slate-950/40 space-y-3">
-                <label className="text-xs font-black tracking-wider text-slate-400 uppercase flex items-center gap-1.5">
-                  <span>🎥</span>
-                  <span>Video Bukti Pelamar</span>
-                  <span className="text-[9px] bg-rose-500/20 text-rose-300 px-2.5 py-0.5 rounded-full font-black border border-rose-500/30 uppercase tracking-widest ml-auto">WAJIB UPLOAD VIDEO DULU</span>
-                </label>
-                
-                <div className="flex flex-col sm:flex-row items-center gap-4">
-                  <div className="w-full sm:w-1/2">
-                    <input
-                      type="file"
-                      accept="video/*"
-                      id="bukti-video-input"
-                      onChange={async (e) => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          if (!file.type.startsWith('video/')) {
-                            showAlert('error', 'Format File Salah ⚠️', 'Hanya diperbolehkan mengupload file video bukti pelamar (format video). Foto tidak diizinkan!');
-                            return;
-                          }
-                          try {
-                            const dataUrl = await compressMediaFile(file);
-                            setFormData((prev) => ({ ...prev, videoUrl: dataUrl }));
-                            setError(null);
-                            showAlert('success', 'Video Bukti Diupload ✅', 'Video bukti pelamar berhasil diproses dan disimpan!');
-                          } catch (err: any) {
-                            console.error('Error processing media file:', err);
-                            showAlert('error', 'Gagal Memproses File', err.message || 'Gagal memproses file video bukti.');
-                          }
-                        }
-                      }}
-                      className="hidden"
-                    />
-                    <label
-                      htmlFor="bukti-video-input"
-                      className="flex flex-col items-center justify-center border-2 border-dashed border-slate-800 hover:border-sky-500/50 bg-slate-900/60 hover:bg-slate-900/90 rounded-2xl p-5 text-center cursor-pointer transition-all group w-full"
-                    >
-                      <span className="text-2xl mb-1.5 group-hover:scale-110 transition-transform duration-200">🎥</span>
-                      <span className="text-xs font-bold text-slate-200">Pilih / Upload Video Bukti Pelamar</span>
-                      <span className="text-[10px] text-slate-400 font-medium mt-0.5">Format video (mp4, webm, mov). Foto tidak diizinkan.</span>
-                    </label>
-                  </div>
-
-                  <div className="w-full sm:w-1/2">
-                    {formData.videoUrl ? (
-                      <div className="relative rounded-2xl overflow-hidden border border-slate-800 bg-black aspect-video flex items-center justify-center shadow-inner group">
-                        {formData.videoUrl.startsWith('data:image/') || formData.videoUrl.match(/\.(jpeg|jpg|png|webp|gif)($|\?)/i) ? (
-                          <img 
-                            src={formData.videoUrl} 
-                            alt="Bukti Pelamar" 
-                            className="w-full h-full object-contain"
-                          />
-                        ) : (
-                          <video
-                            src={formData.videoUrl}
-                            controls
-                            className="w-full h-full object-contain"
-                          />
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setFormData({ ...formData, videoUrl: undefined });
-                            showAlert('warning', 'Video Bukti Dihapus', 'File video bukti pelamar telah dihapus.');
-                          }}
-                          className="absolute top-2 right-2 p-1.5 rounded-xl bg-rose-500 text-white hover:bg-rose-600 transition-colors shadow-md text-xs font-bold flex items-center gap-1 z-10"
-                        >
-                          <span>Hapus</span>
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="rounded-2xl border border-dashed border-slate-800/80 bg-slate-900/20 aspect-video flex flex-col items-center justify-center text-center p-4 w-full">
-                        <span className="text-xl text-slate-600 mb-1">🎥</span>
-                        <p className="text-xs text-slate-500 font-medium">Belum ada video bukti pelamar yang dipilih.</p>
-                      </div>
-                    )}
-                  </div>
+              <div className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-900 pb-2.5">
+                  <label className="text-xs font-black tracking-wider text-slate-800 dark:text-slate-200 uppercase flex items-center gap-1.5">
+                    <span>🎥</span>
+                    <span>Video Bukti Pelamar</span>
+                  </label>
+                  {formData.videoUrl ? (
+                    <span className="text-[10px] bg-emerald-500/10 text-emerald-500 dark:text-emerald-400 px-2.5 py-0.5 rounded-full font-black border border-emerald-500/20 uppercase tracking-wider">
+                      Ready ✅
+                    </span>
+                  ) : (
+                    <span className="text-[9px] bg-rose-500/10 text-rose-500 dark:text-rose-400 px-2.5 py-0.5 rounded-full font-black border border-rose-500/20 uppercase tracking-wider">
+                      Wajib Upload
+                    </span>
+                  )}
                 </div>
+
+                <input
+                  type="file"
+                  accept="video/*"
+                  id="bukti-video-input"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      if (!file.type.startsWith('video/')) {
+                        showAlert('error', 'Format File Salah ⚠️', 'Hanya diperbolehkan mengupload file video bukti pelamar (format video). Foto tidak diizinkan!');
+                        return;
+                      }
+                      
+                      // Max 50MB for Telegram Bot
+                      if (file.size > 50 * 1024 * 1024) { 
+                        showAlert('error', 'Video Terlalu Besar ❌', 'Ukuran maksimal video yang diizinkan Telegram adalah 50MB.');
+                        return;
+                      }
+
+                      showAlert('warning', 'Memproses Video...', 'Sedang membaca file video bukti, mohon tunggu sebentar.');
+                      
+                      try {
+                        const reader = new FileReader();
+                        reader.onload = (event) => {
+                          const dataUrl = event.target?.result as string;
+                          setFormData((prev) => ({ ...prev, videoUrl: dataUrl }));
+                          setError(null);
+                          showAlert('success', 'Video Bukti Siap ✅', 'Video bukti pelamar berhasil dimuat dan siap dikirim!');
+                        };
+                        reader.onerror = () => {
+                          throw new Error('Gagal membaca file video');
+                        };
+                        reader.readAsDataURL(file);
+                      } catch (err: any) {
+                        console.error('Error processing media file:', err);
+                        showAlert('error', 'Gagal Memproses File', err.message || 'Gagal memproses file video bukti.');
+                      }
+                    }
+                  }}
+                  className="hidden"
+                />
+
+                {formData.videoUrl ? (
+                  <div className="space-y-3">
+                    <div className="relative rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-black aspect-video max-w-md mx-auto flex items-center justify-center shadow-inner">
+                      {formData.videoUrl.startsWith('data:image/') || formData.videoUrl.match(/\.(jpeg|jpg|png|webp|gif)($|\?)/i) ? (
+                        <img referrerPolicy="no-referrer"                             src={formData.videoUrl} 
+                          alt="Bukti Pelamar" 
+                          className="w-full h-full object-contain"
+                        />
+                      ) : (
+                        <video
+                          src={formData.videoUrl}
+                          controls
+                          className="w-full h-full object-contain"
+                        />
+                      )}
+                    </div>
+                    
+                    <div className="flex items-center justify-center gap-2 max-w-md mx-auto">
+                      <label
+                        htmlFor="bukti-video-input"
+                        className="flex-1 py-2 px-3 rounded-xl bg-sky-500 hover:bg-sky-600 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors shadow-sm"
+                      >
+                        <Upload className="w-3.5 h-3.5" />
+                        <span>Ganti Video</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFormData({ ...formData, videoUrl: undefined });
+                          showAlert('warning', 'Video Bukti Dihapus', 'File video bukti pelamar telah dihapus.');
+                        }}
+                        className="flex-1 py-2 px-3 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-rose-600 dark:text-rose-400 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Hapus Video</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <label
+                    htmlFor="bukti-video-input"
+                    className="flex flex-col items-center justify-center border-2 border-dashed border-slate-200 dark:border-slate-800/80 hover:border-sky-500/50 bg-slate-50 dark:bg-slate-900/40 hover:bg-slate-100 dark:hover:bg-slate-900/60 rounded-2xl p-8 text-center cursor-pointer transition-all group min-h-[160px]"
+                  >
+                    <div className="p-3 rounded-2xl bg-sky-500/10 text-sky-500 group-hover:scale-110 transition-transform duration-200 mb-2">
+                      <Video className="w-6 h-6" />
+                    </div>
+                    <span className="text-xs font-extrabold text-slate-800 dark:text-slate-200">
+                      Pilih / Upload Video Bukti Pelamar
+                    </span>
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium mt-1 max-w-xs">
+                      Format file video yang diperbolehkan (`mp4`, `webm`, `mov`). Penggunaan foto/screenshot dilarang.
+                    </span>
+                  </label>
+                )}
               </div>
 
               {/* Continue Button */}
@@ -2306,17 +2682,17 @@ export const DataHarianPage: React.FC = () => {
           {formStep === 'data' && (
             <div className="space-y-4">
               {/* Metadata Bar (Tanggal, Recruiter, Status) */}
-              <div className="grid grid-cols-3 gap-2 text-[10px] sm:text-xs text-slate-400 bg-slate-950/60 p-3 rounded-2xl border border-slate-900/80">
+              <div className="grid grid-cols-3 gap-2 text-[10px] sm:text-xs text-slate-600 dark:text-slate-400 bg-white dark:bg-slate-950/60 p-3 rounded-2xl border border-slate-900/80">
                 <div className="flex flex-col gap-0.5">
-                  <span className="text-slate-500 font-bold uppercase text-[8px] tracking-wider">Tanggal</span>
+                  <span className="text-slate-500 dark:text-slate-400 font-bold uppercase text-[8px] tracking-wider">Tanggal</span>
                   <span className="text-sky-300 font-black">{formData.date}</span>
                 </div>
-                <div className="flex flex-col gap-0.5 border-l border-slate-800/60 pl-2">
-                  <span className="text-slate-500 font-bold uppercase text-[8px] tracking-wider">Recruiter</span>
+                <div className="flex flex-col gap-0.5 border-l border-slate-200 dark:border-slate-800/60 pl-2">
+                  <span className="text-slate-500 dark:text-slate-400 font-bold uppercase text-[8px] tracking-wider">Recruiter</span>
                   <span className="text-sky-300 font-black truncate">{formData.recruiterUsername}</span>
                 </div>
-                <div className="flex flex-col gap-0.5 border-l border-slate-800/60 pl-2">
-                  <span className="text-slate-500 font-bold uppercase text-[8px] tracking-wider">Status Default</span>
+                <div className="flex flex-col gap-0.5 border-l border-slate-200 dark:border-slate-800/60 pl-2">
+                  <span className="text-slate-500 dark:text-slate-400 font-bold uppercase text-[8px] tracking-wider">Status Default</span>
                   <span className="text-amber-400 font-black flex items-center gap-0.5">
                     <Lock className="w-2.5 h-2.5 shrink-0" /> Pending
                   </span>
@@ -2326,7 +2702,7 @@ export const DataHarianPage: React.FC = () => {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 {/* 3. Channels Custom Dropdown */}
                 <div className="space-y-1.5 relative">
-                  <label className="text-xs font-bold tracking-wider text-slate-400 uppercase px-1 flex items-center gap-2">
+                  <label className="text-xs font-bold tracking-wider text-slate-600 dark:text-slate-400 uppercase px-1 flex items-center gap-2">
                     <Share2 className="w-3.5 h-3.5 text-indigo-400" />
                     <span>Channel / Platform</span>
                   </label>
@@ -2340,7 +2716,7 @@ export const DataHarianPage: React.FC = () => {
                         setIsChannelDropdownOpen(!isChannelDropdownOpen);
                         triggerHaptic('selection');
                       }}
-                      className="w-full rounded-2xl py-3 px-4 text-sm font-semibold border border-slate-800 bg-slate-900/80 hover:bg-slate-800/60 text-slate-100 flex items-center justify-between transition-all duration-200 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20"
+                      className="w-full rounded-2xl py-3 px-4 text-sm font-semibold border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/80 hover:bg-slate-100 dark:bg-slate-800/60 text-slate-900 dark:text-slate-100 flex items-center justify-between transition-all duration-200 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20"
                     >
                       <div className="flex items-center gap-2.5">
                         {formData.channel ? (
@@ -2349,10 +2725,10 @@ export const DataHarianPage: React.FC = () => {
                             <span>{CHANNELS.find(c => c.id === formData.channel)?.label || formData.channel}</span>
                           </>
                         ) : (
-                          <span className="text-slate-500">Pilih Channel / Platform</span>
+                          <span className="text-slate-500 dark:text-slate-400">Pilih Channel / Platform</span>
                         )}
                       </div>
-                      <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${isChannelDropdownOpen ? 'rotate-180' : ''}`} />
+                      <ChevronDown className={`w-4 h-4 text-slate-600 dark:text-slate-400 transition-transform duration-200 ${isChannelDropdownOpen ? 'rotate-180' : ''}`} />
                     </button>
 
                     {/* Dropdown Options Panel */}
@@ -2368,7 +2744,7 @@ export const DataHarianPage: React.FC = () => {
                         {/* Options Container */}
                         <div 
                           key="channel-dropdown-options"
-                          className="absolute left-0 right-0 mt-1.5 rounded-2xl border border-slate-800/90 bg-slate-950/95 backdrop-blur-xl shadow-md z-50 py-1.5 max-h-64 overflow-y-auto divide-y divide-slate-900/50"
+                          className="absolute left-0 right-0 mt-1.5 rounded-2xl border border-slate-200 dark:border-slate-800/90 bg-white dark:bg-slate-950/95 backdrop-blur-xl shadow-md z-50 py-1.5 max-h-64 overflow-y-auto divide-y divide-slate-900/50"
                         >
                           {CHANNELS.map((ch) => {
                             const isSelected = formData.channel === ch.id;
@@ -2381,10 +2757,10 @@ export const DataHarianPage: React.FC = () => {
                                   setIsChannelDropdownOpen(false);
                                   triggerHaptic('selection');
                                 }}
-                                className={`w-full text-left px-4 py-2.5 text-xs font-bold transition-all flex items-center justify-between hover:bg-slate-900 ${
+                                className={`w-full text-left px-4 py-2.5 text-xs font-bold transition-all flex items-center justify-between hover:bg-slate-50 dark:bg-slate-900 ${
                                   isSelected 
                                     ? 'text-sky-400 bg-sky-500/5' 
-                                    : 'text-slate-300 hover:text-white'
+                                    : 'text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:text-white'
                                 }`}
                               >
                                 <div className="flex items-center gap-2.5">
@@ -2402,9 +2778,9 @@ export const DataHarianPage: React.FC = () => {
                 </div>
 
                 {/* 4. UID 9kucing */}
-                <div className="space-y-2 bg-slate-900/50 p-4 rounded-2xl border border-slate-800">
+                <div className="space-y-2 bg-slate-50 dark:bg-slate-900/50 p-4 rounded-2xl border border-slate-200 dark:border-slate-800">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
                       <Hash className="w-4 h-4 text-amber-400" />
                       UID 9kucing
                     </span>
@@ -2419,7 +2795,7 @@ export const DataHarianPage: React.FC = () => {
                     className={`relative border-2 border-dashed rounded-xl p-4 flex flex-col items-center justify-center gap-2 transition-all duration-200 cursor-pointer min-h-[110px] ${
                       isScanningUID 
                         ? 'border-sky-500/50 bg-sky-500/5' 
-                        : 'border-slate-800 hover:border-sky-500/40 bg-slate-950/40 hover:bg-slate-950/60'
+                        : 'border-slate-200 dark:border-slate-800 hover:border-sky-500/40 bg-white dark:bg-slate-950/40 hover:bg-white dark:bg-slate-950/60'
                     }`}
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={(e) => {
@@ -2458,24 +2834,24 @@ export const DataHarianPage: React.FC = () => {
                         <Loader2 className="w-8 h-8 text-sky-400 animate-spin" />
                         <span className="text-xs font-bold text-sky-300 animate-pulse">Membaca screenshot via Tesseract OCR...</span>
                         {scanProgress > 0 && (
-                          <div className="w-32 bg-slate-800 h-1.5 rounded-full overflow-hidden mt-1">
+                          <div className="w-32 bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden mt-1">
                             <div 
                               className="bg-sky-400 h-full transition-all duration-300"
                               style={{ width: `${scanProgress}%` }}
                             />
                           </div>
                         )}
-                        <span className="text-[10px] text-slate-500">{scanProgress > 0 ? `Proses: ${scanProgress}%` : 'Mempersiapkan OCR...'}</span>
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400">{scanProgress > 0 ? `Proses: ${scanProgress}%` : 'Mempersiapkan OCR...'}</span>
                       </div>
                     ) : (
                       <div className="flex flex-col items-center gap-1.5 text-center">
-                        <div className="w-10 h-10 rounded-full bg-slate-900/80 flex items-center justify-center border border-slate-800">
-                          <Upload className="w-5 h-5 text-slate-400" />
+                        <div className="w-10 h-10 rounded-full bg-slate-50 dark:bg-slate-900/80 flex items-center justify-center border border-slate-200 dark:border-slate-800">
+                          <Upload className="w-5 h-5 text-slate-600 dark:text-slate-400" />
                         </div>
-                        <div className="text-xs font-bold text-slate-200">
+                        <div className="text-xs font-bold text-slate-800 dark:text-slate-200">
                           Klik / Seret / Paste Screenshot UID
                         </div>
-                        <div className="text-[10px] text-slate-400 max-w-[250px]">
+                        <div className="text-[10px] text-slate-600 dark:text-slate-400 max-w-[250px]">
                           Upload screenshot profil 9Kucing pelamar. UID akan otomatis dibaca & diisi.
                         </div>
                       </div>
@@ -2520,19 +2896,9 @@ export const DataHarianPage: React.FC = () => {
                 {/* 6. Username Telegram Pelamar */}
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between px-1">
-                    <label className="text-xs font-bold tracking-wider text-slate-400 uppercase">
+                    <label className="text-xs font-bold tracking-wider text-slate-600 dark:text-slate-400 uppercase">
                       Username Telegram Pelamar
                     </label>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setFormData(prev => ({ ...prev, applicantTelegramUsername: 'Username Tidak Ditemukan' }));
-                        triggerHaptic('selection');
-                      }}
-                      className="text-[10px] text-amber-400 hover:text-amber-300 font-extrabold transition-all flex items-center gap-1 bg-amber-500/10 hover:bg-amber-500/20 px-2 py-0.5 rounded-lg border border-amber-500/20 shadow-sm"
-                    >
-                      <span>Tidak Ada Username</span>
-                    </button>
                   </div>
                   <Input
                     type="text"
@@ -2566,34 +2932,6 @@ export const DataHarianPage: React.FC = () => {
                 const { clean: cleanTg, formatted: formattedTg, url: tgUrl } = parseTelegramUsername(formData.applicantTelegramUsername);
                 if (!cleanTg || tgStatus.status === 'idle') return null;
 
-                if (cleanTg === 'tidak_ada') {
-                  return (
-                    <motion.div
-                      initial={{ opacity: 0, y: -4 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 flex items-start gap-3 shadow-xl"
-                    >
-                      <div className="w-10 h-10 rounded-full bg-slate-950 border border-slate-900 flex items-center justify-center text-amber-400 shrink-0 shadow-inner">
-                        <UserX className="w-5 h-5" />
-                      </div>
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-xs font-black text-white font-mono">Username Tidak Ditemukan</span>
-                          <span className="text-[9px] bg-amber-500/10 text-amber-400 px-2.5 py-0.5 rounded-full border border-amber-500/20 font-black flex items-center gap-1 uppercase tracking-wider">
-                            Bypass Verifikasi
-                          </span>
-                        </div>
-                        <p className="text-xs text-slate-300 font-bold">
-                          Pelamar dikonfirmasi tidak memiliki username / akun Telegram.
-                        </p>
-                        <p className="text-[10px] text-slate-400 leading-relaxed">
-                          Data akan disimpan dengan keterangan <strong className="text-slate-300">"Username Tidak Ditemukan"</strong> untuk memudahkan verifikasi rekrutmen oleh Admin & Owner.
-                        </p>
-                      </div>
-                    </motion.div>
-                  );
-                }
-
                 if (tgStatus.status === 'checking') {
                   return (
                     <motion.div
@@ -2604,7 +2942,7 @@ export const DataHarianPage: React.FC = () => {
                       <Loader2 className="w-5 h-5 text-sky-400 animate-spin shrink-0" />
                       <div>
                         <span className="text-xs font-bold text-sky-300">Memeriksa Akun Telegram...</span>
-                        <p className="text-[10px] text-slate-400 font-mono">Verifikasi keberadaan username @{cleanTg} di server Telegram</p>
+                        <p className="text-[10px] text-slate-600 dark:text-slate-400 font-mono">Verifikasi keberadaan username @{cleanTg} di server Telegram</p>
                       </div>
                     </motion.div>
                   );
@@ -2633,23 +2971,23 @@ export const DataHarianPage: React.FC = () => {
                     <motion.div
                       initial={{ opacity: 0, y: -4 }}
                       animate={{ opacity: 1, y: 0 }}
-                      className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 flex items-start justify-between gap-3 shadow-xl"
+                      className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-start justify-between gap-3 shadow-xl"
                     >
                       <div className="flex items-start gap-3">
-                        <div className="w-10 h-10 rounded-full bg-slate-950 border border-slate-900 flex items-center justify-center text-slate-300 shrink-0 shadow-inner">
+                        <div className="w-10 h-10 rounded-full bg-white dark:bg-slate-950 border border-slate-900 flex items-center justify-center text-slate-700 dark:text-slate-300 shrink-0 shadow-inner">
                           <Check className="w-5 h-5 text-sky-400" />
                         </div>
                         <div className="space-y-1">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-xs font-black text-white font-mono">{formattedTg}</span>
-                            <span className="text-[9px] bg-slate-800 text-slate-400 px-2.5 py-0.5 rounded-full border border-slate-800 font-bold flex items-center gap-1 uppercase tracking-wider">
+                            <span className="text-xs font-black text-slate-900 dark:text-white font-mono">{formattedTg}</span>
+                            <span className="text-[9px] bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-2.5 py-0.5 rounded-full border border-slate-200 dark:border-slate-800 font-bold flex items-center gap-1 uppercase tracking-wider">
                               Format Valid
                             </span>
                           </div>
                           <p className="text-xs text-sky-300 font-bold">
                             ✓ Format penulisan username valid
                           </p>
-                          <p className="text-[10px] text-slate-400 leading-relaxed">
+                          <p className="text-[10px] text-slate-600 dark:text-slate-400 leading-relaxed">
                             Format username benar, namun keberadaan akun di Telegram tidak dapat divalidasi otomatis secara real-time saat ini.
                           </p>
                         </div>
@@ -2659,7 +2997,7 @@ export const DataHarianPage: React.FC = () => {
                         href={tgUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-750 border border-slate-800 text-slate-300 text-[11px] font-bold flex items-center gap-1 transition-all shrink-0"
+                        className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-750 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 text-[11px] font-bold flex items-center gap-1 transition-all shrink-0"
                       >
                         <span>Cek Link</span>
                         <ExternalLink className="w-3 h-3" />
@@ -2681,7 +3019,7 @@ export const DataHarianPage: React.FC = () => {
                         </div>
                         <div className="space-y-1">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-xs font-black text-white font-mono">{formattedTg}</span>
+                            <span className="text-xs font-black text-slate-900 dark:text-white font-mono">{formattedTg}</span>
                             <span className="text-[9px] bg-rose-500/30 text-rose-200 px-2.5 py-0.5 rounded-full border border-rose-500/40 font-black flex items-center gap-1 uppercase tracking-wider">
                               <XCircle className="w-2.5 h-2.5 text-rose-400" />
                               Tidak Terdaftar
@@ -2690,7 +3028,7 @@ export const DataHarianPage: React.FC = () => {
                           <p className="text-xs text-rose-200 font-bold">
                             ⚠️ Username tidak ditemukan di Telegram!
                           </p>
-                          <p className="text-[10px] text-slate-300">
+                          <p className="text-[10px] text-slate-700 dark:text-slate-300">
                             Akun @{cleanTg} belum dibuat atau username salah eja. Mohon pastikan ejaan username pelamar sudah benar.
                           </p>
                         </div>
@@ -2719,10 +3057,9 @@ export const DataHarianPage: React.FC = () => {
                     <div className="flex items-center gap-3">
                       {tgStatus.photoUrl ? (
                         <div className="relative shrink-0">
-                          <img
+                          <img referrerPolicy="no-referrer"
                             src={tgStatus.photoUrl}
                             alt={tgStatus.title || cleanTg}
-                            referrerPolicy="no-referrer"
                             className="w-12 h-12 rounded-full object-cover border-2 border-emerald-400 shadow-lg ring-2 ring-emerald-500/20"
                             onError={(e) => {
                               // Fallback if image fails to load
@@ -2741,16 +3078,16 @@ export const DataHarianPage: React.FC = () => {
 
                       <div className="space-y-0.5">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-xs font-black text-white font-mono">{formattedTg}</span>
+                          <span className="text-xs font-black text-slate-900 dark:text-white font-mono">{formattedTg}</span>
                           <span className="text-[9px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-500/30 font-bold flex items-center gap-1">
                             <Check className="w-2.5 h-2.5 text-emerald-400" />
                             Terdaftar Aktif
                           </span>
                         </div>
-                        <p className="text-[11px] font-bold text-white">
+                        <p className="text-[11px] font-bold text-slate-900 dark:text-white">
                           {tgStatus.title || formattedTg}
                         </p>
-                        <p className="text-[10px] text-slate-400 font-mono">
+                        <p className="text-[10px] text-slate-600 dark:text-slate-400 font-mono">
                           Link: <span className="text-sky-300">{tgUrl}</span>
                         </p>
                       </div>
@@ -2771,7 +3108,7 @@ export const DataHarianPage: React.FC = () => {
 
               {/* 7. Grup Selection */}
               <div className="space-y-1.5">
-                <label className="text-xs font-bold tracking-wider text-slate-400 uppercase px-1 flex items-center justify-between">
+                <label className="text-xs font-bold tracking-wider text-slate-600 dark:text-slate-400 uppercase px-1 flex items-center justify-between">
                   <span className="flex items-center gap-1.5">
                     <Users className="w-3.5 h-3.5 text-purple-400" />
                     <span>Grup / Penempatan</span>
@@ -2783,28 +3120,13 @@ export const DataHarianPage: React.FC = () => {
                     setFormData({ ...formData, grup: e.target.value as 'T0' | 'V0' | 'RECRUITER' | 'T3' });
                     triggerHaptic('selection');
                   }}
-                  className="w-full bg-slate-900 border border-slate-800 text-slate-200 text-xs sm:text-sm rounded-xl px-3 py-2.5 focus:border-sky-500 focus:outline-none cursor-pointer font-black"
+                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-200 text-xs sm:text-sm rounded-xl px-3 py-2.5 focus:border-sky-500 focus:outline-none cursor-pointer font-black"
                 >
-                  <option value="T0" className="bg-slate-950 text-slate-200">T0-MARK</option>
-                  <option value="V0" className="bg-slate-950 text-slate-200">V0</option>
-                  <option value="RECRUITER" className="bg-slate-950 text-slate-200">RECRUITER</option>
-                  {isAdminOrOwner && <option value="T3" className="bg-slate-950 text-slate-200">T0-MARK (Dipromosikan)</option>}
+                  <option value="T0" className="bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-200">T0-MARK</option>
+                  <option value="V0" className="bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-200">V0</option>
+                  <option value="RECRUITER" className="bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-200">RECRUITER</option>
+                  {isAdminOrOwner && <option value="T3" className="bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-200">T0-MARK (Dipromosikan)</option>}
                 </select>
-              </div>
-
-              {/* Catatan Tambahan */}
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold tracking-wider text-slate-400 uppercase px-1 flex items-center gap-1.5">
-                  <MessageSquare className="w-3.5 h-3.5 text-slate-400" />
-                  <span>Catatan / Keterangan</span>
-                </label>
-                <textarea
-                  rows={2}
-                  placeholder="Catatan pelamar atau kendala (opsional)..."
-                  value={formData.note}
-                  onChange={(e) => setFormData({ ...formData, note: e.target.value })}
-                  className="w-full rounded-2xl py-2 px-4 text-xs font-medium outline-none border border-slate-800 bg-slate-900/80 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 text-white transition-all placeholder:text-slate-500"
-                />
               </div>
 
               <div className="flex gap-2.5 pt-2">
@@ -2836,32 +3158,6 @@ export const DataHarianPage: React.FC = () => {
           )}
         </form>
       </GlassCard>
-          </div>
-
-          {/* Sidebar / Live Summary & Guidelines (col-span-4 on laptop, 12 on mobile) */}
-          <div className="lg:col-span-4 space-y-4">
-            {/* OCR Instructions Widget */}
-            <GlassCard className="border-slate-800/80 p-4 space-y-3 relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-24 h-24 bg-amber-500/5 rounded-full blur-xl pointer-events-none" />
-              
-              <div className="flex items-center gap-2 border-b border-slate-800 pb-2.5">
-                <div className="p-1.5 rounded-lg bg-amber-500/10 text-amber-400">
-                  <HelpCircle className="w-4 h-4" />
-                </div>
-                <div>
-                  <h4 className="text-xs font-black text-white uppercase tracking-wider">Panduan Scan Screenshot</h4>
-                  <p className="text-[9px] text-slate-500">Tips agar pembacaan UID akurat</p>
-                </div>
-              </div>
-
-              <ul className="space-y-2 text-[10.5px] text-slate-400 leading-relaxed font-medium list-disc pl-4">
-                <li>Gunakan screenshot berkualitas tinggi dengan tulisan yang <strong className="text-slate-200">jelas dan tidak buram</strong>.</li>
-                <li>Pastikan bagian profil atau <strong className="text-amber-300 font-black">UID Pelamar (5-15 digit)</strong> terlihat sepenuhnya dalam gambar.</li>
-                <li>Jika scan gagal, Anda selalu bisa mengetikkan UID secara manual pada kolom input.</li>
-                <li>Gunakan fitur drag-and-drop atau paste langsung untuk mempercepat upload dari laptop Anda.</li>
-              </ul>
-            </GlassCard>
-          </div>
         </div>
       )}
 
@@ -2877,71 +3173,72 @@ export const DataHarianPage: React.FC = () => {
         ];
 
         return (
-          <GlassCard className="p-4 space-y-4 border-slate-800 bg-slate-900/80">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-800 pb-2.5 gap-2">
+          <GlassCard className="p-4 space-y-4 border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/80">
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
               <div className="flex items-center gap-2">
-                <div className="p-1.5 rounded-xl bg-amber-500/15 text-amber-400">
-                  <FileSpreadsheet className="w-4 h-4" />
+                <div className="p-2 rounded-2xl bg-amber-500/10 text-amber-400 border border-amber-500/20 shadow-lg shadow-amber-500/5">
+                  <FileSpreadsheet className="w-5 h-5" />
                 </div>
-                <span className="text-xs font-bold text-white uppercase tracking-wider">
-                  Data Minggu Ini
-                </span>
+                <div>
+                  <h2 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-widest leading-none">
+                    Data Minggu Ini
+                  </h2>
+                  <p className="text-[10px] text-slate-600 dark:text-slate-400 font-bold mt-1">
+                    {activeDayTab === 'Semua' ? 'Seluruh rekapitulasi' : `Rekap hari ${activeDayTab}`}
+                  </p>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] bg-amber-500/10 text-amber-300 px-2.5 py-0.5 rounded-full font-bold border border-amber-500/20">
+              <div className="flex flex-col items-end gap-1">
+                <span className="text-[10px] font-black text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded-xl border border-amber-500/20">
                   {activeDayTab === 'Semua' 
-                    ? `Total Postingan: ${totalPostingMingguIni}` 
-                    : `Postingan: ${totalPostingFilteredMingguIni}`}
+                    ? `📦 ${totalPostingMingguIni} Posting` 
+                    : `📦 ${totalPostingFilteredMingguIni} Posting`}
                 </span>
-                <span className="text-[10px] bg-slate-800 text-slate-300 px-2.5 py-0.5 rounded-full font-bold">
+                <span className="text-[9px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-tighter">
                   {activeDayTab === 'Semua' 
-                    ? `Total ${reportsMingguIni.length}` 
-                    : `${filteredReportsMingguIni.length} dari ${reportsMingguIni.length}`}
+                    ? `${reportsMingguIni.length} Laporan` 
+                    : `${filteredReportsMingguIni.length} Laporan`}
                 </span>
               </div>
             </div>
 
-            {/* Horizontal Scrollable Day Tabs */}
-            <div className="flex gap-1.5 overflow-x-auto pb-1.5 -mx-4 px-4 scrollbar-none sm:mx-0 sm:px-0">
-              {dayTabs.map((tab) => {
-                const count = getReportCountForDay(tab.name);
-                const isActive = activeDayTab === tab.name;
-                return (
-                  <button
-                    key={tab.name}
-                    type="button"
-                    onClick={() => {
-                      setActiveDayTab(tab.name as any);
-                      triggerHaptic('selection');
-                    }}
-                    className={`relative shrink-0 flex flex-col items-center justify-center py-1.5 px-3 rounded-xl border text-center transition-all ${
-                      isActive
-                        ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-sm shadow-amber-500/10'
-                        : 'bg-slate-950/40 text-slate-400 border-slate-800/80 hover:text-white hover:bg-slate-900/50'
-                    }`}
-                  >
-                    <div className="flex items-center gap-1">
-                      <span className="text-[10px] font-black uppercase tracking-wider">{tab.label}</span>
-                      {count > 0 && (
-                        <span className={`text-[8px] font-extrabold px-1.5 py-0.2 rounded-full ${
-                          isActive ? 'bg-slate-950/20 text-slate-950' : 'bg-amber-500/20 text-amber-300'
-                        }`}>
-                          {count}
-                        </span>
-                      )}
-                    </div>
-                    {tab.displayDate && (
-                      <span className={`text-[8px] font-bold ${isActive ? 'text-slate-800' : 'text-slate-500'} -mt-0.5`}>
-                        {tab.displayDate} {tab.isToday && '• Hari Ini'}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
+            {/* Dropdown Selector for Day Filtering to Reduce Tab Clutter */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-slate-950/50 p-3 rounded-2xl border border-slate-200 dark:border-slate-800/60 shadow-inner">
+              <div className="flex items-center gap-2">
+                <CalendarClock className="w-4 h-4 text-amber-400" />
+                <span className="text-[10px] font-black uppercase text-slate-600 dark:text-slate-400 tracking-wider">
+                  Filter Berdasarkan Hari
+                </span>
+              </div>
+              <div className="relative w-full sm:w-64">
+                <select
+                  value={activeDayTab}
+                  onChange={(e) => {
+                    setActiveDayTab(e.target.value as any);
+                    triggerHaptic('selection');
+                  }}
+                  className="w-full pl-3 pr-8 py-2 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-amber-500 cursor-pointer appearance-none transition-all"
+                >
+                  {dayTabs.map((tab) => {
+                    const count = getReportCountForDay(tab.name);
+                    const labelText = tab.name === 'Semua' ? 'Semua Hari' : tab.label;
+                    const dateText = tab.displayDate ? ` (${tab.displayDate}${tab.isToday ? ' - Hari Ini' : ''})` : '';
+                    const countText = ` [${count} Laporan]`;
+                    return (
+                      <option key={tab.name} value={tab.name} className="bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-200">
+                        {labelText}{dateText}{countText}
+                      </option>
+                    );
+                  })}
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2.5">
+                  <ChevronDown className="w-3.5 h-3.5 text-amber-400" />
+                </div>
+              </div>
             </div>
             
             {filteredReportsMingguIni.length === 0 ? (
-              <div className="text-center py-8 text-xs text-slate-500 font-medium">
+              <div className="text-center py-8 text-xs text-slate-500 dark:text-slate-400 font-medium">
                 {activeDayTab === 'Semua' 
                   ? 'Belum ada data minggu ini.' 
                   : `Belum ada data untuk hari ${activeDayTab}.`}
@@ -2961,275 +3258,358 @@ export const DataHarianPage: React.FC = () => {
       })()}
 
       {activeTab === 'pemeriksaan' && (
-        <GlassCard className="p-4 space-y-3 border-slate-800 bg-slate-900/80">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-800 pb-3 gap-2.5">
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 rounded-xl bg-emerald-500/15 text-emerald-400">
-                <CheckCircle2 className="w-4 h-4" />
-              </div>
-              <div>
-                <span className="text-xs font-bold text-white uppercase tracking-wider block">
-                  Pemeriksaan (Data Minggu Lalu)
-                </span>
-                <span className="text-[9px] text-slate-400 font-medium">
-                  ACC = Bekerja | REJECT = Tidak Bekerja
-                </span>
-              </div>
-            </div>
+        <div className="space-y-4">
+          {/* Sub-tab Segmented Control (Pemeriksaan & Arsip) */}
+          <div className="flex p-1 bg-white dark:bg-slate-950/90 rounded-2xl border border-slate-200 dark:border-slate-800/90 shadow-md">
+            <button
+              type="button"
+              onClick={() => { setPemeriksaanSubTab('pemeriksaan'); triggerHaptic('selection'); }}
+              className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase transition-all flex items-center justify-center gap-1.5 ${
+                pemeriksaanSubTab === 'pemeriksaan'
+                  ? 'bg-emerald-500 text-slate-950 shadow-md scale-[1.01]'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-white'
+              }`}
+            >
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              Pemeriksaan ({filteredReportsPemeriksaan.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => { setPemeriksaanSubTab('arsip'); triggerHaptic('selection'); }}
+              className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase transition-all flex items-center justify-center gap-1.5 ${
+                pemeriksaanSubTab === 'arsip'
+                  ? 'bg-purple-500 text-slate-950 shadow-md scale-[1.01]'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-white'
+              }`}
+            >
+              <Archive className="w-3.5 h-3.5" />
+              Arsip Minggu Lalu ({archivedWeeks.length})
+            </button>
+          </div>
 
-            <div className="flex items-center gap-2 flex-wrap">
+          {pemeriksaanSubTab === 'pemeriksaan' ? (
+            <div className="space-y-4">
+              {/* Admin Announcement/Broadcast Section */}
               {isAdminOrOwner && (
-                <button
-                  type="button"
-                  disabled={isPushingNotif}
-                  onClick={handlePushAuditNotification}
-                  className="px-3 py-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 disabled:opacity-50 text-slate-950 font-black rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-md shadow-amber-500/10 transition-all active:scale-95"
-                  title="Kirim notifikasi bahwa pemeriksaan selesai ke seluruh recruiter"
-                >
-                  {isPushingNotif ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Send className="w-3.5 h-3.5" />
-                  )}
-                  <span>Push Notifikasi Selesai Periksa</span>
-                </button>
-              )}
-
-              {/* Sub-tabs: Pending, Bekerja, Tidak Bekerja */}
-              <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800 gap-1 overflow-x-auto no-scrollbar shrink-0">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPemeriksaanFilter('pending');
-                    setCurrentPage(1);
-                    triggerHaptic('selection');
-                  }}
-                  className={`py-1.5 px-3 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
-                    pemeriksaanFilter === 'pending'
-                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
-                  }`}
-                >
-                  <span>Pending ({countPemeriksaanPending})</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPemeriksaanFilter('bekerja');
-                    setCurrentPage(1);
-                    triggerHaptic('selection');
-                  }}
-                  className={`py-1.5 px-3 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
-                    pemeriksaanFilter === 'bekerja'
-                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
-                  }`}
-                >
-                  <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                  <span>Bekerja ({countPemeriksaanBekerja})</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPemeriksaanFilter('tidak_bekerja');
-                    setCurrentPage(1);
-                    triggerHaptic('selection');
-                  }}
-                  className={`py-1.5 px-3 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
-                    pemeriksaanFilter === 'tidak_bekerja'
-                      ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
-                  }`}
-                >
-                  <UserX className="w-3 h-3 text-rose-400" />
-                  <span>Tidak Bekerja ({countPemeriksaanTidakBekerja})</span>
-                </button>
-              </div>
-          </div>
-          </div>
-
-          {filteredReportsPemeriksaan.length === 0 ? (
-            <div className="text-center py-8 text-xs text-slate-500 font-medium">
-              Tidak ada data pemeriksaan untuk filter ini.
-            </div>
-          ) : (
-            <>
-              <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
-                {paginatedReportsPemeriksaan.map((rep, idx) => (
-                  <ReportListCard key={rep.reportId || idx} rep={rep} isAdminOrOwner={isAdminOrOwner} onUpdateStatus={updateStatus} onUpdatePermission={updatePermission} onUpdateDetails={updateDetails} userPhotoMap={userPhotoMap} isPemeriksaan={true} />
-                ))}
-              </div>
-              {renderPagination(filteredReportsPemeriksaan.length)}
-            </>
-          )}
-        </GlassCard>
-      )}
-
-      {activeTab === 'arsip' && (
-        <GlassCard className="p-3.5 sm:p-4 md:p-5 space-y-3.5 border-slate-800 bg-slate-900/80">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-800/80 pb-3 gap-2">
-            <div className="flex items-center gap-2.5">
-              <div className="p-2 rounded-xl bg-purple-500/15 text-purple-400 border border-purple-500/20 shrink-0">
-                <Archive className="w-4 h-4 sm:w-5 sm:h-5" />
-              </div>
-              <div>
-                <h3 className="text-xs sm:text-sm font-black text-white uppercase tracking-wider block">
-                  Arsip Data Mingguan
-                </h3>
-                <p className="text-[10px] sm:text-xs text-purple-300/80 font-medium">
-                  Pilih minggu untuk membuka daftar pelamar
-                </p>
-              </div>
-            </div>
-            <span className="text-[10px] sm:text-xs bg-purple-500/10 text-purple-300 border border-purple-500/20 px-2.5 py-1 rounded-full font-bold w-fit shrink-0">
-              {reportsArsip.length} Data • {archivedWeeks.length} Minggu
-            </span>
-          </div>
-
-          {archivedWeeks.length === 0 ? (
-            <div className="text-center py-10 text-xs sm:text-sm text-slate-500 font-medium">Tidak ada data di arsip.</div>
-          ) : (
-            <div className="space-y-3">
-              {archivedWeeks.map((week) => {
-                const isWeekExpanded = expandedArchiveWeekKey === week.weekKey;
-                const totalPages = Math.max(1, Math.ceil(week.reports.length / ITEMS_PER_PAGE));
-                const startIndex = (archiveWeekPage - 1) * ITEMS_PER_PAGE;
-                const paginatedWeekReports = week.reports.slice(startIndex, startIndex + ITEMS_PER_PAGE);
-
-                return (
-                  <div key={week.weekKey} className="border border-slate-800/90 bg-slate-950/70 rounded-2xl overflow-hidden transition-all duration-200 shadow-md hover:border-purple-500/30">
-                    {/* Expandable Header */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (isWeekExpanded) {
-                          setExpandedArchiveWeekKey(null);
-                        } else {
-                          setExpandedArchiveWeekKey(week.weekKey);
-                          setArchiveWeekPage(1);
-                        }
-                        triggerHaptic('selection');
-                      }}
-                      className={`w-full p-3 sm:p-3.5 md:p-4 flex items-center justify-between text-left transition-all duration-200 gap-3 group ${
-                        isWeekExpanded 
-                          ? 'bg-purple-950/30 border-b border-purple-500/20' 
-                          : 'bg-slate-950/40 hover:bg-slate-900/60'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-                        <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center shrink-0 border transition-all duration-200 ${
-                          isWeekExpanded 
-                            ? 'bg-purple-500/20 border-purple-500/50 text-purple-300 shadow-lg shadow-purple-500/10' 
-                            : 'bg-slate-900 border-slate-800 text-slate-400 group-hover:border-purple-500/30 group-hover:text-purple-400'
-                        }`}>
-                          <Archive className="w-4 h-4 sm:w-5 sm:h-5" />
-                        </div>
-                        <div className="flex flex-col gap-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-xs sm:text-sm font-black text-white tracking-tight">
-                              Arsip Minggu
-                            </span>
-                            <span className="text-[10px] sm:text-xs font-bold text-purple-300 bg-purple-500/15 border border-purple-500/30 px-2.5 py-0.5 rounded-lg flex items-center gap-1.5 whitespace-nowrap shadow-sm">
-                              <Timer className="w-3 h-3 text-purple-400 shrink-0" />
-                              {week.rangeText}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2 text-[10px] sm:text-xs text-slate-400 font-medium">
-                            <span>{week.reports.length} Data Pelamar</span>
-                            <span className="text-slate-600">•</span>
-                            <span className="text-slate-400">Periode Selesai</span>
-                          </div>
-                        </div>
+                <div className="space-y-4">
+                  {/* Admin Announcement/Broadcast Section */}
+                  <motion.div 
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="relative overflow-hidden"
+                  >
+                    <GlassCard className="p-4 border-amber-500/30 bg-amber-500/5 relative overflow-hidden group">
+                      <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
+                        <Bell className="w-16 h-16 text-amber-500 rotate-12" />
                       </div>
-
-                      <div className="flex items-center shrink-0">
-                        <span className={`text-[10px] sm:text-xs font-bold px-2.5 sm:px-3 py-1.5 rounded-xl border transition-all duration-200 flex items-center gap-1.5 ${
-                          isWeekExpanded 
-                            ? 'bg-purple-500/25 text-purple-200 border-purple-500/50 shadow-sm' 
-                            : 'bg-slate-900/90 text-slate-300 border-slate-800 group-hover:border-slate-700 group-hover:text-white'
-                        }`}>
-                          <span>{isWeekExpanded ? 'Tutup' : 'Buka'}</span>
-                          {isWeekExpanded ? (
-                            <ChevronDown className="w-3.5 h-3.5 text-purple-300" />
+                      
+                      <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <div className="flex items-start gap-3">
+                          <div className="p-2.5 rounded-2xl bg-amber-500/20 text-amber-500 border border-amber-500/30 shadow-lg shadow-amber-500/5">
+                            <Send className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <h4 className="text-xs sm:text-sm font-black text-amber-400 uppercase tracking-wider">Broadcast Selesai Periksa</h4>
+                            <p className="text-[10px] sm:text-xs text-slate-600 dark:text-slate-400 font-medium max-w-md mt-0.5">
+                              Kirim notifikasi ke seluruh Recruiter bahwa pemeriksaan data rekrutan minggu lalu telah selesai dilakukan.
+                            </p>
+                          </div>
+                        </div>
+                        
+                        <button
+                          type="button"
+                          disabled={isPushingNotif}
+                          onClick={handlePushAuditNotification}
+                          className="w-full md:w-auto px-5 py-2.5 bg-gradient-to-br from-amber-400 to-amber-600 hover:from-amber-300 hover:to-amber-500 disabled:opacity-50 text-slate-950 font-black rounded-2xl text-xs flex items-center justify-center gap-2 cursor-pointer shadow-xl shadow-amber-500/20 transition-all active:scale-95 group/btn"
+                        >
+                          {isPushingNotif ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
                           ) : (
-                            <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-white" />
+                            <Send className="w-4 h-4 group-hover/btn:translate-x-0.5 group-hover/btn:-translate-y-0.5 transition-transform" />
                           )}
-                        </span>
+                          <span>Kirim Broadcast Notifikasi</span>
+                        </button>
                       </div>
-                    </button>
+                    </GlassCard>
+                  </motion.div>
 
-                    {/* Expanded Content */}
-                    {isWeekExpanded && (
-                      <div className="p-3 sm:p-4 md:p-5 border-t border-slate-800/80 bg-slate-900/30 space-y-3">
-                        <div className="space-y-2.5 max-h-[60vh] overflow-y-auto pr-1">
-                          {paginatedWeekReports.map((rep, idx) => (
-                            <ReportListCard key={rep.reportId || idx} rep={rep} isAdminOrOwner={isAdminOrOwner} onUpdateStatus={updateStatus} onUpdatePermission={updatePermission} onUpdateDetails={updateDetails} userPhotoMap={userPhotoMap} isArsip={true} />
+                  {/* Pemeriksaan Report List Section */}
+                  <GlassCard className="p-4 space-y-4 border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/80">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3 gap-3">
+                      <div className="flex items-center gap-2">
+                        <div className="p-2 rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-lg shadow-emerald-500/5">
+                          <CheckCircle2 className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h2 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-widest leading-none">
+                            Daftar Pemeriksaan
+                          </h2>
+                          <p className="text-[10px] text-slate-600 dark:text-slate-400 font-bold mt-1">
+                            Periksa dan konfirmasi rekrutan minggu lalu
+                          </p>
+                        </div>
+                      </div>
+                      
+                      {/* Compact Segmented Switch to Avoid Multi-tab Overload */}
+                      <div className="flex p-0.5 bg-white dark:bg-slate-950/80 rounded-xl border border-slate-200 dark:border-slate-800/80 self-start sm:self-center overflow-x-auto no-scrollbar max-w-full">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPemeriksaanFilter('pending');
+                            setCurrentPage(1);
+                            triggerHaptic('selection');
+                          }}
+                          className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all whitespace-nowrap shrink-0 ${
+                            pemeriksaanFilter === 'pending'
+                              ? 'bg-amber-500 text-slate-950 shadow-md font-black'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-white hover:bg-white/5'
+                          }`}
+                        >
+                          Pending ({countPemeriksaanPending})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPemeriksaanFilter('bekerja');
+                            setCurrentPage(1);
+                            triggerHaptic('selection');
+                          }}
+                          className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all whitespace-nowrap shrink-0 ${
+                            pemeriksaanFilter === 'bekerja'
+                              ? 'bg-emerald-500 text-slate-950 shadow-md font-black'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-white hover:bg-white/5'
+                          }`}
+                        >
+                          Bekerja ({countPemeriksaanBekerja})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPemeriksaanFilter('tidak_bekerja');
+                            setCurrentPage(1);
+                            triggerHaptic('selection');
+                          }}
+                          className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all whitespace-nowrap shrink-0 ${
+                            pemeriksaanFilter === 'tidak_bekerja'
+                              ? 'bg-rose-500 text-slate-950 shadow-md font-black'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-white hover:bg-white/5'
+                          }`}
+                        >
+                          Tidak Bekerja ({countPemeriksaanTidakBekerja})
+                        </button>
+                      </div>
+                    </div>
+
+                    {filteredReportsPemeriksaan.length === 0 ? (
+                      <div className="text-center py-8 text-xs text-slate-500 dark:text-slate-400 font-medium">
+                        Tidak ada data pemeriksaan dengan status ini.
+                      </div>
+                    ) : (
+                      <>
+                        <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
+                          {paginatedReportsPemeriksaan.map((rep, idx) => (
+                            <ReportListCard 
+                              key={rep.reportId || idx} 
+                              rep={rep} 
+                              isAdminOrOwner={isAdminOrOwner} 
+                              onUpdateStatus={updateStatus} 
+                              onUpdatePermission={updatePermission} 
+                              onUpdateDetails={updateDetails} 
+                              userPhotoMap={userPhotoMap} 
+                              isPemeriksaan={true}
+                            />
                           ))}
                         </div>
+                        {renderPagination(filteredReportsPemeriksaan.length)}
+                      </>
+                    )}
+                  </GlassCard>
+                </div>
+              )}
 
-                        {/* Pagination inside week */}
-                        {totalPages > 1 && (
-                          <div className="flex items-center justify-between pt-3 border-t border-slate-800/60 text-[10px] sm:text-xs text-slate-400">
-                            <span>Halaman {archiveWeekPage} dari {totalPages}</span>
-                            <div className="flex items-center gap-1.5">
-                              <button
-                                type="button"
-                                disabled={archiveWeekPage <= 1}
-                                onClick={() => {
-                                  setArchiveWeekPage(p => Math.max(1, p - 1));
-                                  triggerHaptic('selection');
-                                }}
-                                className="p-1.5 sm:px-2.5 sm:py-1 rounded-lg bg-slate-800 text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-700 flex items-center gap-1 font-medium"
-                              >
-                                <ChevronLeft className="w-3.5 h-3.5" />
-                                <span className="hidden sm:inline">Sebelumnya</span>
-                              </button>
-                              <button
-                                type="button"
-                                disabled={archiveWeekPage >= totalPages}
-                                onClick={() => {
-                                  setArchiveWeekPage(p => Math.min(totalPages, p + 1));
-                                  triggerHaptic('selection');
-                                }}
-                                className="p-1.5 sm:px-2.5 sm:py-1 rounded-lg bg-slate-800 text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-700 flex items-center gap-1 font-medium"
-                              >
-                                <span className="hidden sm:inline">Berikutnya</span>
-                                <ChevronRight className="w-3.5 h-3.5" />
-                              </button>
+              {!isAdminOrOwner && (
+                 <div className="py-12 text-center text-slate-500 dark:text-slate-400 italic text-xs">
+                    Data pemeriksaan sedang diproses oleh Admin.
+                 </div>
+              )}
+            </div>
+          ) : (
+            <GlassCard className="p-3.5 sm:p-4 md:p-5 space-y-3.5 border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/80">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 dark:border-slate-800/80 pb-3 gap-2">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-xl bg-purple-500/15 text-purple-400 border border-purple-500/20 shrink-0">
+                    <Archive className="w-4 h-4 sm:w-5 sm:h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider block">
+                      Arsip Data Mingguan
+                    </h3>
+                    <p className="text-[10px] sm:text-xs text-purple-300/80 font-medium">
+                      Pilih minggu untuk membuka daftar pelamar
+                    </p>
+                  </div>
+                </div>
+                <span className="text-[10px] sm:text-xs bg-purple-500/10 text-purple-300 border border-purple-500/20 px-2.5 py-1 rounded-full font-bold w-fit shrink-0">
+                  {reportsArsip.length} Data • {archivedWeeks.length} Minggu
+                </span>
+              </div>
+
+              {archivedWeeks.length === 0 ? (
+                <div className="text-center py-10 text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-medium">Tidak ada data di arsip.</div>
+              ) : (
+                <div className="space-y-3">
+                  {archivedWeeks.map((week) => {
+                    const isWeekExpanded = expandedArchiveWeekKey === week.weekKey;
+                    const totalPages = Math.max(1, Math.ceil(week.reports.length / ITEMS_PER_PAGE));
+                    const startIndex = (archiveWeekPage - 1) * ITEMS_PER_PAGE;
+                    const paginatedWeekReports = week.reports.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+
+                    return (
+                      <div key={week.weekKey} className="border border-slate-200 dark:border-slate-800/90 bg-white dark:bg-slate-950/70 rounded-2xl overflow-hidden transition-all duration-200 shadow-md hover:border-purple-500/30">
+                        {/* Expandable Header */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (isWeekExpanded) {
+                              setExpandedArchiveWeekKey(null);
+                            } else {
+                              setExpandedArchiveWeekKey(week.weekKey);
+                              setArchiveWeekPage(1);
+                            }
+                            triggerHaptic('selection');
+                          }}
+                          className={`w-full p-3 sm:p-3.5 md:p-4 flex items-center justify-between text-left transition-all duration-200 gap-3 group ${
+                            isWeekExpanded 
+                              ? 'bg-purple-950/30 border-b border-purple-500/20' 
+                              : 'bg-white dark:bg-slate-950/40 hover:bg-slate-50 dark:bg-slate-900/60'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                            <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center shrink-0 border transition-all duration-200 ${
+                              isWeekExpanded 
+                                ? 'bg-purple-500/20 border-purple-500/50 text-purple-300 shadow-lg shadow-purple-500/10' 
+                                : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 group-hover:border-purple-500/30 group-hover:text-purple-400'
+                            }`}>
+                              <Archive className="w-4 h-4 sm:w-5 sm:h-5" />
+                            </div>
+                            <div className="flex flex-col gap-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-xs sm:text-sm font-black text-slate-900 dark:text-white tracking-tight">
+                                  Arsip Minggu
+                                </span>
+                                <span className="text-[10px] sm:text-xs font-bold text-purple-300 bg-purple-500/15 border border-purple-500/30 px-2.5 py-0.5 rounded-lg flex items-center gap-1.5 whitespace-nowrap shadow-sm">
+                                  <Timer className="w-3 h-3 text-purple-400 shrink-0" />
+                                  {week.rangeText}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2 text-[10px] sm:text-xs text-slate-600 dark:text-slate-400 font-medium">
+                                <span>{week.reports.length} Data Pelamar</span>
+                                <span className="text-slate-600">•</span>
+                                <span className="text-slate-600 dark:text-slate-400">Periode Selesai</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center shrink-0">
+                            <span className={`text-[10px] sm:text-xs font-bold px-2.5 sm:px-3 py-1.5 rounded-xl border transition-all duration-200 flex items-center gap-1.5 ${
+                              isWeekExpanded 
+                                ? 'bg-purple-500/25 text-purple-200 border-purple-500/50 shadow-sm' 
+                                : 'bg-slate-50 dark:bg-slate-900/90 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800 group-hover:border-slate-300 dark:border-slate-700 group-hover:text-slate-900 dark:text-white'
+                            }`}>
+                              <span>{isWeekExpanded ? 'Tutup' : 'Buka'}</span>
+                              {isWeekExpanded ? (
+                                <ChevronDown className="w-3.5 h-3.5 text-purple-300" />
+                              ) : (
+                                <ChevronRight className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:text-white" />
+                              )}
+                            </span>
+                          </div>
+                        </button>
+
+                        {/* Expanded Content */}
+                        {isWeekExpanded && (
+                          <div className="p-3 sm:p-4 md:p-5 border-t border-slate-200 dark:border-slate-800/80 bg-slate-50 dark:bg-slate-900/30 space-y-3">
+                            <div className="space-y-3">
+                              {week.dayGroups.map((day, dIdx) => {
+                                const isDayExpanded = expandedArchiveDayKey === `${week.weekKey}-${day.date}`;
+                                const dayName = getIndonesianDayName(day.date);
+                                
+                                return (
+                                  <div key={dIdx} className="rounded-xl border border-slate-200 dark:border-slate-800/60 bg-white dark:bg-slate-950/40 overflow-hidden">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setExpandedArchiveDayKey(isDayExpanded ? null : `${week.weekKey}-${day.date}`);
+                                        triggerHaptic('selection');
+                                      }}
+                                      className={`w-full px-3 py-2 flex items-center justify-between text-left transition-colors ${
+                                        isDayExpanded ? 'bg-purple-500/10' : 'hover:bg-slate-50 dark:bg-slate-900/50'
+                                      }`}
+                                    >
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-[10px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                                          {dayName}, {formatDateDisplay(day.date)}
+                                        </span>
+                                        <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-300 dark:border-slate-700">
+                                          {day.reports.length}
+                                        </span>
+                                      </div>
+                                      <ChevronDown className={`w-3.5 h-3.5 text-slate-600 transition-transform ${isDayExpanded ? 'rotate-180' : ''}`} />
+                                    </button>
+                                    
+                                    {isDayExpanded && (
+                                      <div className="p-2 space-y-2 border-t border-slate-200 dark:border-slate-800/40 bg-slate-50 dark:bg-slate-900/20">
+                                        {day.reports.map((rep, rIdx) => (
+                                          <ReportListCard 
+                                            key={rep.reportId || rIdx} 
+                                            rep={rep} 
+                                            isAdminOrOwner={isAdminOrOwner} 
+                                            onUpdateStatus={updateStatus} 
+                                            onUpdatePermission={updatePermission} 
+                                            onUpdateDetails={updateDetails} 
+                                            userPhotoMap={userPhotoMap} 
+                                            isArsip={true} 
+                                          />
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
                             </div>
                           </div>
                         )}
                       </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+                    );
+                  })}
+                </div>
+              )}
+            </GlassCard>
           )}
-        </GlassCard>
+        </div>
       )}
 
       {/* Tinjau Data Modal/Overlay ("VIDEO LEBIH DULU TRUS DATA") */}
       {showReview && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4 overflow-y-auto">
+        <div className="fixed inset-0 bg-white dark:bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4 overflow-y-auto">
           <motion.div
             initial={{ opacity: 0, scale: 0.95, y: 10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-sm space-y-5"
+            className="w-full max-w-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm space-y-5"
           >
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
               <div className="flex items-center gap-2">
                 <div className="p-2 rounded-xl bg-sky-500/10 text-sky-400">
                   <Sparkles className="w-5 h-5 animate-pulse" />
                 </div>
-                <h3 className="text-base font-black text-white uppercase tracking-wider">
+                <h3 className="text-base font-black text-slate-900 dark:text-white uppercase tracking-wider">
                   Tinjau Laporan Harian
                 </h3>
               </div>
               <button
                 type="button"
                 onClick={() => setShowReview(false)}
-                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors"
+                className="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-white p-1 rounded-lg hover:bg-slate-100 dark:bg-slate-800 transition-colors"
               >
                 <XCircle className="w-5 h-5" />
               </button>
@@ -3237,14 +3617,13 @@ export const DataHarianPage: React.FC = () => {
 
             {/* Video Bukti Preview */}
             <div className="space-y-2">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
                 <span>🎥 Video Bukti Pelamar</span>
               </span>
               {formData.videoUrl ? (
-                <div className="relative rounded-2xl overflow-hidden border border-slate-800/80 bg-black aspect-video max-h-48 flex items-center justify-center shadow-inner">
+                <div className="relative rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800/80 bg-black aspect-video max-h-48 flex items-center justify-center shadow-inner">
                   {formData.videoUrl.startsWith('data:image/') || formData.videoUrl.match(/\.(jpeg|jpg|png|webp|gif)($|\?)/i) ? (
-                    <img 
-                      src={formData.videoUrl} 
+                    <img referrerPolicy="no-referrer"                       src={formData.videoUrl} 
                       alt="Bukti Pelamar" 
                       className="w-full h-full object-contain"
                     />
@@ -3257,38 +3636,42 @@ export const DataHarianPage: React.FC = () => {
                   )}
                 </div>
               ) : (
-                <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-950/40 p-4 text-center text-xs text-slate-500">
+                <div className="rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 p-4 text-center text-xs text-slate-500 dark:text-slate-400">
                   Tidak ada video bukti pelamar yang dilampirkan.
                 </div>
               )}
             </div>
 
             {/* Text Data Second ("TRUS DATA") */}
-            <div className="space-y-3 bg-slate-950/60 p-4.5 rounded-2xl border border-slate-900/80 text-xs sm:text-sm font-mono text-slate-300">
+            <div className="space-y-3 bg-white dark:bg-slate-950/60 p-4.5 rounded-2xl border border-slate-900/80 text-xs sm:text-sm font-mono text-slate-700 dark:text-slate-300">
               <div className="flex justify-between py-1 border-b border-slate-900/50">
-                <span className="text-slate-500 font-bold">UID :</span>
+                <span className="text-slate-500 dark:text-slate-400 font-bold">UID :</span>
                 <span className="text-amber-400 font-bold">{formData.uid9Kucing}</span>
               </div>
               <div className="flex justify-between py-1 border-b border-slate-900/50">
-                <span className="text-slate-500 font-bold">WA :</span>
+                <span className="text-slate-500 dark:text-slate-400 font-bold">WA :</span>
                 <span className="text-emerald-400 font-bold">{formData.applicantWhatsapp}</span>
               </div>
               <div className="flex justify-between py-1 border-b border-slate-900/50">
-                <span className="text-slate-500 font-bold">Username Telegram :</span>
+                <span className="text-slate-500 dark:text-slate-400 font-bold">Nama :</span>
+                <span className="text-blue-400 font-bold">{tgStatus.title || 'Tidak Diketahui'}</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-slate-900/50">
+                <span className="text-slate-500 dark:text-slate-400 font-bold">Username Telegram :</span>
                 <span className="text-sky-400 font-bold">
                   {formData.applicantTelegramUsername ? `@${formData.applicantTelegramUsername.replace(/^@/, '')}` : '-'}
                 </span>
               </div>
               <div className="flex justify-between py-1 border-b border-slate-900/50">
-                <span className="text-slate-500 font-bold">Rekomendasi dari :</span>
+                <span className="text-slate-500 dark:text-slate-400 font-bold">Rekomendasi dari :</span>
                 <span className="text-purple-400 font-bold">@{autoRecruiterUsername.replace(/^@/, '')}</span>
               </div>
               <div className="flex justify-between py-1 border-b border-slate-900/50">
-                <span className="text-slate-500 font-bold">Info dari sosmed :</span>
+                <span className="text-slate-500 dark:text-slate-400 font-bold">Info dari sosmed :</span>
                 <span className="text-pink-400 font-bold">{formData.channel || '-'}</span>
               </div>
               <div className="flex justify-between items-center py-1 pt-1.5">
-                <span className="text-slate-500 font-bold">Grub :</span>
+                <span className="text-slate-500 dark:text-slate-400 font-bold">Grub :</span>
                 <div className="flex items-center gap-1.5">
                   <span className="text-indigo-400 font-extrabold bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">
                     {formData.grup === 'T0' ? 'T0-MARK' : formData.grup === 'V0' ? 'V0' : formData.grup === 'RECRUITER' ? 'RECRUITER' : formData.grup === 'T3' ? 'T0-MARK' : (formData.grup || '-')}
@@ -3309,7 +3692,7 @@ export const DataHarianPage: React.FC = () => {
                 variant="secondary"
                 fullWidth
                 onClick={() => setShowReview(false)}
-                className="rounded-2xl py-3 border-slate-800 text-slate-300 hover:text-white"
+                className="rounded-2xl py-3 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:text-white"
               >
                 Batal &amp; Edit
               </Button>
@@ -3331,12 +3714,12 @@ export const DataHarianPage: React.FC = () => {
       {/* Modern Alert Modal Overlay */}
       <AnimatePresence>
         {alertState.isOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-white dark:bg-slate-950/80 backdrop-blur-md">
             <motion.div
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="w-full max-w-sm rounded-3xl bg-slate-900/95 border border-slate-800 p-6 shadow-2xl space-y-5 text-center relative overflow-hidden"
+              className="w-full max-w-sm rounded-3xl bg-slate-50 dark:bg-slate-900/95 border border-slate-200 dark:border-slate-800 p-6 shadow-2xl space-y-5 text-center relative overflow-hidden"
             >
               {/* Background Ambient Glow */}
               <div
@@ -3368,10 +3751,10 @@ export const DataHarianPage: React.FC = () => {
 
               {/* Content */}
               <div className="space-y-2">
-                <h3 className="text-base font-black text-white tracking-tight">
+                <h3 className="text-base font-black text-slate-900 dark:text-white tracking-tight">
                   {alertState.title}
                 </h3>
-                <p className="text-xs font-medium text-slate-300 leading-relaxed">
+                <p className="text-xs font-medium text-slate-700 dark:text-slate-300 leading-relaxed">
                   {alertState.message}
                 </p>
               </div>

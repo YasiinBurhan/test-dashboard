@@ -14,56 +14,103 @@ import { handleFirestoreError, OperationType } from '../error';
 import { DailyReport, DailyReportFormData } from '../../types';
 import { createNotification } from './notificationService';
 
-const COLLECTION_NAME = 'laporan_harian';
+const SUMMARY_COLLECTION = 'laporan_harian';
+const APPLICANT_COLLECTION = 'data_harian';
+
+async function getCollectionName(reportId: string): Promise<string> {
+  try {
+    const dataHarianDoc = doc(db, APPLICANT_COLLECTION, reportId);
+    const snap = await getDoc(dataHarianDoc);
+    if (snap.exists()) {
+      return APPLICANT_COLLECTION;
+    }
+  } catch (err) {
+    console.warn('Error fetching from data_harian:', err);
+  }
+  return SUMMARY_COLLECTION;
+}
 
 export function subscribeToUserReports(
   telegramId: string, 
   onUpdate: (reports: DailyReport[]) => void,
   onError?: (error: Error) => void
 ): () => void {
-  const reportsRef = collection(db, COLLECTION_NAME);
-  const q = query(
-    reportsRef,
-    where('telegramId', '==', telegramId)
-  );
+  const qSummary = query(collection(db, SUMMARY_COLLECTION), where('telegramId', '==', telegramId));
+  const qApplicant = query(collection(db, APPLICANT_COLLECTION), where('telegramId', '==', telegramId));
 
-  return onSnapshot(q, (snapshot) => {
-    const reports = snapshot.docs.map((docSnap) => docSnap.data() as DailyReport);
-    // Sort in client-side JS to avoid Firestore composite index requirement
-    reports.sort((a, b) => {
+  let summaryReports: DailyReport[] = [];
+  let applicantReports: DailyReport[] = [];
+
+  const handleUpdate = () => {
+    const combined = [...summaryReports, ...applicantReports];
+    combined.sort((a, b) => {
       const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
       const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
       return timeB - timeA;
     });
-    onUpdate(reports);
-  }, (error) => {
-    console.error('Error listening to user reports:', error);
-    if (onError) {
-      onError(error);
-    } else {
-      onUpdate([]);
-    }
+    onUpdate(combined);
+  };
+
+  const unsub1 = onSnapshot(qSummary, (snapshot) => {
+    summaryReports = snapshot.docs.map(docSnap => docSnap.data() as DailyReport);
+    handleUpdate();
+  }, (err) => {
+    console.error('Error listening to user summary reports:', err);
+    if (onError) onError(err);
   });
+
+  const unsub2 = onSnapshot(qApplicant, (snapshot) => {
+    applicantReports = snapshot.docs.map(docSnap => docSnap.data() as DailyReport);
+    handleUpdate();
+  }, (err) => {
+    console.error('Error listening to user applicant reports:', err);
+    if (onError) onError(err);
+  });
+
+  return () => {
+    unsub1();
+    unsub2();
+  };
 }
 
 export function subscribeToAllReports(
   onUpdate: (reports: DailyReport[]) => void,
   onError?: (error: Error) => void
 ): () => void {
-  const reportsRef = collection(db, COLLECTION_NAME);
-  const q = query(reportsRef, orderBy('createdAt', 'desc'));
+  const qSummary = query(collection(db, SUMMARY_COLLECTION), orderBy('createdAt', 'desc'));
+  const qApplicant = query(collection(db, APPLICANT_COLLECTION), orderBy('createdAt', 'desc'));
 
-  return onSnapshot(q, (snapshot) => {
-    const reports = snapshot.docs.map((docSnap) => docSnap.data() as DailyReport);
-    onUpdate(reports);
-  }, (error) => {
-    console.error('Error listening to all reports:', error);
-    if (onError) {
-      onError(error);
-    } else {
-      onUpdate([]);
-    }
+  let summaryReports: DailyReport[] = [];
+  let applicantReports: DailyReport[] = [];
+
+  const handleUpdate = () => {
+    const combined = [...summaryReports, ...applicantReports];
+    combined.sort((a, b) => {
+      const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return timeB - timeA;
+    });
+    onUpdate(combined);
+  };
+
+  const unsub1 = onSnapshot(qSummary, (snapshot) => {
+    summaryReports = snapshot.docs.map(docSnap => docSnap.data() as DailyReport);
+    handleUpdate();
+  }, (err) => {
+    console.warn('Error listening to all summary reports:', err);
   });
+
+  const unsub2 = onSnapshot(qApplicant, (snapshot) => {
+    applicantReports = snapshot.docs.map(docSnap => docSnap.data() as DailyReport);
+    handleUpdate();
+  }, (err) => {
+    console.warn('Error listening to all applicant reports:', err);
+  });
+
+  return () => {
+    unsub1();
+    unsub2();
+  };
 }
 
 export async function createDailyReport(
@@ -72,6 +119,9 @@ export async function createDailyReport(
 ): Promise<DailyReport> {
   const reportId = `REP_${Date.now()}_${user.telegramId.slice(-4)}`;
   const now = new Date().toISOString();
+
+  const isApplicantReport = !!(formData.applicantWhatsapp || formData.uid9Kucing || formData.applicantTelegramUsername);
+  const targetCollection = isApplicantReport ? APPLICANT_COLLECTION : SUMMARY_COLLECTION;
 
   const report: DailyReport = {
     reportId,
@@ -84,7 +134,6 @@ export async function createDailyReport(
     applicantWhatsapp: formData.applicantWhatsapp || '',
     uid9Kucing: formData.uid9Kucing || '',
     applicantTelegramUsername: formData.applicantTelegramUsername || '',
-    result: formData.result || 'Pending',
     grup: formData.grup || 'T0',
     visit: Number(formData.visit) || 0,
     applicant: Number(formData.applicant) || 0,
@@ -93,45 +142,110 @@ export async function createDailyReport(
     permission: Number(formData.permission) || 0,
     effectiveStatus: formData.effectiveStatus || 'YES',
     note: formData.note || '',
-    videoUrl: formData.videoUrl || '',
+    // videoUrl is excluded from Firestore save to avoid document size limits
     applicantPhotoUrl: formData.applicantPhotoUrl || '',
     isLate: formData.isLate || false,
     fine: formData.fine || 0,
-    createdAt: now
+    createdAt: now,
+    ...(isApplicantReport ? { result: formData.result || 'Pending' } : {})
   };
 
   try {
-    const reportRef = doc(db, COLLECTION_NAME, reportId);
+    // PREVENT DUPLICATES
+    if (isApplicantReport) {
+      // 1. Check for duplicate applicant (UID, Telegram, or WhatsApp)
+      const existingApplicant = await checkReportDuplicate(
+        formData.uid9Kucing || '', 
+        formData.applicantTelegramUsername || '', 
+        formData.applicantWhatsapp || ''
+      );
+      if (existingApplicant) {
+        throw new Error(`Data pelamar duplikat terdeteksi: Sudah pernah diinput oleh @${existingApplicant.recruiterUsername || existingApplicant.username} pada ${existingApplicant.date}.`);
+      }
+    } else {
+      // 2. Check for duplicate daily summary (One summary per user per day)
+      const reportsRef = collection(db, SUMMARY_COLLECTION);
+      const qSummary = query(
+        reportsRef,
+        where('telegramId', '==', user.telegramId),
+        where('date', '==', formData.date)
+      );
+      const snapSummary = await getDocs(qSummary);
+      
+      // Filter out individual applicant reports (those with UID/WA/TG)
+      const existingSummaryDoc = snapSummary.docs.find(d => {
+        const data = d.data();
+        return !data.uid9Kucing && !data.applicantWhatsapp && !data.applicantTelegramUsername;
+      });
+
+      if (existingSummaryDoc) {
+        const existingReportData = existingSummaryDoc.data() as DailyReport;
+        const existingId = existingSummaryDoc.id;
+        const updatedReport: DailyReport = {
+          ...existingReportData,
+          ...report,
+          reportId: existingId,
+          updatedAt: now
+        };
+        const reportRef = doc(db, SUMMARY_COLLECTION, existingId);
+        await setDoc(reportRef, updatedReport, { merge: true });
+
+        createNotification({
+          targetRole: 'ADMIN_OWNER',
+          title: 'Laporan Harian Diperbarui',
+          message: `Laporan harian dikirim ulang/diperbarui oleh @${report.username} untuk tanggal ${report.date}.`,
+          type: 'NEW_REPORT',
+          reportId: existingId,
+          senderName: report.username
+        }).catch(err => console.error('Error creating report update notification:', err));
+
+        return updatedReport;
+      }
+    }
+
+    const reportRef = doc(db, targetCollection, reportId);
     await setDoc(reportRef, report);
 
     // Trigger notification to Admin & Owner if status is Pending or new report
-    createNotification({
-      targetRole: 'ADMIN_OWNER',
-      title: 'Laporan Rekrutan Baru (Pending)',
-      message: `Laporan rekrutan dari @${report.recruiterUsername || report.username} untuk pelamar ${report.applicantTelegramUsername ? '@' + report.applicantTelegramUsername.replace(/^@/, '') : (report.name || 'Pelamar')}. Status: Pending.`,
-      type: 'NEW_REPORT',
-      reportId,
-      senderName: report.username
-    }).catch(err => console.error('Error creating new report notification:', err));
+    if (isApplicantReport) {
+      createNotification({
+        targetRole: 'ADMIN_OWNER',
+        title: 'Laporan Rekrutan Baru (Pending)',
+        message: `Laporan rekrutan dari @${report.recruiterUsername || report.username} untuk pelamar ${report.applicantTelegramUsername ? '@' + report.applicantTelegramUsername.replace(/^@/, '') : (report.name || 'Pelamar')}. Status: Pending.`,
+        type: 'NEW_REPORT',
+        reportId,
+        senderName: report.username
+      }).catch(err => console.error('Error creating new report notification:', err));
+    } else {
+      createNotification({
+        targetRole: 'ADMIN_OWNER',
+        title: 'Laporan Harian Baru',
+        message: `Laporan harian baru dikirim oleh @${report.username} untuk tanggal ${report.date}.`,
+        type: 'NEW_REPORT',
+        reportId,
+        senderName: report.username
+      }).catch(err => console.error('Error creating new report notification:', err));
+    }
 
     return report;
   } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, `${COLLECTION_NAME}/${reportId}`);
+    handleFirestoreError(error, OperationType.WRITE, `${targetCollection}/${reportId}`);
   }
 }
 
 export async function getReportsByTelegramId(telegramId: string): Promise<DailyReport[]> {
   try {
-    const reportsRef = collection(db, COLLECTION_NAME);
-    const q = query(
-      reportsRef,
-      where('telegramId', '==', telegramId)
-    );
-    const snapshot = await getDocs(q);
-    const reports = snapshot.docs.map((docSnap) => docSnap.data() as DailyReport);
-    return reports.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const q1 = query(collection(db, SUMMARY_COLLECTION), where('telegramId', '==', telegramId));
+    const q2 = query(collection(db, APPLICANT_COLLECTION), where('telegramId', '==', telegramId));
+
+    const [snap1, snap2] = await Promise.all([getDocs(q1), getDocs(q2)]);
+    const reports1 = snap1.docs.map(docSnap => docSnap.data() as DailyReport);
+    const reports2 = snap2.docs.map(docSnap => docSnap.data() as DailyReport);
+
+    const combined = [...reports1, ...reports2];
+    return combined.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   } catch (error) {
-    handleFirestoreError(error, OperationType.LIST, COLLECTION_NAME);
+    handleFirestoreError(error, OperationType.LIST, SUMMARY_COLLECTION);
   }
 }
 
@@ -142,7 +256,8 @@ export async function updateReportStatus(
   applicantTgUsername?: string
 ): Promise<void> {
   try {
-    const reportRef = doc(db, COLLECTION_NAME, reportId);
+    const colName = await getCollectionName(reportId);
+    const reportRef = doc(db, colName, reportId);
     await setDoc(reportRef, { result, updatedAt: new Date().toISOString() }, { merge: true });
 
     // Fetch telegramId and applicant info if not provided
@@ -174,7 +289,7 @@ export async function updateReportStatus(
       }).catch(err => console.error('Error creating status notification:', err));
     }
   } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, `${COLLECTION_NAME}/${reportId}`);
+    handleFirestoreError(error, OperationType.WRITE, `reports/${reportId}`);
   }
 }
 
@@ -190,9 +305,13 @@ export async function updateReportDetails(
   },
   targetTelegramId?: string
 ): Promise<void> {
+  const updateData = { ...data };
+  delete updateData.videoUrl;
+
   try {
-    const reportRef = doc(db, COLLECTION_NAME, reportId);
-    await setDoc(reportRef, { ...data, updatedAt: new Date().toISOString() }, { merge: true });
+    const colName = await getCollectionName(reportId);
+    const reportRef = doc(db, colName, reportId);
+    await setDoc(reportRef, { ...updateData, updatedAt: new Date().toISOString() }, { merge: true });
 
     if (data.grup) {
       let recipientId = targetTelegramId;
@@ -219,16 +338,17 @@ export async function updateReportDetails(
       }
     }
   } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, `${COLLECTION_NAME}/${reportId}`);
+    handleFirestoreError(error, OperationType.WRITE, `reports/${reportId}`);
   }
 }
 
 export async function updateReportPermission(reportId: string, permission: number): Promise<void> {
   try {
-    const reportRef = doc(db, COLLECTION_NAME, reportId);
+    const colName = await getCollectionName(reportId);
+    const reportRef = doc(db, colName, reportId);
     await setDoc(reportRef, { permission, updatedAt: new Date().toISOString() }, { merge: true });
   } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, `${COLLECTION_NAME}/${reportId}`);
+    handleFirestoreError(error, OperationType.WRITE, `reports/${reportId}`);
   }
 }
 
@@ -237,7 +357,7 @@ export async function checkReportDuplicate(
   applicantTelegramUsername: string,
   applicantWhatsapp?: string
 ): Promise<DailyReport | null> {
-  const reportsRef = collection(db, COLLECTION_NAME);
+  const reportsRef = collection(db, APPLICANT_COLLECTION);
   
   const cleanTg = applicantTelegramUsername ? applicantTelegramUsername.trim().replace(/^@/, '').toLowerCase() : '';
   const cleanUid = uid9Kucing ? uid9Kucing.trim() : '';
@@ -276,8 +396,6 @@ export async function checkReportDuplicate(
       if (!snapTgWithAt.empty) {
         return snapTgWithAt.docs[0].data() as DailyReport;
       }
-
-      // Check case-insensitively by fetching or comparing if needed, but standard query with exact or @ is highly reliable for our formatted data.
     }
 
     return null;
@@ -289,11 +407,16 @@ export async function checkReportDuplicate(
 
 export async function getAllReports(): Promise<DailyReport[]> {
   try {
-    const reportsRef = collection(db, COLLECTION_NAME);
-    const q = query(reportsRef, orderBy('createdAt', 'desc'));
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map((docSnap) => docSnap.data() as DailyReport);
+    const [snap1, snap2] = await Promise.all([
+      getDocs(collection(db, SUMMARY_COLLECTION)),
+      getDocs(collection(db, APPLICANT_COLLECTION))
+    ]);
+    const reports1 = snap1.docs.map(docSnap => docSnap.data() as DailyReport);
+    const reports2 = snap2.docs.map(docSnap => docSnap.data() as DailyReport);
+
+    const combined = [...reports1, ...reports2];
+    return combined.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   } catch (error) {
-    handleFirestoreError(error, OperationType.LIST, COLLECTION_NAME);
+    handleFirestoreError(error, OperationType.LIST, SUMMARY_COLLECTION);
   }
 }

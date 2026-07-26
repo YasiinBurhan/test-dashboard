@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@variant dark (&:where(.dark, .dark *));
+
 @theme {
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "SF Pro", "SF Compact Display", "SF Compact Text", system-ui, sans-serif;
 }
@@ -138,5 +140,3 @@
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(56, 189, 248, 0.4);
 }
-
-

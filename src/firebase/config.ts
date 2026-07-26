@@ -1,6 +1,7 @@
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
 import { initializeFirestore, Firestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
 import { getAuth, Auth } from 'firebase/auth';
+import { getStorage, FirebaseStorage } from 'firebase/storage';
 import firebaseAppletConfig from '../../firebase-applet-config.json';
 
 // Use configuration from firebase-applet-config.json or environment variables
@@ -38,5 +39,6 @@ export const db: Firestore = dbId
     });
 
 export const auth: Auth = getAuth(app);
+export const storage: FirebaseStorage = getStorage(app);
 
 export default app;

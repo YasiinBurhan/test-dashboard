@@ -92,11 +92,6 @@ const ViewportUpdater: React.FC = () => {
         vh = `${webApp.viewportHeight}px`;
       }
       document.documentElement.style.setProperty('--tg-viewport-height', vh);
-
-      console.log(`\n[ViewportUpdater] Event: ${eventType}`);
-      console.log(`[ViewportUpdater] Previous Top: ${prevTop}`);
-      console.log(`[ViewportUpdater] Current Top: ${currentTop}`);
-      console.log(`[ViewportUpdater] Applied CSS Variable --tg-safe-area-inset-top: ${document.documentElement.style.getPropertyValue('--tg-safe-area-inset-top')}`);
       
       // Dispatch custom event to notify Header and other active observers immediately
       const event = new CustomEvent('tg-safe-area-updated', { 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   LayoutGrid, 
@@ -16,10 +16,12 @@ import {
   Sparkles,
   LogOut,
   Moon,
+  Sun,
   Coins
 } from 'lucide-react';
 import { triggerHaptic } from '../../telegram/webapp';
 import { useAuth } from '../../hooks/useAuth';
+import { useTheme } from '../../contexts/ThemeContext';
 import { StatusBadge } from '../common/StatusBadge';
 
 export type TabType = 'beranda' | 'postingan' | 'laporan' | 'data_harian' | 'profil' | 'admin' | 'owner' | 'pengumuman' | 'gaji';
@@ -31,7 +33,66 @@ interface BottomNavProps {
 
 export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab }) => {
   const { userProfile, telegramUser, logout } = useAuth();
+  const { colorScheme, toggleTheme } = useTheme();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const handleFocusIn = (e: FocusEvent) => {
+      const target = e.target as HTMLElement;
+      if (
+        target && 
+        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) &&
+        !['checkbox', 'radio', 'submit', 'button', 'file'].includes((target as HTMLInputElement).type || '')
+      ) {
+        setIsKeyboardVisible(true);
+      }
+    };
+
+    const handleFocusOut = () => {
+      setTimeout(() => {
+        const activeEl = document.activeElement as HTMLElement;
+        const isStillInput = activeEl && (
+          activeEl.tagName === 'INPUT' || 
+          activeEl.tagName === 'TEXTAREA' || 
+          activeEl.isContentEditable
+        ) && !['checkbox', 'radio', 'submit', 'button', 'file'].includes((activeEl as HTMLInputElement).type || '');
+        
+        if (!isStillInput) {
+          setIsKeyboardVisible(false);
+        }
+      }, 80);
+    };
+
+    const initialHeight = window.innerHeight;
+    const handleResize = () => {
+      const currentHeight = window.innerHeight;
+      // If viewport shrank by more than 140px, keyboard is likely open
+      if (initialHeight - currentHeight > 140) {
+        const activeEl = document.activeElement as HTMLElement;
+        const isFocusedOnInput = activeEl && (
+          activeEl.tagName === 'INPUT' || 
+          activeEl.tagName === 'TEXTAREA' || 
+          activeEl.isContentEditable
+        );
+        if (isFocusedOnInput) {
+          setIsKeyboardVisible(true);
+        }
+      } else {
+        setIsKeyboardVisible(false);
+      }
+    };
+
+    document.addEventListener('focusin', handleFocusIn);
+    document.addEventListener('focusout', handleFocusOut);
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+      document.removeEventListener('focusin', handleFocusIn);
+      document.removeEventListener('focusout', handleFocusOut);
+      window.removeEventListener('resize', handleResize);
+    };
+  }, []);
 
   const handleTabClick = (tab: TabType) => {
     triggerHaptic('selection');
@@ -127,25 +188,22 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab })
               className="fixed bottom-0 left-0 right-0 z-50 p-4 max-w-lg mx-auto"
             >
               <div 
-                style={{
-                  backgroundColor: 'var(--tg-secondary-bg-color, rgba(15, 23, 42, 0.98))'
-                }}
-                className="rounded-3xl border border-slate-800 shadow-2xl p-5 space-y-5 backdrop-blur-2xl text-white"
+                className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 shadow-2xl p-5 space-y-5 backdrop-blur-2xl text-slate-900 dark:text-white"
               >
                 {/* Header: User Profile & Close */}
-                <div className="flex items-center justify-between pb-3 border-b border-slate-800/80">
+                <div className="flex items-center justify-between pb-3 border-b border-slate-200/80 dark:border-slate-800/80">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-sky-500 to-blue-600 flex items-center justify-center font-black text-white text-sm shadow-md shadow-sky-500/20 border border-white/20 shrink-0">
+                    <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-sky-500 to-blue-600 flex items-center justify-center font-black text-slate-900 dark:text-white text-sm shadow-md shadow-sky-500/20 border border-white/20 shrink-0">
                       {(userProfile?.firstName?.[0] || telegramUser?.first_name?.[0] || 'A').toUpperCase()}
                     </div>
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <h3 className="font-extrabold text-sm text-white truncate max-w-[160px]">
+                        <h3 className="font-extrabold text-sm text-slate-900 dark:text-white truncate max-w-[160px]">
                           {userProfile?.firstName || telegramUser?.first_name || 'User'}
                         </h3>
                         {userProfile?.role && <StatusBadge role={userProfile.role} size="sm" />}
                       </div>
-                      <p className="text-[11px] font-medium text-slate-400 truncate">
+                      <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 truncate">
                         @{ (userProfile?.username || telegramUser?.username || 'user').replace(/^@/, '') }
                       </p>
                     </div>
@@ -153,7 +211,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab })
 
                   <button
                     onClick={() => setIsMenuOpen(false)}
-                    className="p-2 rounded-2xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-white transition-all active:scale-95"
+                    className="p-2 rounded-2xl bg-slate-200 dark:bg-slate-900 border border-slate-300 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all active:scale-95"
                   >
                     <X className="w-5 h-5" />
                   </button>
@@ -161,7 +219,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab })
 
                 {/* Secondary Menu List */}
                 <div className="space-y-2">
-                  <p className="text-[10px] font-black uppercase text-slate-500 tracking-wider px-1">
+                  <p className="text-[10px] font-black uppercase text-slate-500 dark:text-slate-400 tracking-wider px-1">
                     Navigasi Tambahan
                   </p>
 
@@ -176,8 +234,8 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab })
                           onClick={() => handleTabClick(item.id)}
                           className={`w-full flex items-center justify-between p-3.5 rounded-2xl border transition-all active:scale-[0.99] text-left ${
                             isActive
-                              ? 'bg-sky-500/15 border-sky-500/40 text-white shadow-lg shadow-sky-500/10'
-                              : 'bg-slate-900/60 border-slate-800/80 text-slate-300 hover:bg-slate-800/50 hover:text-white'
+                              ? 'bg-sky-500/15 border-sky-500/40 text-slate-900 dark:text-white shadow-lg shadow-sky-500/10'
+                              : 'bg-slate-100/80 dark:bg-slate-900/60 border-slate-200/80 dark:border-slate-800/80 text-slate-700 dark:text-slate-300 hover:bg-slate-200/80 dark:hover:bg-slate-100 dark:bg-slate-800/50 hover:text-slate-900 dark:hover:text-white'
                           }`}
                         >
                           <div className="flex items-center gap-3 min-w-0">
@@ -186,12 +244,12 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab })
                             </div>
                             <div className="min-w-0">
                               <div className="flex items-center gap-2">
-                                <span className="font-extrabold text-xs text-white tracking-tight">{item.label}</span>
+                                <span className="font-extrabold text-xs text-slate-900 dark:text-white tracking-tight">{item.label}</span>
                                 {isActive && (
                                   <span className="w-2 h-2 rounded-full bg-sky-400 animate-pulse" />
                                 )}
                               </div>
-                              <p className="text-[10px] text-slate-400 font-medium truncate mt-0.5">{item.desc}</p>
+                              <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium truncate mt-0.5">{item.desc}</p>
                             </div>
                           </div>
 
@@ -203,11 +261,24 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab })
                 </div>
 
                 {/* Bottom Quick Controls */}
-                <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2 text-xs font-bold text-slate-400 bg-slate-900 px-3.5 py-2.5 rounded-2xl border border-slate-800/80">
-                    <Moon className="w-4 h-4 text-sky-400 shrink-0" />
-                    <span>Mode Twilight Dark</span>
-                  </div>
+                <div className="pt-2 border-t border-slate-200/80 dark:border-slate-800/80 flex items-center justify-between gap-3">
+                  <button
+                    type="button"
+                    onClick={toggleTheme}
+                    className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-900 px-3.5 py-2.5 rounded-2xl border border-slate-300/80 dark:border-slate-800/80 hover:border-sky-500/40 cursor-pointer transition-all active:scale-95"
+                  >
+                    {colorScheme === 'dark' ? (
+                      <>
+                        <Sun className="w-4 h-4 text-amber-400 shrink-0" />
+                        <span>Mode Terang (Soft)</span>
+                      </>
+                    ) : (
+                      <>
+                        <Moon className="w-4 h-4 text-sky-600 dark:text-sky-400 shrink-0" />
+                        <span>Mode Gelap (Twilight)</span>
+                      </>
+                    )}
+                  </button>
 
                   <button
                     onClick={() => {
@@ -231,13 +302,12 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab })
         style={{
           paddingBottom: 'calc(var(--tg-safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) + 8px)'
         }}
-        className="fixed bottom-0 left-0 right-0 z-40 px-3 md:px-6 pointer-events-none"
+        className={`fixed bottom-0 left-0 right-0 z-40 px-3 md:px-6 pointer-events-none transition-all duration-300 ease-in-out transform ${
+          isKeyboardVisible ? 'translate-y-28 opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'
+        }`}
       >
         <nav 
-          style={{
-            backgroundColor: 'var(--tg-secondary-bg-color, var(--tg-bg-color, rgba(15, 23, 42, 0.96)))'
-          }}
-          className="w-full max-w-xl mx-auto pointer-events-auto backdrop-blur-2xl border border-slate-200/10 dark:border-white/5 rounded-2xl p-1 shadow-sm flex items-center justify-between"
+          className="w-full max-w-xl mx-auto pointer-events-auto backdrop-blur-2xl border border-slate-200/90 dark:border-white/10 bg-white/85 dark:bg-slate-950/85 rounded-2xl p-1 shadow-lg shadow-slate-900/5 dark:shadow-2xl flex items-center justify-between"
         >
           {/* Primary 4 Buttons */}
           {primaryTabs.map((item) => {
@@ -251,10 +321,10 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab })
                 className="flex-1 flex flex-col items-center justify-center py-2 px-1 rounded-xl transition-colors duration-200 relative"
               >
                 <div className="relative flex items-center justify-center">
-                  <Icon className={`w-5 h-5 transition-transform duration-200 ${isActive ? 'scale-105 text-blue-500 dark:text-blue-400' : 'scale-100 text-slate-500 dark:text-slate-400'}`} />
+                  <Icon className={`w-5 h-5 transition-transform duration-200 ${isActive ? 'scale-105 text-sky-600 dark:text-sky-400 font-extrabold' : 'scale-100 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`} />
                 </div>
 
-                <span className={`text-[10px] md:text-[11px] tracking-tight mt-1 font-medium truncate max-w-full ${isActive ? 'text-blue-500 dark:text-blue-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                <span className={`text-[10px] md:text-[11px] tracking-tight mt-1 truncate max-w-full ${isActive ? 'text-sky-600 dark:text-sky-400 font-bold' : 'text-slate-500 dark:text-slate-400 font-medium'}`}>
                   {item.label}
                 </span>
               </button>
@@ -267,10 +337,10 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab })
             className="flex-1 flex flex-col items-center justify-center py-2 px-1 rounded-xl transition-colors duration-200 relative"
           >
             <div className="relative flex items-center justify-center">
-              <FifthIcon className={`w-5 h-5 transition-transform duration-200 ${isSecondaryActive || isMenuOpen ? 'scale-105 text-blue-500 dark:text-blue-400' : 'scale-100 text-slate-500 dark:text-slate-400'}`} />
+              <FifthIcon className={`w-5 h-5 transition-transform duration-200 ${isSecondaryActive || isMenuOpen ? 'scale-105 text-sky-600 dark:text-sky-400 font-extrabold' : 'scale-100 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`} />
             </div>
 
-            <span className={`text-[10px] md:text-[11px] tracking-tight mt-1 font-medium truncate max-w-full ${isSecondaryActive || isMenuOpen ? 'text-blue-500 dark:text-blue-400' : 'text-slate-500 dark:text-slate-400'}`}>
+            <span className={`text-[10px] md:text-[11px] tracking-tight mt-1 truncate max-w-full ${isSecondaryActive || isMenuOpen ? 'text-sky-600 dark:text-sky-400 font-bold' : 'text-slate-500 dark:text-slate-400 font-medium'}`}>
               {fifthButtonLabel}
             </span>
           </button>

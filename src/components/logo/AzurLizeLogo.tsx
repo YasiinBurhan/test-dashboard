@@ -84,7 +84,7 @@ export const AzurLizeLogo: React.FC<AzurLizeLogoProps> = ({
     <div className={`flex items-center gap-3 ${className}`}>
       <div className="shrink-0">
         <div
-          className={`${dimensions.box} rounded-2xl bg-slate-900/90 border border-sky-500/30 flex items-center justify-center shadow-lg shadow-sky-500/20 backdrop-blur-md relative overflow-hidden group`}
+          className={`${dimensions.box} rounded-2xl bg-slate-50 dark:bg-slate-900/90 border border-sky-500/30 flex items-center justify-center shadow-lg shadow-sky-500/20 backdrop-blur-md relative overflow-hidden group`}
         >
           <div className="absolute inset-0 bg-gradient-to-tr from-sky-500/10 via-blue-600/10 to-indigo-500/10 opacity-80" />
           <ModernAMark size={dimensions.icon} className="relative z-10 transition-transform duration-300 group-hover:scale-105" />
@@ -94,14 +94,14 @@ export const AzurLizeLogo: React.FC<AzurLizeLogoProps> = ({
       {showText && (
         <div className="flex flex-col text-left">
           <div className="flex items-center gap-1.5">
-            <span className={`font-black tracking-tight text-white ${dimensions.text}`}>
+            <span className={`font-black tracking-tight text-slate-900 dark:text-white ${dimensions.text}`}>
               Azur<span className="text-sky-400">Lize</span>
             </span>
             <span className="text-[9px] font-black uppercase tracking-wider text-sky-400 bg-sky-500/10 border border-sky-500/30 px-1.5 py-0.5 rounded-md shadow-sm">
               Team
             </span>
           </div>
-          <span className="text-[10px] text-slate-400 font-bold tracking-wide uppercase">
+          <span className="text-[10px] text-slate-600 dark:text-slate-400 font-bold tracking-wide uppercase">
             Recruitment System
           </span>
         </div>

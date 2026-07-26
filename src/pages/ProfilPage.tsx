@@ -9,13 +9,13 @@ export const ProfilPage: React.FC = () => {
   const { userProfile, telegramUser, logout } = useAuth();
 
   return (
-    <div className="space-y-5 pb-28">
+    <div className="space-y-5">
       <div className="space-y-1">
-        <h2 className="text-xl font-extrabold text-white tracking-tight flex items-center gap-2">
+        <h2 className="text-xl font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
           <User className="w-6 h-6 text-blue-400" />
           <span>Profil Saya</span>
         </h2>
-        <p className="text-xs text-slate-400">
+        <p className="text-xs text-slate-600 dark:text-slate-400">
           Identitas dan rincian pendaftaran akun recruiter.
         </p>
       </div>
@@ -24,19 +24,18 @@ export const ProfilPage: React.FC = () => {
         {/* Profile Avatar */}
         <div className="flex flex-col items-center gap-3">
           {telegramUser?.photo_url ? (
-            <img
-              src={telegramUser.photo_url}
+            <img referrerPolicy="no-referrer"               src={telegramUser.photo_url}
               alt="Profile"
               className="w-20 h-20 rounded-3xl object-cover border-2 border-blue-500/40 shadow-xl"
             />
           ) : (
-            <div className="w-20 h-20 rounded-3xl bg-gradient-to-tr from-blue-600 via-sky-500 to-indigo-600 flex items-center justify-center text-white text-3xl font-black shadow-xl">
+            <div className="w-20 h-20 rounded-3xl bg-gradient-to-tr from-blue-600 via-sky-500 to-indigo-600 flex items-center justify-center text-slate-900 dark:text-white text-3xl font-black shadow-xl">
               {(userProfile?.firstName?.[0] || telegramUser?.first_name?.[0] || 'A').toUpperCase()}
             </div>
           )}
 
           <div className="space-y-1">
-            <h3 className="text-lg font-extrabold text-white">
+            <h3 className="text-lg font-extrabold text-slate-900 dark:text-white">
               {userProfile?.firstName} {userProfile?.lastName}
             </h3>
             <span className="text-xs font-semibold text-sky-400 block">
@@ -50,48 +49,48 @@ export const ProfilPage: React.FC = () => {
         </div>
 
         {/* Detailed Fields */}
-        <div className="bg-slate-900/80 rounded-2xl border border-slate-800 p-4 text-left space-y-3.5 text-xs">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
-            <span className="text-slate-400 flex items-center gap-2 font-medium">
+        <div className="bg-slate-50 dark:bg-slate-900/80 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 text-left space-y-3.5 text-xs">
+          <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2.5">
+            <span className="text-slate-600 dark:text-slate-400 flex items-center gap-2 font-medium">
               <Hash className="w-4 h-4 text-blue-400" /> Telegram ID
             </span>
-            <span className="font-mono font-bold text-white">
+            <span className="font-mono font-bold text-slate-900 dark:text-white">
               {userProfile?.telegramId || telegramUser?.id}
             </span>
           </div>
 
-          <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
-            <span className="text-slate-400 flex items-center gap-2 font-medium">
+          <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2.5">
+            <span className="text-slate-600 dark:text-slate-400 flex items-center gap-2 font-medium">
               <Mail className="w-4 h-4 text-sky-400" /> Email
             </span>
-            <span className="font-semibold text-white">
+            <span className="font-semibold text-slate-900 dark:text-white">
               {userProfile?.email || '-'}
             </span>
           </div>
 
-          <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
-            <span className="text-slate-400 flex items-center gap-2 font-medium">
+          <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2.5">
+            <span className="text-slate-600 dark:text-slate-400 flex items-center gap-2 font-medium">
               <Phone className="w-4 h-4 text-emerald-400" /> WhatsApp
             </span>
-            <span className="font-semibold text-white">
+            <span className="font-semibold text-slate-900 dark:text-white">
               {userProfile?.whatsapp || '-'}
             </span>
           </div>
 
-          <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
-            <span className="text-slate-400 flex items-center gap-2 font-medium">
+          <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2.5">
+            <span className="text-slate-600 dark:text-slate-400 flex items-center gap-2 font-medium">
               <Key className="w-4 h-4 text-amber-400" /> UID 9Kucing
             </span>
-            <span className="font-semibold text-white">
+            <span className="font-semibold text-slate-900 dark:text-white">
               {userProfile?.akun9Kucing || '-'}
             </span>
           </div>
 
           <div className="flex items-center justify-between">
-            <span className="text-slate-400 flex items-center gap-2 font-medium">
+            <span className="text-slate-600 dark:text-slate-400 flex items-center gap-2 font-medium">
               <Shield className="w-4 h-4 text-purple-400" /> Tanggal Didaftarkan
             </span>
-            <span className="font-semibold text-slate-300">
+            <span className="font-semibold text-slate-700 dark:text-slate-300">
               {formatWIBDate(userProfile?.createdAt)}
             </span>
           </div>

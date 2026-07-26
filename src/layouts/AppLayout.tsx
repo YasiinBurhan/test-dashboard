@@ -29,9 +29,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
       <div className="fixed top-0 left-1/2 -translate-x-1/2 w-full max-w-lg md:max-w-2xl h-96 bg-sky-600/10 rounded-full blur-3xl pointer-events-none -z-10" />
       <div className="fixed bottom-0 right-0 w-80 h-80 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none -z-10" />
 
-      <Header title={title} />
+      <Header title={title} setActiveTab={setActiveTab} />
       
-      <main className="flex-1 w-full max-w-7xl mx-auto p-4 md:p-6 pt-3 space-y-4 md:space-y-6">
+      <main className="flex-1 w-full max-w-7xl mx-auto px-3.5 sm:px-6 pt-3 pb-28 md:pb-32 space-y-4 md:space-y-6">
         {children}
       </main>
 

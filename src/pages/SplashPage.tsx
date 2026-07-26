@@ -5,7 +5,7 @@ import { Sparkles } from 'lucide-react';
 
 export const SplashPage: React.FC = () => {
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950 flex flex-col items-center justify-center p-6 text-center select-none overflow-hidden">
+    <div className="fixed inset-0 z-50 bg-white dark:bg-slate-950 flex flex-col items-center justify-center p-6 text-center select-none overflow-hidden">
       {/* Background ambient lighting */}
       <div className="absolute -top-32 -left-32 w-80 h-80 bg-sky-500/15 rounded-full blur-3xl pointer-events-none animate-pulse" />
       <div className="absolute -bottom-32 -right-32 w-80 h-80 bg-indigo-600/15 rounded-full blur-3xl pointer-events-none animate-pulse" />
@@ -18,15 +18,15 @@ export const SplashPage: React.FC = () => {
       >
         <AzurLizeLogo size="xl" showText={true} />
 
-        <div className="flex items-center gap-2 mt-6 bg-slate-900/80 border border-slate-800 px-3.5 py-1.5 rounded-full shadow-lg">
+        <div className="flex items-center gap-2 mt-6 bg-slate-50 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 px-3.5 py-1.5 rounded-full shadow-lg">
           <Sparkles className="w-3.5 h-3.5 text-sky-400 animate-spin" style={{ animationDuration: '3s' }} />
-          <span className="text-xs font-bold text-slate-300 tracking-wider uppercase">
+          <span className="text-xs font-bold text-slate-700 dark:text-slate-300 tracking-wider uppercase">
             Memuat Sistem AzurLize...
           </span>
         </div>
 
         {/* Smooth 2.2s loading bar fill */}
-        <div className="w-56 h-2 bg-slate-900 border border-slate-800 rounded-full overflow-hidden mt-1 relative p-0.5">
+        <div className="w-56 h-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-full overflow-hidden mt-1 relative p-0.5">
           <motion.div
             initial={{ width: '0%' }}
             animate={{ width: '100%' }}
@@ -37,7 +37,7 @@ export const SplashPage: React.FC = () => {
       </motion.div>
 
       <div className="absolute bottom-8 left-0 right-0 text-center">
-        <p className="text-[11px] text-slate-500 font-semibold tracking-wide">
+        <p className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold tracking-wide">
           AzurLize Team &bull; Recruitment Platform v1.0.0
         </p>
       </div>

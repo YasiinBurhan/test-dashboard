@@ -153,15 +153,24 @@ export function initTelegramApp() {
          (webApp as any).disableVerticalSwipes();
        }
     } catch(e) {}
+    
+    const updateTheme = () => {
+      const isDark = webApp.colorScheme === 'dark' || (!webApp.colorScheme && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      if (isDark) {
+        document.documentElement.classList.add('dark');
+        if (webApp.setHeaderColor) webApp.setHeaderColor('#030712');
+        if (webApp.setBackgroundColor) webApp.setBackgroundColor('#030712');
+      } else {
+        document.documentElement.classList.remove('dark');
+        if (webApp.setHeaderColor) webApp.setHeaderColor('#ffffff');
+        if (webApp.setBackgroundColor) webApp.setBackgroundColor('#ffffff');
+      }
+    };
+    
+    updateTheme();
     try {
-      if (webApp.setHeaderColor) {
-        webApp.setHeaderColor('#030712');
-      }
-      if (webApp.setBackgroundColor) {
-        webApp.setBackgroundColor('#030712');
-      }
-    } catch {
-      // Ignore if unsupported
-    }
+      webApp.onEvent('themeChanged', updateTheme);
+    } catch(e) {}
+
   }
 }

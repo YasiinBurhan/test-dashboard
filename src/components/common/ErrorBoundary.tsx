@@ -30,14 +30,14 @@ export class ErrorBoundary extends React.Component<Props, State> {
       return (
     <div 
       style={{ minHeight: 'var(--tg-viewport-height)' }}
-      className="bg-slate-950 flex items-center justify-center p-4"
+      className="bg-white dark:bg-slate-950 flex items-center justify-center p-4"
     >
           <GlassCard className="max-w-md w-full text-center space-y-4 border-rose-500/30">
             <div className="w-16 h-16 bg-rose-500/20 text-rose-400 rounded-full flex items-center justify-center mx-auto text-2xl font-bold">
               !
             </div>
-            <h2 className="text-xl font-bold text-white">Terjadi Kesalahan Sistem</h2>
-            <p className="text-xs text-slate-400 bg-slate-900/80 p-3 rounded-xl border border-slate-800 text-left font-mono overflow-auto max-h-32">
+            <h2 className="text-xl font-bold text-slate-900 dark:text-white">Terjadi Kesalahan Sistem</h2>
+            <p className="text-xs text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-900/80 p-3 rounded-xl border border-slate-200 dark:border-slate-800 text-left font-mono overflow-auto max-h-32">
               {this.state.error?.message || 'An unexpected error occurred'}
             </p>
             <Button

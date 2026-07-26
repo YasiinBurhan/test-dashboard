@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="id" class="dark bg-slate-950 text-slate-100">
+<html lang="id">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
@@ -15,8 +15,19 @@
     <link href="https://fonts.cdnfonts.com/css/sf-pro-display" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  
+    <script>
+      (function() {
+        if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.colorScheme) {
+           if (window.Telegram.WebApp.colorScheme === 'dark') document.documentElement.classList.add('dark');
+        } else {
+           if (window.matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.classList.add('dark');
+        }
+      })();
+    </script>
   </head>
-  <body class="antialiased font-sans bg-slate-950 text-slate-100">
+
+  <body class="antialiased font-sans bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

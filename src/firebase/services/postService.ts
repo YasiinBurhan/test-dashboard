@@ -163,3 +163,34 @@ export const subscribeToTodayPostsAllRecruiters = (
     callback([]);
   });
 };
+
+export const subscribeToAllPosts = (
+  callback: (posts: BatchPost[]) => void,
+  limitCount: number = 300
+) => {
+  const q = query(
+    collection(db, POSTS_COLLECTION)
+  );
+
+  return onSnapshot(q, (snapshot) => {
+    const postsMap = new Map<string, BatchPost>();
+    snapshot.docs.forEach(doc => {
+      postsMap.set(doc.id, {
+        id: doc.id,
+        ...doc.data()
+      } as BatchPost);
+    });
+    const posts = Array.from(postsMap.values());
+
+    posts.sort((a, b) => {
+      const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return timeB - timeA;
+    });
+
+    callback(posts.slice(0, limitCount));
+  }, (error) => {
+    console.error('Error listening to all posts:', error);
+    callback([]);
+  });
+};

@@ -6,26 +6,42 @@ export function formatUsername(username?: string | null): string {
   return `@${clean}`;
 }
 
+export function formatDateDisplay(dateStr: string): string {
+  if (!dateStr) return '-';
+  const clean = dateStr.split('T')[0];
+  const parts = clean.split('-');
+  if (parts.length === 3) {
+    if (parts[0].length === 4) {
+      return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    } else if (parts[2].length === 4) {
+      return `${parts[0]}/${parts[1]}/${parts[2]}`;
+    }
+  }
+  return dateStr;
+}
+
 export function formatWIBDate(dateString?: string | null): string {
   if (!dateString) return '-';
   try {
     const date = new Date(dateString);
     if (isNaN(date.getTime())) {
       // It might be YYYY-MM-DD
-      const parts = dateString.split('-');
-      if (parts.length === 3) {
-        return `${parts[2]} ${parts[1]} ${parts[0]}`;
+      const clean = dateString.split('T')[0];
+      const parts = clean.split('-');
+      if (parts.length === 3 && parts[0].length === 4) {
+        return `${parts[2]}/${parts[1]}/${parts[0]}`;
       }
       return dateString;
     }
     
-    // Format to WIB (Asia/Jakarta)
-    return date.toLocaleDateString('id-ID', {
+    // Format to WIB (Asia/Jakarta) in DD/MM/YYYY
+    const str = date.toLocaleDateString('id-ID', {
       timeZone: 'Asia/Jakarta',
       day: '2-digit',
       month: '2-digit',
       year: 'numeric'
-    }).replace(/\//g, ' '); // id-ID normally uses dd/mm/yyyy, convert to dd mm yyyy
+    });
+    return str.replace(/\./g, '/');
   } catch (e) {
     return dateString;
   }
@@ -43,15 +59,16 @@ export function formatWIBDateTime(dateString?: string | null): string {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric'
-    }).replace(/\//g, ' ');
+    }).replace(/[./]/g, '/');
 
     const timePart = date.toLocaleTimeString('id-ID', {
       timeZone: 'Asia/Jakarta',
       hour: '2-digit',
-      minute: '2-digit'
+      minute: '2-digit',
+      hour12: false
     });
 
-    return `${datePart} ${timePart} WIB`;
+    return `${datePart} ${timePart.replace(/\./g, ':')} WIB`;
   } catch (e) {
     return dateString;
   }
@@ -59,10 +76,17 @@ export function formatWIBDateTime(dateString?: string | null): string {
 
 /**
  * Gets the current date in YYYY-MM-DD format based on Asia/Jakarta timezone (WIB)
+ * Note: A new business day starts at 10:00 AM WIB.
  */
 export function getWIBDate(): string {
   const now = new Date();
   const jakartaTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+  
+  // Apply 10 AM rule: if before 10 AM, we treat it as the previous calendar day
+  if (jakartaTime.getHours() < 10) {
+    jakartaTime.setDate(jakartaTime.getDate() - 1);
+  }
+  
   const year = jakartaTime.getFullYear();
   const month = String(jakartaTime.getMonth() + 1).padStart(2, '0');
   const day = String(jakartaTime.getDate()).padStart(2, '0');
@@ -83,11 +107,17 @@ export function getWIBNow(): Date {
 /**
  * Gets the date of the Monday for the given week in WIB
  * offset: 0 for current week, -7 for last week
+ * Note: Respects the 10 AM Monday transition rule.
  */
 export function getWIBMonday(offsetDays: number = 0): string {
   const now = new Date();
   const jakartaStr = now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' });
   const d = new Date(jakartaStr);
+  
+  // Apply 10 AM rule: if before 10 AM, we treat it as previous day for week calculation
+  if (d.getHours() < 10) {
+    d.setDate(d.getDate() - 1);
+  }
   
   const day = d.getDay(); // 0 (Sun) to 6 (Sat)
   const diff = d.getDate() - day + (day === 0 ? -6 : 1) + offsetDays;

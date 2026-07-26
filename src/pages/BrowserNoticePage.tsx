@@ -83,7 +83,7 @@ export const BrowserNoticePage: React.FC = () => {
       }}
       className="flex flex-col items-center justify-center p-5 pt-safe-header pb-safe text-center transition-colors duration-300 bg-mesh-gradient overflow-x-hidden"
     >
-      <GlassCard className="max-w-md w-full p-6 space-y-6 border border-slate-800/80 shadow-sm relative overflow-hidden">
+      <GlassCard className="max-w-md w-full p-6 space-y-6 border border-slate-200 dark:border-slate-800/80 shadow-sm relative overflow-hidden">
         {/* Decorative elements */}
         <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full blur-2xl pointer-events-none" />
         <div className="absolute bottom-0 left-0 w-32 h-32 bg-sky-500/5 rounded-full blur-2xl pointer-events-none" />
@@ -107,24 +107,24 @@ export const BrowserNoticePage: React.FC = () => {
             </div>
 
             <div className="space-y-2">
-              <h2 className="text-xl font-extrabold text-white tracking-tight">
+              <h2 className="text-xl font-extrabold text-slate-900 dark:text-white tracking-tight">
                 Akses Khusus Telegram Bot
               </h2>
-              <p className="text-xs text-slate-300 leading-relaxed">
+              <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
                 Aplikasi rekrutmen <strong className="text-sky-400 font-bold">AzurLizeTeam</strong> dikhususkan untuk dibuka melalui Telegram Mini App dari Bot kami.
               </p>
             </div>
 
-            <div className="bg-slate-900/80 p-4 rounded-2xl border border-slate-800 text-left space-y-2 text-xs">
+            <div className="bg-slate-50 dark:bg-slate-900/80 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 text-left space-y-2 text-xs">
               <p className="font-bold text-slate-200">Cara Membuka Aplikasi:</p>
-              <ol className="list-decimal list-inside space-y-1.5 text-slate-300 font-medium">
+              <ol className="list-decimal list-inside space-y-1.5 text-slate-700 dark:text-slate-300 font-medium">
                 <li>Buka aplikasi Telegram di perangkat Anda.</li>
                 <li>Cari Bot Rekrutmen <strong className="text-sky-400 font-bold">@azurlize_recruitment_bot</strong></li>
-                <li>Tekan tombol <strong className="text-sky-400 font-bold">"Buka Web App"</strong> atau kirim perintah <code className="text-amber-300 bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">/app</code></li>
+                <li>Tekan tombol <strong className="text-sky-400 font-bold">"Buka Web App"</strong> atau kirim perintah <code className="text-amber-300 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-700">/app</code></li>
               </ol>
             </div>
 
-            <div className="pt-2 border-t border-slate-800/60 flex flex-col gap-3">
+            <div className="pt-2 border-t border-slate-200 dark:border-slate-800/60 flex flex-col gap-3">
               <Button
                 fullWidth
                 onClick={() => {
@@ -146,7 +146,7 @@ export const BrowserNoticePage: React.FC = () => {
         ) : (
           /* SECTION 2: MANUAL LOGIN / REGISTER FORM FOR APK / STANDALONE BROWSER */
           <div className="space-y-4 text-left">
-            <div className="flex items-center justify-between border-b border-slate-800/60 pb-3">
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800/60 pb-3">
               <button
                 type="button"
                 onClick={() => {
@@ -155,24 +155,24 @@ export const BrowserNoticePage: React.FC = () => {
                   }
                 }}
                 disabled={isCapacitor}
-                className={`flex items-center gap-1 text-xs font-bold transition-colors ${isCapacitor ? 'text-slate-500 cursor-not-allowed' : 'text-slate-400 hover:text-white cursor-pointer'}`}
+                className={`flex items-center gap-1 text-xs font-bold transition-colors ${isCapacitor ? 'text-slate-500 dark:text-slate-400 cursor-not-allowed' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-white cursor-pointer'}`}
               >
                 {!isCapacitor && <ChevronLeft className="w-4 h-4" />} Akses Manual
               </button>
-              <span className="text-[10px] bg-slate-800 border border-slate-700 px-2 py-0.5 rounded-full text-slate-300 font-bold">
+              <span className="text-[10px] bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 px-2 py-0.5 rounded-full text-slate-700 dark:text-slate-300 font-bold">
                 APK & Browser
               </span>
             </div>
 
             {/* MODE TOGGLE SWITCH: Masuk Akun Terdaftar VS Daftar Baru */}
-            <div className="grid grid-cols-2 gap-1 p-1 bg-slate-900/90 rounded-2xl border border-slate-800">
+            <div className="grid grid-cols-2 gap-1 p-1 bg-slate-50 dark:bg-slate-900/90 rounded-2xl border border-slate-200 dark:border-slate-800">
               <button
                 type="button"
                 onClick={() => { setMode('login'); setError(null); }}
                 className={`py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                   mode === 'login'
                     ? 'bg-sky-600 text-white shadow-md'
-                    : 'text-slate-400 hover:text-slate-200'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-200'
                 }`}
               >
                 <LogIn className="w-3.5 h-3.5" />
@@ -184,7 +184,7 @@ export const BrowserNoticePage: React.FC = () => {
                 className={`py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                   mode === 'register'
                     ? 'bg-sky-600 text-white shadow-md'
-                    : 'text-slate-400 hover:text-slate-200'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-200'
                 }`}
               >
                 <UserPlus className="w-3.5 h-3.5" />
@@ -203,7 +203,7 @@ export const BrowserNoticePage: React.FC = () => {
               <form onSubmit={handleLogin} className="space-y-4">
                 <div className="bg-sky-500/10 border border-sky-500/20 p-3 rounded-2xl text-xs text-sky-300 space-y-1">
                   <p className="font-bold">🔐 Sudah Terdaftar di Firestore?</p>
-                  <p className="text-[11px] text-slate-300">
+                  <p className="text-[11px] text-slate-700 dark:text-slate-300">
                     Masukkan ID Telegram Anda untuk langsung masuk ke dashboard tanpa registrasi ulang.
                   </p>
                 </div>
@@ -218,7 +218,7 @@ export const BrowserNoticePage: React.FC = () => {
                   required
                   className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />
-                <p className="text-[10px] text-slate-500 -mt-3 pl-1 leading-relaxed">
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 -mt-3 pl-1 leading-relaxed">
                   *Dapatkan ID dari bot Telegram seperti <span className="text-sky-400">@userinfobot</span> (ketik /id).
                 </p>
 
@@ -259,7 +259,7 @@ export const BrowserNoticePage: React.FC = () => {
                   label="Username Telegram (Opsional)"
                   type="text"
                   placeholder="Contoh: username_anda (tanpa @)"
-                  icon={<span className="text-xs text-slate-400 font-bold">@</span>}
+                  icon={<span className="text-xs text-slate-600 dark:text-slate-400 font-bold">@</span>}
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                 />
@@ -281,7 +281,7 @@ export const BrowserNoticePage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setShowManualForm(false)}
-                  className="text-xs font-semibold text-slate-400 hover:text-slate-300 hover:underline cursor-pointer"
+                  className="text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-700 dark:text-slate-300 hover:underline cursor-pointer"
                 >
                   Lihat Cara Buka dengan Bot Telegram
                 </button>
