@@ -693,16 +693,23 @@ const ReportListCard: React.FC<{
       const finalTg = parsed.formatted || editTg.trim();
 
       let newPhotoUrl = rep.applicantPhotoUrl || '';
+      let newName = rep.applicantName || 'Tidak Diketahui';
       
-      // If the username actually changed, try to auto-detect their new profile photo!
+      // If the username actually changed, try to auto-detect their new profile photo & name!
       if (cleanTg.toLowerCase() !== (clean ? clean.toLowerCase() : '')) {
         try {
           const res = await checkTelegramAvailability(cleanTg);
-          if (res.exists && res.photoUrl) {
-            newPhotoUrl = res.photoUrl;
+          if (res.exists) {
+            newPhotoUrl = res.photoUrl || '';
+            if (res.title) {
+              newName = res.title;
+            }
+          } else {
+            newPhotoUrl = '';
           }
         } catch (e) {
           console.error('Error fetching new photo:', e);
+          newPhotoUrl = '';
         }
       }
 
@@ -711,7 +718,8 @@ const ReportListCard: React.FC<{
         applicantWhatsapp: editWa,
         grup: editGrup,
         channel: editChannel,
-        applicantPhotoUrl: newPhotoUrl
+        applicantPhotoUrl: newPhotoUrl,
+        applicantName: newName
       };
 
       await onUpdateDetails(rep.reportId || '', updateData, rep.telegramId);

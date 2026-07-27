@@ -305,6 +305,7 @@ export async function updateReportDetails(
   reportId: string,
   data: {
     applicantTelegramUsername?: string;
+    applicantName?: string;
     applicantWhatsapp?: string;
     applicantPhotoUrl?: string;
     videoUrl?: string;
