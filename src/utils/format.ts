@@ -291,3 +291,34 @@ export function getWIBWeekDaysOfMonday(mondayStr: string): WIBWeekDayInfo[] {
   });
 }
 
+export function formatLastSeen(lastSeenString?: string | null): string {
+  if (!lastSeenString) return 'Tidak pernah aktif';
+  try {
+    const lastSeen = new Date(lastSeenString);
+    if (isNaN(lastSeen.getTime())) return 'Tidak valid';
+    const now = new Date();
+    const diffMs = now.getTime() - lastSeen.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+
+    if (diffMins < 2) {
+      return 'Online';
+    } else if (diffMins < 60) {
+      return `Aktif ${diffMins} menit yang lalu`;
+    }
+
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) {
+      return `Aktif ${diffHours} jam yang lalu`;
+    }
+
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays < 7) {
+      return `Aktif ${diffDays} hari yang lalu`;
+    }
+
+    return `Aktif pada ${formatWIBDateTime(lastSeenString)}`;
+  } catch (e) {
+    return 'Tidak diketahui';
+  }
+}
+

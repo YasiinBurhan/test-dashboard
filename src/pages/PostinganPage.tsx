@@ -54,7 +54,7 @@ const getApiBaseUrl = () => {
   if (import.meta.env.VITE_BACKEND_URL) {
     return import.meta.env.VITE_BACKEND_URL;
   }
-  return '';
+  return 'https://test-dashboard-lake-pi.vercel.app';
 };
 
 const API_BASE_URL = getApiBaseUrl();
@@ -309,7 +309,7 @@ export const PostinganPage: React.FC = () => {
 
   const archivedWeeks = useMemo(() => {
     const normalizeDate = (d: string) => {
-      if (!d) return '';
+      if (!d) return 'https://test-dashboard-lake-pi.vercel.app';
       const parts = d.split('-');
       if (parts.length !== 3) return d;
       if (parts[0].length === 2) return parts.reverse().join('-');
@@ -406,7 +406,7 @@ export const PostinganPage: React.FC = () => {
 
   // Helper to normalize URLs for strict duplicate comparison
   const normalizeUrl = (url: string): string => {
-    if (!url) return '';
+    if (!url) return 'https://test-dashboard-lake-pi.vercel.app';
     let clean = url.trim().toLowerCase();
     clean = clean.replace(/\/+$/, ''); // Strip trailing slashes
     if (clean.startsWith('http://')) {
@@ -460,7 +460,7 @@ export const PostinganPage: React.FC = () => {
   const todayRecruits = useMemo(() => {
     const today = getWIBDate();
     const normalizeDate = (d: string) => {
-      if (!d) return '';
+      if (!d) return 'https://test-dashboard-lake-pi.vercel.app';
       const parts = d.split('-');
       if (parts.length !== 3) return d;
       if (parts[0].length === 2) return parts.reverse().join('-');
@@ -633,7 +633,7 @@ export const PostinganPage: React.FC = () => {
 
     const processFetchedPosts = (fetchedPosts: BatchPost[]) => {
       const normalizeDate = (d: string) => {
-        if (!d) return '';
+        if (!d) return 'https://test-dashboard-lake-pi.vercel.app';
         const parts = d.split('-');
         if (parts.length !== 3) return d;
         if (parts[0].length === 2) return parts.reverse().join('-');
@@ -692,7 +692,7 @@ export const PostinganPage: React.FC = () => {
     if (!effectiveTelegramId) return;
 
     const normalizeDate = (d: string) => {
-      if (!d) return '';
+      if (!d) return 'https://test-dashboard-lake-pi.vercel.app';
       const parts = d.split('-');
       if (parts.length !== 3) return d;
       if (parts[0].length === 2) return parts.reverse().join('-');
@@ -729,7 +729,7 @@ export const PostinganPage: React.FC = () => {
     setHasUserEditedStartNumber(false);
     hasUserEditedStartNumberRef.current = false;
     const normalizeDate = (d: string) => {
-      if (!d) return '';
+      if (!d) return 'https://test-dashboard-lake-pi.vercel.app';
       const parts = d.split('-');
       if (parts.length !== 3) return d;
       if (parts[0].length === 2) return parts.reverse().join('-');

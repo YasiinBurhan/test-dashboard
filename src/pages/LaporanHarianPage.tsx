@@ -12,7 +12,7 @@ import { sendReportToTelegramApi } from '../services/api';
 import { triggerHaptic } from '../telegram/webapp';
 import { DailyReportFormData, BatchPost, SystemSettings } from '../types';
 import { Calendar, Eye, UserCheck, Star, Share2, AlertCircle, FileText, CheckCircle2, Sparkles, RefreshCw, Copy, Clock, Lock, Unlock, Timer, Users, UserX, ChevronDown, BookOpen, ListOrdered, Target, ChevronUp, ShieldCheck, Search, Filter, TrendingUp, Check } from 'lucide-react';
-import { getWIBDate, getWIBMonday, getWIBMondayOfDate, getIndonesianDayName, formatDateDisplay, formatUsername } from '../utils/format';
+import { getWIBDate, getWIBMonday, getWIBMondayOfDate, getIndonesianDayName, formatDateDisplay, formatUsername, formatLastSeen } from '../utils/format';
 
 export const LaporanHarianPage: React.FC = () => {
   const { submitReport, isLoading, reports, updateFine } = useReports();
@@ -1054,9 +1054,14 @@ Status Target & Efektif? <b>${formData.effectiveStatus || 'YES'}</b>${isLateSubm
                               {r.firstName?.charAt(0) || '?'}
                             </div>
                           )}
-                          <span className="truncate">
-                            {r.firstName} {r.lastName || ''}
-                          </span>
+                          <div className="flex flex-col flex-1 min-w-0 text-left">
+                            <span className="truncate text-xs font-semibold text-slate-800 dark:text-slate-200">
+                              {r.firstName} {r.lastName || ''}
+                            </span>
+                            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-normal">
+                              {formatLastSeen(r.lastSeen)}
+                            </span>
+                          </div>
                           {selectedRecruiterForm === r.telegramId && <Check className="w-3 h-3 ml-auto shrink-0" />}
                         </button>
                       ))}

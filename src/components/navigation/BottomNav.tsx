@@ -105,14 +105,19 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab })
     setIsMenuOpen(prev => !prev);
   };
 
+  const isAdminOrOwner = userProfile?.role === 'Admin' || userProfile?.role === 'Owner';
+
   // Primary 5 fixed tabs (including Gaji)
   const primaryTabs = [
     { id: 'beranda' as TabType, label: 'Beranda', icon: LayoutGrid },
     { id: 'postingan' as TabType, label: 'Postingan', icon: ClipboardPen },
     { id: 'data_harian' as TabType, label: 'Data Harian', icon: CalendarClock },
-    { id: 'laporan' as TabType, label: 'Laporan', icon: FileText },
-    { id: 'gaji' as TabType, label: 'Gaji', icon: Coins }
+    { id: 'laporan' as TabType, label: 'Laporan', icon: FileText }
   ];
+
+  if (isAdminOrOwner) {
+    primaryTabs.push({ id: 'gaji' as TabType, label: 'Gaji', icon: Coins });
+  }
 
   // Secondary menu items inside drawer
   const secondaryMenuItems = [

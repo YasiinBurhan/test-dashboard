@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 import { AuthState, TelegramUser, UserProfile } from '../types';
 import { getTelegramWebApp, isTelegramEnvironment } from '../telegram/webapp';
 import { verifyTelegramInitDataApi } from '../services/api';
-import { getUserProfile, subscribeToUserProfile, getAllUsers, createUserProfile, findUserProfileByIdOrUsername } from '../firebase/services/userService';
+import { getUserProfile, subscribeToUserProfile, getAllUsers, createUserProfile, findUserProfileByIdOrUsername, updateUserLastSeen } from '../firebase/services/userService';
 
 interface AuthContextType extends AuthState {
   refreshProfile: () => Promise<UserProfile | null>;
@@ -233,6 +233,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return () => unsubscribe();
     }
   }, [state.telegramUser?.id]);
+
+  // Track recruiter/user last seen status
+  useEffect(() => {
+    if (state.telegramUser?.id && state.isAuthenticated) {
+      const tgId = String(state.telegramUser.id);
+      
+      // Update last seen immediately on load/auth
+      updateUserLastSeen(tgId);
+      
+      // Also update last seen when user returns to app/focuses page
+      const handleFocus = () => {
+        updateUserLastSeen(tgId);
+      };
+      
+      window.addEventListener('focus', handleFocus);
+      return () => {
+        window.removeEventListener('focus', handleFocus);
+      };
+    }
+  }, [state.telegramUser?.id, state.isAuthenticated]);
 
   const refreshProfile = async (): Promise<UserProfile | null> => {
     if (!state.telegramUser) return null;

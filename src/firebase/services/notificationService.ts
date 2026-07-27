@@ -137,18 +137,16 @@ export function subscribeToNotifications(
       filtered.forEach((n) => notifiedNotifIds.add(n.id));
       isFirstLoad = false;
     } else {
-      // Trigger browser system push notification ONLY for Admin & Owner
-      if (isAdminOrOwner) {
-        filtered.forEach((notif) => {
-          if (!notifiedNotifIds.has(notif.id)) {
-            notifiedNotifIds.add(notif.id);
-            const isUnread = !notif.readBy || !notif.readBy.includes(userTelegramId);
-            if (isUnread) {
-              triggerSystemNotification(notif.title, notif.message);
-            }
+      // Trigger browser system push notification for all relevant users
+      filtered.forEach((notif) => {
+        if (!notifiedNotifIds.has(notif.id)) {
+          notifiedNotifIds.add(notif.id);
+          const isUnread = !notif.readBy || !notif.readBy.includes(userTelegramId);
+          if (isUnread) {
+            triggerSystemNotification(notif.title, notif.message);
           }
-        });
-      }
+        }
+      });
     }
 
     onUpdate(filtered);

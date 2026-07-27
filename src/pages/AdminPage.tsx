@@ -2,12 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { GlassCard } from '../components/common/GlassCard';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { Button } from '../components/common/Button';
-import { formatUsername, formatWIBDate, formatWIBDateTime } from '../utils/format';
+import { formatUsername, formatWIBDate, formatWIBDateTime, formatLastSeen } from '../utils/format';
 import { useRecruiters } from '../hooks/useRecruiters';
 import { UserProfile, UserStatus } from '../types';
 import { getGoogleSheetInfoApi } from '../services/api';
 import { triggerHaptic } from '../telegram/webapp';
-import { Shield, Search, Filter, CheckCircle2, XCircle, AlertTriangle, RefreshCw, ChevronLeft, ChevronRight, Eye, FileSpreadsheet, ExternalLink } from 'lucide-react';
+import { Shield, Search, Filter, CheckCircle2, XCircle, AlertTriangle, RefreshCw, ChevronLeft, ChevronRight, Eye, FileSpreadsheet, ExternalLink, Clock } from 'lucide-react';
 
 export const AdminPage: React.FC = () => {
   const { users, isLoading, error, refetch, changeStatus } = useRecruiters();
@@ -189,6 +189,12 @@ export const AdminPage: React.FC = () => {
                     <span className="text-xs text-sky-400 font-medium block">
                       {formatUsername(user.username)} &bull; ID: {user.telegramId}
                     </span>
+                    <div className="flex items-center gap-1.5 mt-1 text-[11px]">
+                      <span className={`w-2 h-2 rounded-full ${user.lastSeen && (new Date().getTime() - new Date(user.lastSeen).getTime() < 120000) ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+                      <span className="text-slate-500 dark:text-slate-400 font-medium">
+                        {formatLastSeen(user.lastSeen)}
+                      </span>
+                    </div>
                   </div>
                 </div>
 
@@ -309,6 +315,7 @@ export const AdminPage: React.FC = () => {
               <p><strong className="text-slate-600 dark:text-slate-400">Status:</strong> <StatusBadge status={selectedUser.status} size="sm" /></p>
               <p><strong className="text-slate-600 dark:text-slate-400">Disetujui Oleh:</strong> {selectedUser.approvedBy || '-'}</p>
               <p><strong className="text-slate-600 dark:text-slate-400">Waktu Persetujuan:</strong> {selectedUser.approvedAt ? formatWIBDateTime(selectedUser.approvedAt) : '-'}</p>
+              <p><strong className="text-slate-600 dark:text-slate-400">Terakhir Aktif:</strong> <span className="font-semibold text-sky-400">{formatLastSeen(selectedUser.lastSeen)}</span></p>
             </div>
 
             {/* Quick Actions inside Modal */}

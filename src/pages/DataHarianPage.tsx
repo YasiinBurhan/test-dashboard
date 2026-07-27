@@ -1928,7 +1928,7 @@ export const DataHarianPage: React.FC = () => {
       const base64Image = await fileToBase64(file);
       setScanProgress(50);
       
-      const response = await fetch('/api/scan-uid', {
+      const response = await fetch(`${API_BASE_URL}/api/scan-uid`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { GlassCard } from '../components/common/GlassCard';
 import { StatusBadge } from '../components/common/StatusBadge';
-import { formatUsername } from '../utils/format';
+import { formatUsername, formatLastSeen } from '../utils/format';
 import { Button } from '../components/common/Button';
 import { useRecruiters } from '../hooks/useRecruiters';
 import { Announcement, DailyReport, SystemSettings, UserRole, UserStatus } from '../types';
@@ -23,7 +23,7 @@ const getApiBaseUrl = () => {
   if (import.meta.env.VITE_BACKEND_URL) {
     return import.meta.env.VITE_BACKEND_URL;
   }
-  return '';
+  return 'https://test-dashboard-lake-pi.vercel.app';
 };
 
 const API_BASE_URL = getApiBaseUrl();
@@ -834,7 +834,13 @@ export const OwnerPage: React.FC = () => {
                     <span>{u.firstName} {u.lastName}</span>
                     <StatusBadge role={u.role} size="sm" />
                   </h4>
-                  <span className="text-xs text-sky-400">{formatUsername(u.username)}</span>
+                  <span className="text-xs text-sky-400 block">{formatUsername(u.username)}</span>
+                  <div className="flex items-center gap-1.5 mt-1 text-[11px]">
+                    <span className={`w-2 h-2 rounded-full ${u.lastSeen && (new Date().getTime() - new Date(u.lastSeen).getTime() < 120000) ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+                    <span className="text-slate-500 dark:text-slate-400 font-medium">
+                      {formatLastSeen(u.lastSeen)}
+                    </span>
+                  </div>
                 </div>
                 <StatusBadge status={u.status} size="sm" />
               </div>

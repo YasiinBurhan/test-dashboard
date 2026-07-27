@@ -178,6 +178,22 @@ export async function updateUserRole(
   }
 }
 
+export async function updateUserLastSeen(
+  telegramId: string
+): Promise<void> {
+  try {
+    const userRef = doc(db, 'users', String(telegramId));
+    const now = new Date().toISOString();
+    await updateDoc(userRef, {
+      lastSeen: now,
+      updatedAt: now
+    });
+  } catch (error) {
+    // Fail silently or log softly as lastSeen shouldn't crash operations
+    console.warn('Silent notice: failed to update lastSeen for user', telegramId, error);
+  }
+}
+
 export function subscribeToAllUsers(onUpdate: (users: UserProfile[]) => void, onError?: (error: any) => void): () => void {
   const usersRef = collection(db, 'users');
   const q = query(usersRef, orderBy('createdAt', 'desc'));

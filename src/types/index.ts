@@ -44,6 +44,7 @@ export interface UserProfile {
   approvedBy?: string;
   approvedAt?: string;
   pin?: string;
+  lastSeen?: string;
 }
 
 export interface RegistrationFormData {
@@ -112,11 +113,30 @@ export interface AppNotification {
   targetRole?: 'Owner' | 'Admin' | 'Recruiter' | 'ADMIN_OWNER' | 'ALL';
   title: string;
   message: string;
-  type: 'NEW_REPORT' | 'STATUS_CHANGE' | 'PROMOTION' | 'AUDIT_COMPLETE' | 'SYSTEM' | 'RECRUITER_REGISTERED';
+  type: 'NEW_REPORT' | 'STATUS_CHANGE' | 'PROMOTION' | 'AUDIT_COMPLETE' | 'SYSTEM' | 'RECRUITER_REGISTERED' | 'NEW_ANNOUNCEMENT' | 'ANNOUNCEMENT_CHAT' | 'ANNOUNCEMENT_REACTION';
   readBy?: string[]; // list of telegramIds who have read this notification
   senderName?: string;
   createdAt: string;
   reportId?: string;
+}
+
+export interface AnnouncementReaction {
+  userId: string; // telegramId
+  userName: string; // display name
+  userPhotoUrl?: string;
+  role: string;
+  emoji: string;
+}
+
+export interface AnnouncementComment {
+  id: string;
+  announcementId: string;
+  userId: string; // telegramId
+  userName: string; // display name
+  userPhotoUrl?: string;
+  role: string;
+  content: string;
+  createdAt: string;
 }
 
 export interface Announcement {
@@ -126,6 +146,8 @@ export interface Announcement {
   author: string;
   pinned: boolean;
   createdAt: string;
+  reactionsList?: AnnouncementReaction[];
+  comments?: AnnouncementComment[];
 }
 
 export interface SystemSettings {
