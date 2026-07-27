@@ -80,7 +80,7 @@ const getApiBaseUrl = () => {
   if (import.meta.env.VITE_BACKEND_URL) {
     return import.meta.env.VITE_BACKEND_URL;
   }
-  return '';
+  return 'https://test-dashboard-lake-pi.vercel.app';
 };
 
 const API_BASE_URL = getApiBaseUrl();
@@ -2385,20 +2385,19 @@ export const DataHarianPage: React.FC = () => {
 
         // Construct custom text identical to preview
         const rawTg = reportData.applicantTelegramUsername ? reportData.applicantTelegramUsername.replace(/^@+/, '') : '';
-        const tgUname = rawTg ? `<a href="https://t.me/${rawTg}">@${rawTg}</a>` : '-';
+        const tgUname = rawTg ? `@${rawTg}` : '-';
         const rawRec = reportData.recruiterUsername ? reportData.recruiterUsername.replace(/^@+/, '') : '';
         const recr = rawRec ? `@${rawRec}` : '-';
-        const grupDisplay = reportData.grup === 'T0' ? 'T0-MARK' : reportData.grup === 'V0' ? 'V0' : reportData.grup === 'RECRUITER' ? 'RECRUITER' : reportData.grup === 'T3' ? 'T0-MARK (Dipromosikan)' : (reportData.grup || '-');
+        const grupDisplay = reportData.grup === 'T0' ? 'T0-MARK' : reportData.grup === 'V0' ? 'V0' : reportData.grup === 'RECRUITER' ? 'RECRUITER' : reportData.grup === 'T3' ? 'T0-MARK' : (reportData.grup || '-');
         const tgName = reportData.applicantName || 'Tidak Diketahui';
-        const photoLink = reportData.applicantPhotoUrl ? `\nFoto Profil : <a href="${reportData.applicantPhotoUrl}">Lihat Foto Pelamar</a>` : '';
-        
         const customText = `UID : ${reportData.uid9Kucing}
 WA : ${reportData.applicantWhatsapp}
-Nama : <b>${tgName}</b>
-Username Telegram : <b>${tgUname}</b>
-Rekomendasi dari : <b>${recr}</b>
-Info dari sosmed : <b>${reportData.channel || '-'}</b>
-Grub : <b>${grupDisplay}</b>${photoLink}`;
+Nama : ${tgName}
+Username Telegram : ${tgUname}
+Rekomendasi dari : ${recr}
+Info dari sosmed : ${reportData.channel || '-'}
+
+Grub : ${grupDisplay}`;
 
         // Send synchronously to make sure it actually lands in Telegram Group Topic
         setSuccessMsg('Sedang mengompresi video dan mengirim ke Telegram (Harap tunggu)...');

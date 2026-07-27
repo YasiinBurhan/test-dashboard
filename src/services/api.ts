@@ -5,7 +5,7 @@ const getApiBaseUrl = () => {
   if (import.meta.env.VITE_BACKEND_URL) {
     return import.meta.env.VITE_BACKEND_URL;
   }
-  return '';
+  return 'https://test-dashboard-lake-pi.vercel.app';
 };
 
 const API_BASE_URL = getApiBaseUrl();
