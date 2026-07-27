@@ -300,7 +300,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab })
       {/* Floating Bottom Nav Bar (5 Spacious Buttons) */}
       <div 
         style={{
-          paddingBottom: 'calc(var(--tg-safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) + 8px)'
+          paddingBottom: 'calc(var(--tg-safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) + 24px)'
         }}
         className={`fixed bottom-0 left-0 right-0 z-40 px-3 md:px-6 pointer-events-none transition-all duration-300 ease-in-out transform ${
           isKeyboardVisible ? 'translate-y-28 opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'

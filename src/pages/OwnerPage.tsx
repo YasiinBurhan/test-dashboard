@@ -15,7 +15,7 @@ import {
   updateSystemSettings
 } from '../firebase/services/settingService';
 import { subscribeToAllReports } from '../firebase/services/reportService';
-import { Key, Megaphone, Settings, Users, ShieldAlert, Plus, Trash2, CheckCircle2, BarChart2, Bot, Globe, XCircle, AlertTriangle, Send, FileSpreadsheet, Copy, Download, Calendar, Filter, Check, Database, Eye, RefreshCw, AlertCircle } from 'lucide-react';
+import { Key, Megaphone, Settings, Users, ShieldAlert, Plus, Trash2, CheckCircle2, BarChart2, Bot, Globe, XCircle, AlertTriangle, Send, FileSpreadsheet, FileText, Copy, Download, Calendar, Filter, Check, Database, Eye, RefreshCw, AlertCircle, Search, CheckSquare, Square } from 'lucide-react';
 import { doc, getDoc, deleteDoc, updateDoc, deleteField, collection, getDocs, limit, query } from 'firebase/firestore';
 import { db } from '../firebase/config';
 
@@ -23,11 +23,7 @@ const getApiBaseUrl = () => {
   if (import.meta.env.VITE_BACKEND_URL) {
     return import.meta.env.VITE_BACKEND_URL;
   }
-  const hostname = typeof window !== 'undefined' ? window.location.hostname : '';
-  if (hostname.endsWith('.vercel.app')) {
-    return '';
-  }
-  return 'https://test-dashboard-lake-pi.vercel.app';
+  return '';
 };
 
 const API_BASE_URL = getApiBaseUrl();
@@ -74,7 +70,7 @@ export const OwnerPage: React.FC = () => {
 
     // Try backend API first
     try {
-      if (API_BASE_URL) {
+      if (API_BASE_URL !== undefined) {
         const response = await fetch(`${API_BASE_URL}/api/telegram/test-send`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -141,11 +137,15 @@ export const OwnerPage: React.FC = () => {
 
   // Export Spreadsheet State
   const [allReports, setAllReports] = useState<DailyReport[]>([]);
+  const [exportType, setExportType] = useState<'data_harian' | 'laporan_harian'>('data_harian');
   const [exportDate, setExportDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [exportRecruiter, setExportRecruiter] = useState<string>('');
   const [exportResultFilter, setExportResultFilter] = useState<string>('all');
   const [exportGrupFilter, setExportGrupFilter] = useState<string>('all');
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
+  const [exportSearchQuery, setExportSearchQuery] = useState<string>('');
+  const [selectedReportIds, setSelectedReportIds] = useState<string[]>([]);
+  const [copiedRowId, setCopiedRowId] = useState<string | null>(null);
 
   // Firestore Database Manager State
   const [dbCollection, setDbCollection] = useState('users');
@@ -293,6 +293,13 @@ export const OwnerPage: React.FC = () => {
   }, [activeSubTab]);
 
   const filteredReports = allReports.filter((r) => {
+    // Distinguish by exportType:
+    // data_harian has applicantWhatsapp, uid9Kucing, result, or channel.
+    // laporan_harian has visit, quality, posting, or effectiveStatus.
+    const isApplicant = !!(r.applicantWhatsapp || r.uid9Kucing || r.channel || r.result);
+    if (exportType === 'data_harian' && !isApplicant) return false;
+    if (exportType === 'laporan_harian' && isApplicant) return false;
+
     const rDate = r.date || (r.createdAt ? r.createdAt.split('T')[0] : '');
     if (exportDate && rDate !== exportDate) return false;
 
@@ -302,44 +309,112 @@ export const OwnerPage: React.FC = () => {
       if (!reportRecruiter.includes(recruiterClean)) return false;
     }
 
-    if (exportResultFilter !== 'all') {
-      if (exportResultFilter === 'ACC' && r.result !== 'ACC') return false;
-      if (exportResultFilter === 'REJECT' && r.result !== 'REJECT') return false;
-      if (exportResultFilter === 'Pending' && r.result !== 'Pending') return false;
+    // Filters only applicable to applicant data harian
+    if (exportType === 'data_harian') {
+      if (exportResultFilter !== 'all') {
+        if (exportResultFilter === 'ACC' && r.result !== 'ACC') return false;
+        if (exportResultFilter === 'REJECT' && r.result !== 'REJECT') return false;
+        if (exportResultFilter === 'Pending' && r.result !== 'Pending') return false;
+      }
+
+      if (exportGrupFilter !== 'all' && r.grup !== exportGrupFilter) return false;
     }
 
-    if (exportGrupFilter !== 'all' && r.grup !== exportGrupFilter) return false;
+    if (exportSearchQuery) {
+      const qClean = exportSearchQuery.toLowerCase().trim();
+      if (exportType === 'data_harian') {
+        const wa = (r.applicantWhatsapp || '').toLowerCase();
+        const uid = (r.uid9Kucing || '').toLowerCase();
+        const applicantTg = (r.applicantTelegramUsername || '').toLowerCase();
+        const applicantName = (r.applicantName || r.name || '').toLowerCase();
+        const ch = (r.channel || '').toLowerCase();
+
+        if (
+          !wa.includes(qClean) &&
+          !uid.includes(qClean) &&
+          !applicantTg.includes(qClean) &&
+          !applicantName.includes(qClean) &&
+          !ch.includes(qClean)
+        ) {
+          return false;
+        }
+      } else {
+        const note = (r.note || '').toLowerCase();
+        const rec = (r.recruiterUsername || r.username || '').toLowerCase();
+        const status = (r.effectiveStatus || '').toLowerCase();
+        if (!note.includes(qClean) && !rec.includes(qClean) && !status.includes(qClean)) {
+          return false;
+        }
+      }
+    }
 
     return true;
   });
 
   const handleCopySpreadsheet = async () => {
-    if (filteredReports.length === 0) {
+    const targets = selectedReportIds.length > 0
+      ? filteredReports.filter(r => selectedReportIds.includes(r.reportId || `${r.date}_${r.uid9Kucing}_${r.applicantWhatsapp}`))
+      : filteredReports;
+
+    if (targets.length === 0) {
       alert('Tidak ada data laporan untuk disalin.');
       return;
     }
 
-    const headers = [
-      'Tanggal',
-      'Username Recruiter',
-      'Recruitment channels',
-      'WA Pelamar',
-      'UID 9Kucing Pelamar',
-      'Username Pelamar',
-      'Results',
-      'Grup'
-    ];
+    let headers: string[] = [];
+    let rows: string[][] = [];
 
-    const rows = filteredReports.map((r) => [
-      formatDateDDMMYYYY(r.date || (r.createdAt ? r.createdAt.split('T')[0] : '')),
-      formatUsername(r.recruiterUsername || r.username),
-      r.channel || '-',
-      r.applicantWhatsapp || '-',
-      r.uid9Kucing || '-',
-      formatUsername(r.applicantTelegramUsername),
-      r.result === 'ACC' ? 'YES' : (r.result === 'REJECT' ? 'NO' : (r.result || 'YES')),
-      r.grup || '-'
-    ]);
+    if (exportType === 'data_harian') {
+      headers = [
+        'Tanggal',
+        'Username Recruiter',
+        'Recruitment channels',
+        'WA Pelamar',
+        'UID 9Kucing Pelamar',
+        'Username Pelamar',
+        'Results',
+        'Grup'
+      ];
+      rows = targets.map((r) => [
+        formatDateDDMMYYYY(r.date || (r.createdAt ? r.createdAt.split('T')[0] : '')),
+        formatUsername(r.recruiterUsername || r.username),
+        r.channel || '-',
+        r.applicantWhatsapp || '-',
+        r.uid9Kucing || '-',
+        formatUsername(r.applicantTelegramUsername),
+        r.result === 'ACC' ? 'YES' : (r.result === 'REJECT' ? 'NO' : (r.result || 'YES')),
+        r.grup || '-'
+      ]);
+    } else {
+      headers = [
+        'Tanggal',
+        'Username Recruiter',
+        'Kunjungan (Visit)',
+        'Pelamar',
+        'Pelamar Berkualitas',
+        'Posting FB',
+        'Izin',
+        'Status Efektif',
+        'Terlambat',
+        'Denda',
+        'Link Video / Bukti',
+        'Catatan / Note'
+      ];
+      rows = targets.map((r) => [
+        formatDateDDMMYYYY(r.date || (r.createdAt ? r.createdAt.split('T')[0] : '')),
+        formatUsername(r.recruiterUsername || r.username),
+        r.visit !== undefined ? String(r.visit) : '0',
+        r.applicant !== undefined ? String(r.applicant) : '0',
+        r.quality !== undefined ? String(r.quality) : '0',
+        r.posting !== undefined ? String(r.posting) : '0',
+        r.permission !== undefined ? String(r.permission) : '0',
+        r.effectiveStatus || 'YES',
+        r.isLate ? 'YA' : 'TIDAK',
+        r.fine !== undefined ? `Rp ${r.fine.toLocaleString('id-ID')}` : 'Rp 0',
+        r.videoUrl || '-',
+        r.note || '-'
+      ]);
+    }
 
     const tsvText = [
       headers.join('\t'),
@@ -348,11 +423,53 @@ export const OwnerPage: React.FC = () => {
 
     try {
       await navigator.clipboard.writeText(tsvText);
-      setCopyStatus('✅ Data berhasil disalin ke Clipboard! Silakan Buka Google Sheets / Excel lalu lakukan Paste (Ctrl+V).');
+      const copyCountText = selectedReportIds.length > 0 
+        ? `${selectedReportIds.length} baris terpilih` 
+        : `semua (${targets.length}) baris data`;
+      setCopyStatus(`✅ Berhasil menyalin ${copyCountText} (${exportType === 'data_harian' ? 'Data Harian' : 'Laporan Harian'}) ke Clipboard! Silakan paste (Ctrl+V) di Google Sheets atau Excel.`);
       setTimeout(() => setCopyStatus(null), 5000);
     } catch (err) {
       console.error('Failed to copy to clipboard:', err);
       alert('Gagal menyalin data otomatis. Silakan gunakan tombol Download .CSV.');
+    }
+  };
+
+  const handleCopySingleRow = async (r: DailyReport, uniqueId: string) => {
+    let rowData = '';
+    if (exportType === 'data_harian') {
+      rowData = [
+        formatDateDDMMYYYY(r.date || (r.createdAt ? r.createdAt.split('T')[0] : '')),
+        formatUsername(r.recruiterUsername || r.username),
+        r.channel || '-',
+        r.applicantWhatsapp || '-',
+        r.uid9Kucing || '-',
+        formatUsername(r.applicantTelegramUsername),
+        r.result === 'ACC' ? 'YES' : (r.result === 'REJECT' ? 'NO' : (r.result || 'YES')),
+        r.grup || '-'
+      ].join('\t');
+    } else {
+      rowData = [
+        formatDateDDMMYYYY(r.date || (r.createdAt ? r.createdAt.split('T')[0] : '')),
+        formatUsername(r.recruiterUsername || r.username),
+        r.visit !== undefined ? String(r.visit) : '0',
+        r.applicant !== undefined ? String(r.applicant) : '0',
+        r.quality !== undefined ? String(r.quality) : '0',
+        r.posting !== undefined ? String(r.posting) : '0',
+        r.permission !== undefined ? String(r.permission) : '0',
+        r.effectiveStatus || 'YES',
+        r.isLate ? 'YA' : 'TIDAK',
+        r.fine !== undefined ? `Rp ${r.fine.toLocaleString('id-ID')}` : 'Rp 0',
+        r.videoUrl || '-',
+        r.note || '-'
+      ].join('\t');
+    }
+
+    try {
+      await navigator.clipboard.writeText(rowData);
+      setCopiedRowId(uniqueId);
+      setTimeout(() => setCopiedRowId(null), 2000);
+    } catch (err) {
+      console.error('Failed to copy single row:', err);
     }
   };
 
@@ -362,27 +479,60 @@ export const OwnerPage: React.FC = () => {
       return;
     }
 
-    const headers = [
-      'Tanggal',
-      'Username Recruiter',
-      'Recruitment channels',
-      'WA Pelamar',
-      'UID 9Kucing Pelamar',
-      'Username Pelamar',
-      'Results',
-      'Grup'
-    ];
+    let headers: string[] = [];
+    let rows: string[][] = [];
 
-    const rows = filteredReports.map((r) => [
-      `"${formatDateDDMMYYYY(r.date || (r.createdAt ? r.createdAt.split('T')[0] : '')).replace(/"/g, '""')}"`,
-      `"${formatUsername(r.recruiterUsername || r.username).replace(/"/g, '""')}"`,
-      `"${(r.channel || '-').replace(/"/g, '""')}"`,
-      `"${(r.applicantWhatsapp || '-').replace(/"/g, '""')}"`,
-      `"${(r.uid9Kucing || '-').replace(/"/g, '""')}"`,
-      `"${formatUsername(r.applicantTelegramUsername).replace(/"/g, '""')}"`,
-      `"${r.result === 'ACC' ? 'YES' : (r.result === 'REJECT' ? 'NO' : (r.result || 'YES'))}"`,
-      `"${(r.grup || '-').replace(/"/g, '""')}"`
-    ]);
+    if (exportType === 'data_harian') {
+      headers = [
+        'Tanggal',
+        'Username Recruiter',
+        'Recruitment channels',
+        'WA Pelamar',
+        'UID 9Kucing Pelamar',
+        'Username Pelamar',
+        'Results',
+        'Grup'
+      ];
+      rows = filteredReports.map((r) => [
+        `"${formatDateDDMMYYYY(r.date || (r.createdAt ? r.createdAt.split('T')[0] : '')).replace(/"/g, '""')}"`,
+        `"${formatUsername(r.recruiterUsername || r.username).replace(/"/g, '""')}"`,
+        `"${(r.channel || '-').replace(/"/g, '""')}"`,
+        `"${(r.applicantWhatsapp || '-').replace(/"/g, '""')}"`,
+        `"${(r.uid9Kucing || '-').replace(/"/g, '""')}"`,
+        `"${formatUsername(r.applicantTelegramUsername).replace(/"/g, '""')}"`,
+        `"${r.result === 'ACC' ? 'YES' : (r.result === 'REJECT' ? 'NO' : (r.result || 'YES'))}"`,
+        `"${(r.grup || '-').replace(/"/g, '""')}"`
+      ]);
+    } else {
+      headers = [
+        'Tanggal',
+        'Username Recruiter',
+        'Kunjungan (Visit)',
+        'Pelamar',
+        'Pelamar Berkualitas',
+        'Posting FB',
+        'Izin',
+        'Status Efektif',
+        'Terlambat',
+        'Denda',
+        'Link Video / Bukti',
+        'Catatan / Note'
+      ];
+      rows = filteredReports.map((r) => [
+        `"${formatDateDDMMYYYY(r.date || (r.createdAt ? r.createdAt.split('T')[0] : '')).replace(/"/g, '""')}"`,
+        `"${formatUsername(r.recruiterUsername || r.username).replace(/"/g, '""')}"`,
+        `"${String(r.visit !== undefined ? r.visit : 0).replace(/"/g, '""')}"`,
+        `"${String(r.applicant !== undefined ? r.applicant : 0).replace(/"/g, '""')}"`,
+        `"${String(r.quality !== undefined ? r.quality : 0).replace(/"/g, '""')}"`,
+        `"${String(r.posting !== undefined ? r.posting : 0).replace(/"/g, '""')}"`,
+        `"${String(r.permission !== undefined ? r.permission : 0).replace(/"/g, '""')}"`,
+        `"${(r.effectiveStatus || 'YES').replace(/"/g, '""')}"`,
+        `"${(r.isLate ? 'YA' : 'TIDAK').replace(/"/g, '""')}"`,
+        `"${(r.fine !== undefined ? `Rp ${r.fine.toLocaleString('id-ID')}` : 'Rp 0').replace(/"/g, '""')}"`,
+        `"${(r.videoUrl || '-').replace(/"/g, '""')}"`,
+        `"${(r.note || '-').replace(/"/g, '""')}"`
+      ]);
+    }
 
     const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [
       headers.map(h => `"${h}"`).join(','),
@@ -392,7 +542,7 @@ export const OwnerPage: React.FC = () => {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `data_harian_spreadsheet_${exportDate || 'semua'}.csv`);
+    link.setAttribute('download', `spreadsheet_${exportType}_${exportDate || 'semua'}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -404,7 +554,7 @@ export const OwnerPage: React.FC = () => {
 
     // Try backend API first
     try {
-      if (API_BASE_URL) {
+      if (API_BASE_URL !== undefined) {
         const queryUrl = botToken 
           ? `${API_BASE_URL}/api/telegram/bot-info?token=${encodeURIComponent(botToken)}`
           : `${API_BASE_URL}/api/telegram/bot-info`;
@@ -453,7 +603,7 @@ export const OwnerPage: React.FC = () => {
     const isFirebaseHosting = currentOrigin.includes('firebaseapp.com') || currentOrigin.includes('web.app');
     
     let defaultBaseUrl = 'https://azurlize-team-3ba4f.firebaseapp.com';
-    if (API_BASE_URL) {
+    if (API_BASE_URL !== '' && API_BASE_URL !== undefined) {
       defaultBaseUrl = API_BASE_URL;
     } else if (!isLocalDev && !isFirebaseHosting) {
       defaultBaseUrl = currentOrigin;
@@ -463,7 +613,7 @@ export const OwnerPage: React.FC = () => {
     const fullWebhookUrl = `${targetBaseUrl}/api/telegram/webhook`;
 
     // Try backend API if configured
-    if (API_BASE_URL) {
+    if (API_BASE_URL !== undefined) {
       try {
         const response = await fetch(`${API_BASE_URL}/api/telegram/set-webhook`, {
           method: 'POST',
@@ -641,12 +791,15 @@ export const OwnerPage: React.FC = () => {
           <Megaphone className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> Pengumuman
         </button>
         <button
-          onClick={() => setActiveSubTab('export')}
+          onClick={() => {
+            setActiveSubTab('export');
+            setSelectedReportIds([]); // Clear selections on tab switch
+          }}
           className={`shrink-0 flex-1 min-w-[110px] py-2 rounded-xl font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
             activeSubTab === 'export' ? 'bg-amber-500 text-slate-950 shadow-md scale-[1.02]' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-white'
           }`}
         >
-          <FileSpreadsheet className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> Export Data
+          <FileSpreadsheet className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> Laporan Data Harian
         </button>
         <button
           onClick={() => setActiveSubTab('settings')}
@@ -686,10 +839,10 @@ export const OwnerPage: React.FC = () => {
                 <StatusBadge status={u.status} size="sm" />
               </div>
 
-              <div className="flex flex-col gap-2 pt-2 border-t border-slate-200 dark:border-slate-800/80 text-xs">
-                <div className="flex items-center justify-between">
+              <div className="flex flex-col gap-3 pt-2 border-t border-slate-200 dark:border-slate-800/80 text-xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
                   <span className="text-slate-600 dark:text-slate-400 font-medium">Ubah Role Pengguna:</span>
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex flex-wrap items-center gap-1.5">
                     {(['Recruiter', 'Admin', 'Owner'] as UserRole[]).map((roleOption) => (
                       <button
                         key={roleOption}
@@ -707,9 +860,9 @@ export const OwnerPage: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between pt-1 text-xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 pt-1 text-xs">
                   <span className="text-slate-600 dark:text-slate-400 font-medium">Persetujuan Status:</span>
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex flex-wrap items-center gap-1.5">
                     {u.status !== 'Active' && (
                       <button
                         onClick={() => handleStatusChange(u.telegramId, 'Active')}
@@ -810,17 +963,51 @@ export const OwnerPage: React.FC = () => {
       {/* Sub Tab Content: Export Spreadsheet */}
       {activeSubTab === 'export' && (
         <div className="space-y-4">
-          <GlassCard className="p-4 border-amber-500/30 space-y-3">
+          <GlassCard className="p-4 border-amber-500/30 space-y-4">
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-black text-amber-400 flex items-center gap-2">
                   <FileSpreadsheet className="w-5 h-5 text-amber-400" />
-                  <span>Export & Salin Data Harian ke Spreadsheet</span>
+                  <span>{exportType === 'data_harian' ? '1. Halaman Data Harian (Pelamar)' : '2. Halaman Laporan Harian (Statistik)'}</span>
                 </h3>
                 <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
-                  Format ini disesuaikan untuk langsung disalin (Copy) lalu ditempel (Paste/Ctrl+V) di Google Sheets atau Excel.
+                  Pilih tipe laporan di bawah. Tandai baris yang ingin disalin, lalu klik <b>Salin ke Spreadsheet</b> untuk format Excel/Google Sheets.
                 </p>
               </div>
+            </div>
+
+            {/* Export Type Toggle Segment */}
+            <div className="flex bg-slate-100 dark:bg-slate-900/60 p-1 rounded-2xl border border-slate-200 dark:border-slate-800/80 w-full md:max-w-xl mx-auto">
+              <button
+                type="button"
+                onClick={() => {
+                  setExportType('data_harian');
+                  setSelectedReportIds([]);
+                }}
+                className={`flex-1 py-2.5 px-3 text-xs font-black rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                  exportType === 'data_harian'
+                    ? 'bg-amber-500 text-slate-950 shadow-md scale-[1.01]'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <Users className="w-4 h-4 shrink-0" />
+                <span>1. Data Harian (Pelamar)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setExportType('laporan_harian');
+                  setSelectedReportIds([]);
+                }}
+                className={`flex-1 py-2.5 px-3 text-xs font-black rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                  exportType === 'laporan_harian'
+                    ? 'bg-amber-500 text-slate-950 shadow-md scale-[1.01]'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <FileText className="w-4 h-4 shrink-0" />
+                <span>2. Laporan Harian (Statistik)</span>
+              </button>
             </div>
 
             {/* Notification / Copy Success */}
@@ -832,7 +1019,24 @@ export const OwnerPage: React.FC = () => {
             )}
 
             {/* Filter Controls */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 pt-2">
+            <div className={`grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 ${exportType === 'data_harian' ? 'lg:grid-cols-5' : 'lg:grid-cols-3'} gap-2.5 pt-2`}>
+              {/* Search Query Filter */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase flex items-center gap-1">
+                  <Search className="w-3 h-3 text-amber-400" /> {exportType === 'data_harian' ? 'Cari Pelamar' : 'Cari Laporan'}
+                </label>
+                <input
+                  type="text"
+                  placeholder={exportType === 'data_harian' ? "Cari WA, UID, Nama..." : "Cari Recruiter, Catatan..."}
+                  value={exportSearchQuery}
+                  onChange={(e) => {
+                    setExportSearchQuery(e.target.value);
+                    setSelectedReportIds([]); // Reset selection when filtering
+                  }}
+                  className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-2 text-xs text-slate-900 dark:text-white outline-none focus:border-amber-400"
+                />
+              </div>
+
               {/* Date Filter */}
               <div className="flex flex-col gap-1">
                 <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase flex items-center gap-1">
@@ -841,13 +1045,19 @@ export const OwnerPage: React.FC = () => {
                 <input
                   type="date"
                   value={exportDate}
-                  onChange={(e) => setExportDate(e.target.value)}
+                  onChange={(e) => {
+                    setExportDate(e.target.value);
+                    setSelectedReportIds([]); // Reset selection when filtering
+                  }}
                   className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-2 text-xs text-slate-900 dark:text-white outline-none focus:border-amber-400 font-mono"
                 />
                 <div className="flex items-center gap-1 mt-1 text-[10px]">
                   <button
                     type="button"
-                    onClick={() => setExportDate(new Date().toISOString().split('T')[0])}
+                    onClick={() => {
+                      setExportDate(new Date().toISOString().split('T')[0]);
+                      setSelectedReportIds([]);
+                    }}
                     className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 hover:bg-slate-700 text-amber-400 cursor-pointer font-medium"
                   >
                     Hari Ini
@@ -858,6 +1068,7 @@ export const OwnerPage: React.FC = () => {
                       const d = new Date();
                       d.setDate(d.getDate() - 1);
                       setExportDate(d.toISOString().split('T')[0]);
+                      setSelectedReportIds([]);
                     }}
                     className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 hover:bg-slate-700 text-slate-700 dark:text-slate-300 cursor-pointer font-medium"
                   >
@@ -865,7 +1076,10 @@ export const OwnerPage: React.FC = () => {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setExportDate('')}
+                    onClick={() => {
+                      setExportDate('');
+                      setSelectedReportIds([]);
+                    }}
                     className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 hover:bg-slate-700 text-slate-600 dark:text-slate-400 cursor-pointer font-medium"
                   >
                     Semua
@@ -882,62 +1096,91 @@ export const OwnerPage: React.FC = () => {
                   type="text"
                   placeholder="Cari Username..."
                   value={exportRecruiter}
-                  onChange={(e) => setExportRecruiter(e.target.value)}
+                  onChange={(e) => {
+                    setExportRecruiter(e.target.value);
+                    setSelectedReportIds([]); // Reset selection when filtering
+                  }}
                   className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-2 text-xs text-slate-900 dark:text-white outline-none focus:border-amber-400"
                 />
               </div>
 
-              {/* Result Filter */}
-              <div className="flex flex-col gap-1">
-                <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase flex items-center gap-1">
-                  <Filter className="w-3 h-3 text-amber-400" /> Result Status
-                </label>
-                <select
-                  value={exportResultFilter}
-                  onChange={(e) => setExportResultFilter(e.target.value)}
-                  className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-2 text-xs text-slate-900 dark:text-white outline-none focus:border-amber-400 cursor-pointer"
-                >
-                  <option value="all">Semua Status</option>
-                  <option value="ACC">ACC (YES)</option>
-                  <option value="Pending">Pending</option>
-                  <option value="REJECT">REJECT (NO)</option>
-                </select>
-              </div>
+              {exportType === 'data_harian' && (
+                <>
+                  {/* Result Filter */}
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase flex items-center gap-1">
+                      <Filter className="w-3 h-3 text-amber-400" /> Result Status
+                    </label>
+                    <select
+                      value={exportResultFilter}
+                      onChange={(e) => {
+                        setExportResultFilter(e.target.value);
+                        setSelectedReportIds([]); // Reset selection when filtering
+                      }}
+                      className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-2 text-xs text-slate-900 dark:text-white outline-none focus:border-amber-400 cursor-pointer"
+                    >
+                      <option value="all">Semua Status</option>
+                      <option value="ACC">ACC (YES)</option>
+                      <option value="Pending">Pending</option>
+                      <option value="REJECT">REJECT (NO)</option>
+                    </select>
+                  </div>
 
-              {/* Grup Filter */}
-              <div className="flex flex-col gap-1">
-                <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase flex items-center gap-1">
-                  <Filter className="w-3 h-3 text-amber-400" /> Grup
-                </label>
-                <select
-                  value={exportGrupFilter}
-                  onChange={(e) => setExportGrupFilter(e.target.value)}
-                  className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-2 text-xs text-slate-900 dark:text-white outline-none focus:border-amber-400 cursor-pointer"
-                >
-                  <option value="all">Semua Grup</option>
-                  <option value="T0">T0 / T0-Mark</option>
-                  <option value="V0">V0</option>
-                  <option value="RECRUITER">RECRUITER</option>
-                  <option value="T3">T3</option>
-                </select>
-              </div>
+                  {/* Grup Filter */}
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase flex items-center gap-1">
+                      <Filter className="w-3 h-3 text-amber-400" /> Grup
+                    </label>
+                    <select
+                      value={exportGrupFilter}
+                      onChange={(e) => {
+                        setExportGrupFilter(e.target.value);
+                        setSelectedReportIds([]); // Reset selection when filtering
+                      }}
+                      className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-2 text-xs text-slate-900 dark:text-white outline-none focus:border-amber-400 cursor-pointer"
+                    >
+                      <option value="all">Semua Grup</option>
+                      <option value="T0">T0 / T0-Mark</option>
+                      <option value="V0">V0</option>
+                      <option value="RECRUITER">RECRUITER</option>
+                      <option value="T3">T3</option>
+                    </select>
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Summary & Action Buttons */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-200 dark:border-slate-800/80">
               <div className="text-xs text-slate-700 dark:text-slate-300">
                 Menampilkan <span className="font-extrabold text-amber-400">{filteredReports.length}</span> baris data
+                {selectedReportIds.length > 0 && (
+                  <span> | <span className="font-extrabold text-teal-400">{selectedReportIds.length}</span> baris dipilih</span>
+                )}
                 {exportDate && <span> untuk tanggal <b className="text-slate-900 dark:text-white">{formatDateDDMMYYYY(exportDate)}</b></span>}
               </div>
 
-              <div className="flex items-center gap-2 w-full sm:w-auto">
+              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                {selectedReportIds.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedReportIds([])}
+                    className="px-2.5 py-1.5 text-[10px] font-extrabold bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-300 cursor-pointer transition-colors"
+                  >
+                    Batal Pilih ({selectedReportIds.length})
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={handleCopySpreadsheet}
                   className="flex-1 sm:flex-initial px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs flex items-center justify-center gap-2 cursor-pointer shadow-lg transition-all"
                 >
                   <Copy className="w-4 h-4" />
-                  <span>Salin ke Spreadsheet (Copy)</span>
+                  <span>
+                    {selectedReportIds.length > 0 
+                      ? `Salin ${selectedReportIds.length} Baris ke Spreadsheet` 
+                      : 'Salin Semua ke Spreadsheet'}
+                  </span>
                 </button>
                 <button
                   type="button"
@@ -953,77 +1196,530 @@ export const OwnerPage: React.FC = () => {
 
           {/* Table Preview */}
           <GlassCard className="p-3 border-slate-200 dark:border-slate-800 overflow-hidden space-y-3">
-            <div className="flex items-center justify-between px-1">
-              <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-                Pratinjau Tabel (Siap Salin & Tempel)
-              </h4>
-              <span className="text-[10px] text-slate-500 dark:text-slate-400">
-                Kolom: Tanggal | Username Recruiter | Channels | WA Pelamar | UID 9Kucing | Username Pelamar | Results | Grup
-              </span>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1">
+              <div>
+                <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                  <span>Pratinjau Tabel Laporan Harian</span>
+                  <span className="text-[10px] text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full normal-case font-normal">
+                    {filteredReports.length} data ditemukan
+                  </span>
+                </h4>
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                  Centang baris secara individu untuk menyalin sebagian, atau klik tombol salin baris di kolom paling kanan.
+                </p>
+              </div>
+              <div className="text-[10px] text-slate-500 dark:text-slate-400 font-mono text-right">
+                {exportType === 'data_harian' 
+                  ? 'Format: Tanggal | Recruiter | Channel | WA | UID | Pelamar | Result | Grup'
+                  : 'Format: Tanggal | Recruiter | Visit | Pelamar | Berkualitas | FB | Izin | Efektif | Terlambat | Denda | Video | Catatan'
+                }
+              </div>
             </div>
 
             {filteredReports.length === 0 ? (
               <div className="py-12 text-center text-slate-500 dark:text-slate-400 text-xs">
-                Tidak ada data laporan harian yang sesuai dengan filter.
+                Tidak ada data {exportType === 'data_harian' ? 'Data Harian' : 'Laporan Harian'} yang sesuai dengan filter.
               </div>
             ) : (
-              <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
+              <>
+                <div className="hidden md:block overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
                 <table className="w-full text-left text-xs text-slate-700 dark:text-slate-300 font-mono">
-                  <thead className="bg-slate-50 dark:bg-slate-900/90 text-[10px] uppercase font-bold text-amber-400 border-b border-slate-200 dark:border-slate-800">
+                  <thead className="bg-slate-50 dark:bg-slate-900/90 text-[10px] uppercase font-bold text-slate-400 border-b border-slate-200 dark:border-slate-800">
                     <tr>
-                      <th className="p-2.5 whitespace-nowrap">Tanggal</th>
-                      <th className="p-2.5 whitespace-nowrap">Username Recruiter</th>
-                      <th className="p-2.5 whitespace-nowrap">Recruitment channels</th>
-                      <th className="p-2.5 whitespace-nowrap">WA Pelamar</th>
-                      <th className="p-2.5 whitespace-nowrap">UID 9Kucing Pelamar</th>
-                      <th className="p-2.5 whitespace-nowrap">Username Pelamar</th>
-                      <th className="p-2.5 whitespace-nowrap">Results</th>
-                      <th className="p-2.5 whitespace-nowrap">Grup</th>
+                      <th className="p-2.5 w-10 text-center">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const shownIds = filteredReports.map((r, idx) => r.reportId || `${r.date || ''}_${r.uid9Kucing || ''}_${r.applicantWhatsapp || ''}_${idx}`);
+                            const allShownSelected = shownIds.every(id => selectedReportIds.includes(id));
+                            if (allShownSelected) {
+                              setSelectedReportIds(prev => prev.filter(id => !shownIds.includes(id)));
+                            } else {
+                              setSelectedReportIds(prev => {
+                                const next = [...prev];
+                                shownIds.forEach(id => {
+                                  if (!next.includes(id)) next.push(id);
+                                });
+                                return next;
+                              });
+                            }
+                          }}
+                          className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-amber-500 flex items-center justify-center mx-auto cursor-pointer"
+                          title="Pilih Semua Baris"
+                        >
+                          {filteredReports.length > 0 && filteredReports.map((r, idx) => r.reportId || `${r.date || ''}_${r.uid9Kucing || ''}_${r.applicantWhatsapp || ''}_${idx}`).every(id => selectedReportIds.includes(id)) ? (
+                            <CheckSquare className="w-4 h-4 text-amber-500" />
+                          ) : (
+                            <Square className="w-4 h-4 text-slate-500" />
+                          )}
+                        </button>
+                      </th>
+                      {exportType === 'data_harian' ? (
+                        <>
+                          <th className="p-2.5 whitespace-nowrap">Tanggal</th>
+                          <th className="p-2.5 whitespace-nowrap">Username Recruiter</th>
+                          <th className="p-2.5 whitespace-nowrap">Recruitment channels</th>
+                          <th className="p-2.5 whitespace-nowrap">WA Pelamar</th>
+                          <th className="p-2.5 whitespace-nowrap">UID 9Kucing Pelamar</th>
+                          <th className="p-2.5 whitespace-nowrap">Username Pelamar</th>
+                          <th className="p-2.5 whitespace-nowrap">Results</th>
+                          <th className="p-2.5 whitespace-nowrap">Grup</th>
+                        </>
+                      ) : (
+                        <>
+                          <th className="p-2.5 whitespace-nowrap">Tanggal</th>
+                          <th className="p-2.5 whitespace-nowrap">Recruiter</th>
+                          <th className="p-2.5 whitespace-nowrap text-center">Visit</th>
+                          <th className="p-2.5 whitespace-nowrap text-center">Pelamar</th>
+                          <th className="p-2.5 whitespace-nowrap text-center">Quality</th>
+                          <th className="p-2.5 whitespace-nowrap text-center">FB</th>
+                          <th className="p-2.5 whitespace-nowrap text-center">Izin</th>
+                          <th className="p-2.5 whitespace-nowrap text-center">Efektif</th>
+                          <th className="p-2.5 whitespace-nowrap text-center">Terlambat</th>
+                          <th className="p-2.5 whitespace-nowrap">Denda</th>
+                          <th className="p-2.5 whitespace-nowrap">Video/Bukti</th>
+                          <th className="p-2.5 whitespace-nowrap">Note</th>
+                        </>
+                      )}
+                      <th className="p-2.5 whitespace-nowrap text-center">Aksi</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/60 bg-white dark:bg-slate-950/40 text-[11px]">
                     {filteredReports.map((r, idx) => {
-                      const formattedResult = r.result === 'ACC' ? 'YES' : (r.result === 'REJECT' ? 'NO' : (r.result || 'YES'));
-                      return (
-                        <tr key={r.reportId || idx} className="hover:bg-slate-50 dark:bg-slate-900/50 transition-colors">
-                          <td className="p-2.5 whitespace-nowrap font-sans font-medium text-slate-700 dark:text-slate-300">
-                            {formatDateDDMMYYYY(r.date || (r.createdAt ? r.createdAt.split('T')[0] : ''))}
-                          </td>
-                          <td className="p-2.5 whitespace-nowrap font-sans text-sky-400">
-                            {formatUsername(r.recruiterUsername || r.username)}
-                          </td>
-                          <td className="p-2.5 whitespace-nowrap font-sans text-slate-700 dark:text-slate-300">
-                            {r.channel || '-'}
-                          </td>
-                          <td className="p-2.5 whitespace-nowrap font-sans text-emerald-400">
-                            {r.applicantWhatsapp || '-'}
-                          </td>
-                          <td className="p-2.5 whitespace-nowrap text-amber-300 font-bold">
-                            {r.uid9Kucing || '-'}
-                          </td>
-                          <td className="p-2.5 whitespace-nowrap font-sans text-sky-300">
-                            {formatUsername(r.applicantTelegramUsername)}
-                          </td>
-                          <td className="p-2.5 whitespace-nowrap font-sans font-black">
-                            <span className={`px-2 py-0.5 rounded text-[10px] ${
-                              formattedResult === 'YES' 
-                                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
-                                : formattedResult === 'NO'
-                                ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-                                : 'bg-amber-500/20 text-amber-400'
-                            }`}>
-                              {formattedResult}
-                            </span>
-                          </td>
-                          <td className="p-2.5 whitespace-nowrap font-sans font-bold text-indigo-300">
-                            {r.grup || '-'}
-                          </td>
-                        </tr>
-                      );
+                      const uniqueId = r.reportId || `${r.date || ''}_${r.uid9Kucing || ''}_${r.applicantWhatsapp || ''}_${idx}`;
+                      const isSelected = selectedReportIds.includes(uniqueId);
+                      const isCopied = copiedRowId === uniqueId;
+
+                      if (exportType === 'data_harian') {
+                        const formattedResult = r.result === 'ACC' ? 'YES' : (r.result === 'REJECT' ? 'NO' : (r.result || 'YES'));
+                        return (
+                          <tr 
+                            key={uniqueId} 
+                            className={`hover:bg-slate-50 dark:hover:bg-slate-900/40 transition-colors ${
+                              isSelected ? 'bg-amber-500/5 border-l-2 border-l-amber-500' : 'bg-white dark:bg-slate-950/40'
+                            }`}
+                          >
+                            <td className="p-2.5 text-center">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedReportIds(prev =>
+                                    prev.includes(uniqueId)
+                                      ? prev.filter(id => id !== uniqueId)
+                                      : [...prev, uniqueId]
+                                  );
+                                }}
+                                className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500 flex items-center justify-center mx-auto cursor-pointer"
+                              >
+                                {isSelected ? (
+                                  <CheckSquare className="w-4 h-4 text-amber-500" />
+                                ) : (
+                                  <Square className="w-4 h-4 text-slate-600 dark:text-slate-500" />
+                                )}
+                              </button>
+                            </td>
+                            <td className="p-2.5 whitespace-nowrap font-sans font-medium text-slate-700 dark:text-slate-300">
+                              {formatDateDDMMYYYY(r.date || (r.createdAt ? r.createdAt.split('T')[0] : ''))}
+                            </td>
+                            <td className="p-2.5 whitespace-nowrap font-sans text-sky-400">
+                              {formatUsername(r.recruiterUsername || r.username)}
+                            </td>
+                            <td className="p-2.5 whitespace-nowrap font-sans text-slate-700 dark:text-slate-300">
+                              {r.channel || '-'}
+                            </td>
+                            <td className="p-2.5 whitespace-nowrap font-sans text-emerald-400">
+                              {r.applicantWhatsapp || '-'}
+                            </td>
+                            <td className="p-2.5 whitespace-nowrap text-amber-300 font-bold">
+                              {r.uid9Kucing || '-'}
+                            </td>
+                            <td className="p-2.5 whitespace-nowrap font-sans text-sky-300">
+                              {formatUsername(r.applicantTelegramUsername)}
+                            </td>
+                            <td className="p-2.5 whitespace-nowrap font-sans font-black">
+                              <span className={`px-2 py-0.5 rounded text-[10px] ${
+                                formattedResult === 'YES' 
+                                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
+                                  : formattedResult === 'NO'
+                                  ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                                  : 'bg-amber-500/20 text-amber-400'
+                              }`}>
+                                {formattedResult}
+                              </span>
+                            </td>
+                            <td className="p-2.5 whitespace-nowrap font-sans font-bold text-indigo-300">
+                              {r.grup || '-'}
+                            </td>
+                            <td className="p-2.5 text-center whitespace-nowrap">
+                              <button
+                                type="button"
+                                onClick={() => handleCopySingleRow(r, uniqueId)}
+                                className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold flex items-center gap-1 mx-auto transition-all cursor-pointer ${
+                                  isCopied 
+                                    ? 'bg-emerald-500 text-slate-950 scale-105' 
+                                    : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300'
+                                }`}
+                                title="Salin baris ini saja"
+                              >
+                                {isCopied ? (
+                                  <>
+                                    <Check className="w-3 h-3" />
+                                    <span>Tersalin!</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy className="w-3 h-3 text-amber-400" />
+                                    <span>Salin</span>
+                                  </>
+                                )}
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      } else {
+                        // laporan_harian
+                        return (
+                          <tr 
+                            key={uniqueId} 
+                            className={`hover:bg-slate-50 dark:hover:bg-slate-900/40 transition-colors ${
+                              isSelected ? 'bg-amber-500/5 border-l-2 border-l-amber-500' : 'bg-white dark:bg-slate-950/40'
+                            }`}
+                          >
+                            <td className="p-2.5 text-center">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedReportIds(prev =>
+                                    prev.includes(uniqueId)
+                                      ? prev.filter(id => id !== uniqueId)
+                                      : [...prev, uniqueId]
+                                  );
+                                }}
+                                className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500 flex items-center justify-center mx-auto cursor-pointer"
+                              >
+                                {isSelected ? (
+                                  <CheckSquare className="w-4 h-4 text-amber-500" />
+                                ) : (
+                                  <Square className="w-4 h-4 text-slate-600 dark:text-slate-500" />
+                                )}
+                              </button>
+                            </td>
+                            <td className="p-2.5 whitespace-nowrap font-sans font-medium text-slate-700 dark:text-slate-300">
+                              {formatDateDDMMYYYY(r.date || (r.createdAt ? r.createdAt.split('T')[0] : ''))}
+                            </td>
+                            <td className="p-2.5 whitespace-nowrap font-sans text-sky-400">
+                              {formatUsername(r.recruiterUsername || r.username)}
+                            </td>
+                            <td className="p-2.5 text-center font-bold text-slate-700 dark:text-slate-300">
+                              {r.visit !== undefined ? r.visit : 0}
+                            </td>
+                            <td className="p-2.5 text-center font-bold text-teal-400">
+                              {r.applicant !== undefined ? r.applicant : 0}
+                            </td>
+                            <td className="p-2.5 text-center font-bold text-sky-300">
+                              {r.quality !== undefined ? r.quality : 0}
+                            </td>
+                            <td className="p-2.5 text-center font-bold text-amber-400">
+                              {r.posting !== undefined ? r.posting : 0}
+                            </td>
+                            <td className="p-2.5 text-center font-bold text-purple-400">
+                              {r.permission !== undefined ? r.permission : 0}
+                            </td>
+                            <td className="p-2.5 text-center font-black">
+                              <span className={`px-1.5 py-0.5 rounded text-[9px] ${
+                                r.effectiveStatus === 'YES' 
+                                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
+                                  : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                              }`}>
+                                {r.effectiveStatus || 'YES'}
+                              </span>
+                            </td>
+                            <td className="p-2.5 text-center">
+                              {r.isLate ? (
+                                <span className="text-rose-400 bg-rose-500/15 px-1 py-0.5 rounded text-[9px] font-bold border border-rose-500/20">YA</span>
+                              ) : (
+                                <span className="text-slate-500 text-[9px]">TIDAK</span>
+                              )}
+                            </td>
+                            <td className="p-2.5 whitespace-nowrap text-rose-300 font-bold">
+                              {r.fine !== undefined && r.fine > 0 ? `Rp ${r.fine.toLocaleString('id-ID')}` : 'Rp 0'}
+                            </td>
+                            <td className="p-2.5 max-w-[150px] truncate" title={r.videoUrl}>
+                              {r.videoUrl && r.videoUrl !== '-' ? (
+                                <a 
+                                  href={r.videoUrl} 
+                                  target="_blank" 
+                                  referrerPolicy="no-referrer"
+                                  className="text-sky-400 underline hover:text-sky-300 text-[10px] break-all block truncate"
+                                >
+                                  {r.videoUrl}
+                                </a>
+                              ) : (
+                                <span className="text-slate-600 dark:text-slate-500">-</span>
+                              )}
+                            </td>
+                            <td className="p-2.5 max-w-[120px] truncate text-slate-400" title={r.note || ''}>
+                              {r.note || '-'}
+                            </td>
+                            <td className="p-2.5 text-center whitespace-nowrap">
+                              <button
+                                type="button"
+                                onClick={() => handleCopySingleRow(r, uniqueId)}
+                                className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold flex items-center gap-1 mx-auto transition-all cursor-pointer ${
+                                  isCopied 
+                                    ? 'bg-emerald-500 text-slate-950 scale-105' 
+                                    : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300'
+                                }`}
+                                title="Salin baris ini saja"
+                              >
+                                {isCopied ? (
+                                  <>
+                                    <Check className="w-3 h-3" />
+                                    <span>Tersalin!</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy className="w-3 h-3 text-amber-400" />
+                                    <span>Salin</span>
+                                  </>
+                                )}
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      }
                     })}
                   </tbody>
                 </table>
               </div>
+
+              {/* Mobile View: Cards layout for mobile screen size */}
+              <div className="block md:hidden space-y-3">
+                {filteredReports.map((r, idx) => {
+                  const uniqueId = r.reportId || `${r.date || ''}_${r.uid9Kucing || ''}_${r.applicantWhatsapp || ''}_${idx}`;
+                  const isSelected = selectedReportIds.includes(uniqueId);
+                  const isCopied = copiedRowId === uniqueId;
+
+                  if (exportType === 'data_harian') {
+                    const formattedResult = r.result === 'ACC' ? 'YES' : (r.result === 'REJECT' ? 'NO' : (r.result || 'YES'));
+                    return (
+                      <div 
+                        key={`mob_${uniqueId}`}
+                        className={`p-3.5 rounded-2xl border transition-all ${
+                          isSelected 
+                            ? 'bg-amber-500/10 border-amber-500 shadow-sm' 
+                            : 'bg-slate-50/50 dark:bg-slate-900/40 border-slate-200 dark:border-slate-800/80'
+                        }`}
+                      >
+                        <div className="flex items-start gap-2.5">
+                          {/* Checkbox */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedReportIds(prev =>
+                                prev.includes(uniqueId)
+                                  ? prev.filter(id => id !== uniqueId)
+                                  : [...prev, uniqueId]
+                              );
+                            }}
+                            className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500 shrink-0 mt-0.5 cursor-pointer"
+                          >
+                            {isSelected ? (
+                              <CheckSquare className="w-5 h-5 text-amber-500" />
+                            ) : (
+                              <Square className="w-5 h-5 text-slate-400 dark:text-slate-600" />
+                            )}
+                          </button>
+
+                          {/* Content */}
+                          <div className="flex-1 min-w-0 space-y-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold font-mono">
+                                {formatDateDDMMYYYY(r.date || (r.createdAt ? r.createdAt.split('T')[0] : ''))}
+                              </span>
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-black ${
+                                formattedResult === 'YES' 
+                                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
+                                  : formattedResult === 'NO'
+                                  ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                                  : 'bg-amber-500/20 text-amber-400'
+                              }`}>
+                                {formattedResult}
+                              </span>
+                            </div>
+
+                            <div className="text-xs space-y-1.5 text-slate-700 dark:text-slate-300">
+                              <p className="truncate"><span className="text-slate-400 font-medium">Recruiter:</span> <span className="text-sky-400 font-semibold">{formatUsername(r.recruiterUsername || r.username)}</span></p>
+                              <p className="truncate"><span className="text-slate-400 font-medium">Channel:</span> <span className="font-medium">{r.channel || '-'}</span></p>
+                              <p className="truncate"><span className="text-slate-400 font-medium">WhatsApp:</span> <span className="text-emerald-400 font-mono font-bold">{r.applicantWhatsapp || '-'}</span></p>
+                              <p className="truncate"><span className="text-slate-400 font-medium">UID Pelamar:</span> <span className="text-amber-300 font-mono font-bold">{r.uid9Kucing || '-'}</span></p>
+                              <p className="truncate"><span className="text-slate-400 font-medium">Username:</span> <span className="text-sky-300 font-mono">{formatUsername(r.applicantTelegramUsername)}</span></p>
+                              <p className="truncate"><span className="text-slate-400 font-medium">Grup:</span> <span className="text-indigo-300 font-bold">{r.grup || '-'}</span></p>
+                            </div>
+
+                            <div className="pt-2 border-t border-slate-200/60 dark:border-slate-800/60 flex justify-end">
+                              <button
+                                type="button"
+                                onClick={() => handleCopySingleRow(r, uniqueId)}
+                                className={`w-full py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                                  isCopied 
+                                    ? 'bg-emerald-500 text-slate-950 scale-[1.01]' 
+                                    : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700/50'
+                                }`}
+                              >
+                                {isCopied ? (
+                                  <>
+                                    <Check className="w-4 h-4 text-slate-950" />
+                                    <span>Berhasil Tersalin!</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy className="w-3.5 h-3.5 text-amber-400" />
+                                    <span>Salin Baris</span>
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  } else {
+                    // laporan_harian
+                    return (
+                      <div 
+                        key={`mob_${uniqueId}`}
+                        className={`p-3.5 rounded-2xl border transition-all ${
+                          isSelected 
+                            ? 'bg-amber-500/10 border-amber-500 shadow-sm' 
+                            : 'bg-slate-50/50 dark:bg-slate-900/40 border-slate-200 dark:border-slate-800/80'
+                        }`}
+                      >
+                        <div className="flex items-start gap-2.5">
+                          {/* Checkbox */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedReportIds(prev =>
+                                prev.includes(uniqueId)
+                                  ? prev.filter(id => id !== uniqueId)
+                                  : [...prev, uniqueId]
+                              );
+                            }}
+                            className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500 shrink-0 mt-0.5 cursor-pointer"
+                          >
+                            {isSelected ? (
+                              <CheckSquare className="w-5 h-5 text-amber-500" />
+                            ) : (
+                              <Square className="w-5 h-5 text-slate-400 dark:text-slate-600" />
+                            )}
+                          </button>
+
+                          {/* Content */}
+                          <div className="flex-1 min-w-0 space-y-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold font-mono">
+                                {formatDateDDMMYYYY(r.date || (r.createdAt ? r.createdAt.split('T')[0] : ''))}
+                              </span>
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-black ${
+                                r.effectiveStatus === 'YES' 
+                                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
+                                  : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                              }`}>
+                                Status: {r.effectiveStatus || 'YES'}
+                              </span>
+                            </div>
+
+                            <div className="text-xs text-sky-400 font-bold">
+                              Recruiter: {formatUsername(r.recruiterUsername || r.username)}
+                            </div>
+
+                            <div className="grid grid-cols-4 gap-1.5 text-center bg-slate-100/50 dark:bg-slate-900/60 p-2 rounded-xl text-[10px] border border-slate-200/50 dark:border-slate-800/40 font-mono">
+                              <div>
+                                <span className="text-slate-400 block text-[9px]">Visit</span>
+                                <span className="text-slate-900 dark:text-slate-100 font-black">{r.visit !== undefined ? r.visit : 0}</span>
+                              </div>
+                              <div>
+                                <span className="text-slate-400 block text-[9px]">Pelamar</span>
+                                <span className="text-teal-400 font-black">{r.applicant !== undefined ? r.applicant : 0}</span>
+                              </div>
+                              <div>
+                                <span className="text-slate-400 block text-[9px]">Quality</span>
+                                <span className="text-sky-300 font-black">{r.quality !== undefined ? r.quality : 0}</span>
+                              </div>
+                              <div>
+                                <span className="text-slate-400 block text-[9px]">FB</span>
+                                <span className="text-amber-400 font-black">{r.posting !== undefined ? r.posting : 0}</span>
+                              </div>
+                            </div>
+
+                            <div className="text-[11px] space-y-1.5 text-slate-700 dark:text-slate-300">
+                              <p><span className="text-slate-400 font-medium">Izin:</span> <span className="text-purple-300 font-bold">{r.permission !== undefined ? r.permission : 0}</span></p>
+                              <p>
+                                <span className="text-slate-400 font-medium">Terlambat:</span>{' '}
+                                {r.isLate ? (
+                                  <span className="text-rose-400 font-bold">YA</span>
+                                ) : (
+                                  <span className="text-slate-500">TIDAK</span>
+                                )}
+                              </p>
+                              <p>
+                                <span className="text-slate-400 font-medium">Denda:</span>{' '}
+                                <span className="text-rose-300 font-bold">
+                                  {r.fine !== undefined && r.fine > 0 ? `Rp ${r.fine.toLocaleString('id-ID')}` : 'Rp 0'}
+                                </span>
+                              </p>
+                              {r.videoUrl && r.videoUrl !== '-' && (
+                                <p className="truncate">
+                                  <span className="text-slate-400 font-medium">Video/Bukti:</span>{' '}
+                                  <a 
+                                    href={r.videoUrl} 
+                                    target="_blank" 
+                                    referrerPolicy="no-referrer"
+                                    className="text-sky-400 underline hover:text-sky-300 font-mono text-[10px]"
+                                  >
+                                    {r.videoUrl}
+                                  </a>
+                                </p>
+                              )}
+                              {r.note && (
+                                <p className="bg-slate-100/30 dark:bg-slate-900/20 p-1.5 rounded-lg text-[10px] text-slate-400 italic">
+                                  <span className="text-slate-500 font-bold not-italic">Note:</span> {r.note}
+                                </p>
+                              )}
+                            </div>
+
+                            <div className="pt-2 border-t border-slate-200/60 dark:border-slate-800/60 flex justify-end">
+                              <button
+                                type="button"
+                                onClick={() => handleCopySingleRow(r, uniqueId)}
+                                className={`w-full py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                                  isCopied 
+                                    ? 'bg-emerald-500 text-slate-950 scale-[1.01]' 
+                                    : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700/50'
+                                }`}
+                              >
+                                {isCopied ? (
+                                  <>
+                                    <Check className="w-4 h-4 text-slate-950" />
+                                    <span>Berhasil Tersalin!</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy className="w-3.5 h-3.5 text-amber-400" />
+                                    <span>Salin Baris</span>
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+                })}
+              </div>
+              </>
             )}
           </GlassCard>
         </div>

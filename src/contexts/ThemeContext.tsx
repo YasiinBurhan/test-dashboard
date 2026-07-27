@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { TelegramThemeParams } from '../types';
 import { getTelegramWebApp } from '../telegram/webapp';
+import { Capacitor } from '@capacitor/core';
+import { StatusBar, Style } from '@capacitor/status-bar';
 
 interface ThemeContextType {
   colorScheme: 'light' | 'dark';
@@ -21,7 +23,7 @@ const darkParams: TelegramThemeParams = {
   accent_text_color: '#60a5fa'
 };
 
-// Warm, soft non-glaring light mode palette (slate-100 neutral background)
+// Warm, soft non-glaring light mode palette (slate-100 neutral background matching preview)
 const lightParams: TelegramThemeParams = {
   bg_color: '#f1f5f9',
   secondary_bg_color: '#ffffff',
@@ -44,31 +46,35 @@ const ThemeContext = createContext<ThemeContextType>({
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [colorScheme, setColorScheme] = useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('theme_mode');
-      if (saved === 'light' || saved === 'dark') return saved;
       const webApp = getTelegramWebApp();
+      // If inside Telegram, prioritize Telegram WebApp colorScheme if available
       if (webApp?.colorScheme === 'light' || webApp?.colorScheme === 'dark') {
         return webApp.colorScheme;
       }
+      const saved = localStorage.getItem('theme_mode');
+      if (saved === 'light' || saved === 'dark') return saved;
     }
     return 'dark';
   });
 
   const [themeParams, setThemeParams] = useState<TelegramThemeParams>(darkParams);
 
-  const applyTheme = (scheme: 'light' | 'dark') => {
+  // Synchronize CSS variables, HTML classes, WebApp colors, and Android StatusBar whenever colorScheme changes
+  useEffect(() => {
     const webApp = getTelegramWebApp();
     const params = webApp?.themeParams || {};
-    
     let mergedParams: TelegramThemeParams;
     const root = document.documentElement;
 
-    if (scheme === 'light') {
+    // Temporarily add a helper class to prevent layout transition flicker during swap
+    root.classList.add('theme-switching');
+
+    if (colorScheme === 'light') {
       root.classList.remove('dark');
       root.classList.add('light');
       mergedParams = {
-        bg_color: params.bg_color || lightParams.bg_color,
-        secondary_bg_color: params.secondary_bg_color || lightParams.secondary_bg_color,
+        bg_color: lightParams.bg_color,
+        secondary_bg_color: lightParams.secondary_bg_color,
         text_color: params.text_color || lightParams.text_color,
         hint_color: params.hint_color || lightParams.hint_color,
         link_color: params.link_color || lightParams.link_color,
@@ -77,12 +83,18 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         header_bg_color: params.header_bg_color || lightParams.header_bg_color,
         accent_text_color: params.accent_text_color || lightParams.accent_text_color
       };
+      if (webApp?.setHeaderColor) {
+        try { webApp.setHeaderColor('#e2e8f0'); } catch(e) {}
+      }
+      if (webApp?.setBackgroundColor) {
+        try { webApp.setBackgroundColor('#f1f5f9'); } catch(e) {}
+      }
     } else {
       root.classList.remove('light');
       root.classList.add('dark');
       mergedParams = {
-        bg_color: params.bg_color || darkParams.bg_color,
-        secondary_bg_color: params.secondary_bg_color || darkParams.secondary_bg_color,
+        bg_color: darkParams.bg_color,
+        secondary_bg_color: darkParams.secondary_bg_color,
         text_color: params.text_color || darkParams.text_color,
         hint_color: params.hint_color || darkParams.hint_color,
         link_color: params.link_color || darkParams.link_color,
@@ -91,9 +103,14 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         header_bg_color: params.header_bg_color || darkParams.header_bg_color,
         accent_text_color: params.accent_text_color || darkParams.accent_text_color
       };
+      if (webApp?.setHeaderColor) {
+        try { webApp.setHeaderColor('#030712'); } catch(e) {}
+      }
+      if (webApp?.setBackgroundColor) {
+        try { webApp.setBackgroundColor('#030712'); } catch(e) {}
+      }
     }
 
-    setColorScheme(scheme);
     setThemeParams(mergedParams);
 
     root.style.setProperty('--tg-bg-color', mergedParams.bg_color!);
@@ -105,25 +122,56 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     root.style.setProperty('--tg-button-text-color', mergedParams.button_text_color!);
     root.style.setProperty('--tg-header-bg-color', mergedParams.header_bg_color!);
     root.style.setProperty('--tg-accent-text-color', mergedParams.accent_text_color!);
-  };
 
-  useEffect(() => {
-    applyTheme(colorScheme);
+    if (Capacitor.isNativePlatform()) {
+      try {
+        StatusBar.setStyle({ style: colorScheme === 'light' ? Style.Light : Style.Dark });
+      } catch (e) {
+        console.warn('StatusBar error', e);
+      }
+    }
+
+    // Force quick cleanup of transition helper
+    const timer = setTimeout(() => {
+      root.classList.remove('theme-switching');
+    }, 50);
+
+    return () => clearTimeout(timer);
   }, [colorScheme]);
+
+  // Handle Telegram themeChanged events separately to prevent double run on direct changes
+  useEffect(() => {
+    const webApp = getTelegramWebApp();
+    if (webApp) {
+      const handleThemeChange = () => {
+        if (webApp.colorScheme === 'light' || webApp.colorScheme === 'dark') {
+          setColorScheme(webApp.colorScheme);
+        }
+      };
+      try {
+        webApp.onEvent('themeChanged', handleThemeChange);
+      } catch(e) {}
+      return () => {
+        try {
+          webApp.offEvent('themeChanged', handleThemeChange);
+        } catch(e) {}
+      };
+    }
+  }, []);
 
   const toggleTheme = () => {
     const next = colorScheme === 'dark' ? 'light' : 'dark';
     if (typeof window !== 'undefined') {
       localStorage.setItem('theme_mode', next);
     }
-    applyTheme(next);
+    setColorScheme(next);
   };
 
   const setTheme = (theme: 'light' | 'dark') => {
     if (typeof window !== 'undefined') {
       localStorage.setItem('theme_mode', theme);
     }
-    applyTheme(theme);
+    setColorScheme(theme);
   };
 
   return (

@@ -66,29 +66,9 @@ export const Header: React.FC<HeaderProps> = ({ title, showUserBadge = true, set
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isTelegramBotMode, setIsTelegramBotMode] = useState(false);
-  const [safeAreaTop, setSafeAreaTop] = useState('0px');
 
   const userTelegramId = userProfile?.telegramId || (telegramUser?.id ? String(telegramUser.id) : '');
   const userRole = userProfile?.role || 'Recruiter';
-
-  useEffect(() => {
-    // Initial read directly from CSS variables
-    const initialVal = typeof window !== 'undefined' ? (document.documentElement.style.getPropertyValue('--tg-safe-area-inset-top') || '0px') : '0px';
-    setSafeAreaTop(initialVal);
-
-    const handleSafeAreaUpdate = (e: Event) => {
-      const customEvent = e as CustomEvent;
-      const { eventType, prevTop, currentTop, appliedTop } = customEvent.detail || {};
-      
-      const latestVal = document.documentElement.style.getPropertyValue('--tg-safe-area-inset-top') || '0px';
-      setSafeAreaTop(latestVal);
-    };
-
-    window.addEventListener('tg-safe-area-updated', handleSafeAreaUpdate);
-    return () => {
-      window.removeEventListener('tg-safe-area-updated', handleSafeAreaUpdate);
-    };
-  }, []);
 
   useEffect(() => {
     // Detect if running inside Telegram Mini App vs Standalone PWA / Web Browser
@@ -135,11 +115,10 @@ export const Header: React.FC<HeaderProps> = ({ title, showUserBadge = true, set
     <>
       <header 
         style={{
-          paddingTop: `calc(${safeAreaTop} + 12px)`,
-          paddingBottom: '12px',
-          top: 0
+          paddingTop: 'calc(var(--tg-safe-area-inset-top, env(safe-area-inset-top, 0px)) + 12px)',
+          paddingBottom: '12px'
         }}
-        className="sticky z-40 w-full backdrop-blur-xl border-b border-slate-200/80 dark:border-white/10 bg-slate-100/85 dark:bg-slate-950/85 px-4 md:px-8 transition-colors duration-300"
+        className="fixed top-0 left-0 right-0 z-40 w-full backdrop-blur-xl border-b border-slate-200/80 dark:border-white/10 bg-slate-100/85 dark:bg-slate-950/85 px-4 md:px-8 transition-colors duration-300"
       >
         <div className="w-full max-w-7xl mx-auto flex items-center justify-between gap-3">
 

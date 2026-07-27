@@ -48,6 +48,12 @@
     color: var(--tg-text-color, #f8fafc);
     transition: background-color 0.3s ease, color 0.3s ease;
   }
+
+  /* Optimize theme switching by disabling transitions during toggle to prevent Android lag/delay */
+  .theme-switching,
+  .theme-switching * {
+    transition: none !important;
+  }
 }
 
 @layer utilities {
@@ -139,4 +145,8 @@
 }
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(56, 189, 248, 0.4);
+}
+
+body.low-end .bg-mesh-gradient {
+  background-image: none !important;
 }

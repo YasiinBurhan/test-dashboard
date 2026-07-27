@@ -55,7 +55,7 @@ export function subscribeToUserReports(
     summaryReports = snapshot.docs.map(docSnap => docSnap.data() as DailyReport);
     handleUpdate();
   }, (err) => {
-    console.error('Error listening to user summary reports:', err);
+    console.warn('Notice listening to user summary reports:', err);
     if (onError) onError(err);
   });
 
@@ -63,7 +63,7 @@ export function subscribeToUserReports(
     applicantReports = snapshot.docs.map(docSnap => docSnap.data() as DailyReport);
     handleUpdate();
   }, (err) => {
-    console.error('Error listening to user applicant reports:', err);
+    console.warn('Notice listening to user applicant reports:', err);
     if (onError) onError(err);
   });
 
@@ -134,6 +134,7 @@ export async function createDailyReport(
     applicantWhatsapp: formData.applicantWhatsapp || '',
     uid9Kucing: formData.uid9Kucing || '',
     applicantTelegramUsername: formData.applicantTelegramUsername || '',
+    applicantName: formData.applicantName || '',
     grup: formData.grup || 'T0',
     visit: Number(formData.visit) || 0,
     applicant: Number(formData.applicant) || 0,
@@ -142,7 +143,8 @@ export async function createDailyReport(
     permission: Number(formData.permission) || 0,
     effectiveStatus: formData.effectiveStatus || 'YES',
     note: formData.note || '',
-    // videoUrl is excluded from Firestore save to avoid document size limits
+    // videoUrl is saved if it's a valid web URL (blob/data URLs are excluded from Firestore to prevent 1MB document size limits)
+    ...(formData.videoUrl && (formData.videoUrl.startsWith('http://') || formData.videoUrl.startsWith('https://')) ? { videoUrl: formData.videoUrl } : {}),
     applicantPhotoUrl: formData.applicantPhotoUrl || '',
     isLate: formData.isLate || false,
     fine: formData.fine || 0,
@@ -190,10 +192,11 @@ export async function createDailyReport(
         const reportRef = doc(db, SUMMARY_COLLECTION, existingId);
         await setDoc(reportRef, updatedReport, { merge: true });
 
+        const cleanSender = (report.username || '').replace(/@/g, '').trim();
         createNotification({
           targetRole: 'ADMIN_OWNER',
           title: 'Laporan Harian Diperbarui',
-          message: `Laporan harian dikirim ulang/diperbarui oleh @${report.username} untuk tanggal ${report.date}.`,
+          message: `Laporan harian dikirim ulang/diperbarui oleh @${cleanSender} untuk tanggal ${report.date}.`,
           type: 'NEW_REPORT',
           reportId: existingId,
           senderName: report.username
@@ -208,19 +211,23 @@ export async function createDailyReport(
 
     // Trigger notification to Admin & Owner if status is Pending or new report
     if (isApplicantReport) {
+      const cleanRec = (report.recruiterUsername || report.username || '').replace(/@/g, '').trim();
+      const cleanApp = (report.applicantTelegramUsername || '').replace(/@/g, '').trim();
+      const applicantName = cleanApp ? `@${cleanApp}` : (report.name || 'Pelamar');
       createNotification({
         targetRole: 'ADMIN_OWNER',
         title: 'Laporan Rekrutan Baru (Pending)',
-        message: `Laporan rekrutan dari @${report.recruiterUsername || report.username} untuk pelamar ${report.applicantTelegramUsername ? '@' + report.applicantTelegramUsername.replace(/^@/, '') : (report.name || 'Pelamar')}. Status: Pending.`,
+        message: `Laporan rekrutan dari @${cleanRec} untuk pelamar ${applicantName}. Status: Pending.`,
         type: 'NEW_REPORT',
         reportId,
         senderName: report.username
       }).catch(err => console.error('Error creating new report notification:', err));
     } else {
+      const cleanSender = (report.username || '').replace(/@/g, '').trim();
       createNotification({
         targetRole: 'ADMIN_OWNER',
         title: 'Laporan Harian Baru',
-        message: `Laporan harian baru dikirim oleh @${report.username} untuk tanggal ${report.date}.`,
+        message: `Laporan harian baru dikirim oleh @${cleanSender} untuk tanggal ${report.date}.`,
         type: 'NEW_REPORT',
         reportId,
         senderName: report.username
@@ -276,7 +283,8 @@ export async function updateReportStatus(
     if (recipientId) {
       const isAcc = result === 'ACC';
       const isReject = result === 'REJECT';
-      const applicantName = applicantTg ? `@${applicantTg.replace(/^@/, '')}` : 'Pelamar';
+      const cleanApp = applicantTg ? applicantTg.replace(/@/g, '').trim() : '';
+      const applicantName = cleanApp ? `@${cleanApp}` : 'Pelamar';
 
       createNotification({
         targetUserId: recipientId,
@@ -306,7 +314,9 @@ export async function updateReportDetails(
   targetTelegramId?: string
 ): Promise<void> {
   const updateData = { ...data };
-  delete updateData.videoUrl;
+  if (updateData.videoUrl && !updateData.videoUrl.startsWith('http://') && !updateData.videoUrl.startsWith('https://')) {
+    delete updateData.videoUrl;
+  }
 
   try {
     const colName = await getCollectionName(reportId);
@@ -327,7 +337,8 @@ export async function updateReportDetails(
       }
 
       if (recipientId) {
-        const applicantName = applicantTg ? `@${applicantTg.replace(/^@/, '')}` : 'Pelamar';
+        const cleanApp = applicantTg ? applicantTg.replace(/@/g, '').trim() : '';
+        const applicantName = cleanApp ? `@${cleanApp}` : 'Pelamar';
         createNotification({
           targetUserId: recipientId,
           title: 'Promosi Rekrutan! 🚀',
@@ -347,6 +358,16 @@ export async function updateReportPermission(reportId: string, permission: numbe
     const colName = await getCollectionName(reportId);
     const reportRef = doc(db, colName, reportId);
     await setDoc(reportRef, { permission, updatedAt: new Date().toISOString() }, { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `reports/${reportId}`);
+  }
+}
+
+export async function updateReportFine(reportId: string, fine: number): Promise<void> {
+  try {
+    const colName = await getCollectionName(reportId);
+    const reportRef = doc(db, colName, reportId);
+    await setDoc(reportRef, { fine, updatedAt: new Date().toISOString() }, { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `reports/${reportId}`);
   }

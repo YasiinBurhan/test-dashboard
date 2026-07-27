@@ -1,8 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { motion, AnimatePresence } from 'motion/react';
-import Tesseract from 'tesseract.js';
 import { GlassCard } from '../components/common/GlassCard';
 import { Input } from '../components/common/Input';
 import { Button } from '../components/common/Button';
@@ -25,6 +24,7 @@ import {
 import { subscribeToSystemSettings, getSystemSettings } from '../firebase/services/settingService';
 import { sendReportToTelegramApi } from '../services/api';
 import { checkReportDuplicate } from '../firebase/services/reportService';
+import { compressVideo } from '../utils/videoCompressor';
 import { subscribeToAllUsers } from '../firebase/services/userService';
 import { sendAuditCompleteBroadcast } from '../firebase/services/notificationService';
 import { triggerHaptic } from '../telegram/webapp';
@@ -80,11 +80,7 @@ const getApiBaseUrl = () => {
   if (import.meta.env.VITE_BACKEND_URL) {
     return import.meta.env.VITE_BACKEND_URL;
   }
-  const hostname = typeof window !== 'undefined' ? window.location.hostname : '';
-  if (hostname.endsWith('.vercel.app')) {
-    return '';
-  }
-  return 'https://test-dashboard-lake-pi.vercel.app';
+  return '';
 };
 
 const API_BASE_URL = getApiBaseUrl();
@@ -144,6 +140,36 @@ const compressMediaFile = (file: File): Promise<string> => {
     reader.onerror = (err) => reject(err);
     reader.readAsDataURL(file);
   });
+};
+
+const getTelegramGradient = (name: string): string => {
+  const gradients = [
+    'bg-gradient-to-br from-orange-400 to-red-500 text-white',
+    'bg-gradient-to-br from-emerald-400 to-green-500 text-white',
+    'bg-gradient-to-br from-sky-400 to-blue-500 text-white',
+    'bg-gradient-to-br from-cyan-400 to-teal-500 text-white',
+    'bg-gradient-to-br from-indigo-400 to-purple-500 text-white',
+    'bg-gradient-to-br from-pink-400 to-rose-500 text-white',
+    'bg-gradient-to-br from-amber-400 to-orange-500 text-white'
+  ];
+  let hash = 0;
+  const cleanName = (name || '').replace('@', '').trim();
+  for (let i = 0; i < cleanName.length; i++) {
+    hash = cleanName.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const index = Math.abs(hash) % gradients.length;
+  return gradients[index];
+};
+
+const sanitizePhotoUrl = (url?: string): string | undefined => {
+  if (!url) return url;
+  if (url.startsWith('https://unavatar.io/telegram/') && !url.includes('fallback=false')) {
+    if (url.includes('?')) {
+      return `${url}&fallback=false`;
+    }
+    return `${url}?fallback=false`;
+  }
+  return url;
 };
 
 const ChannelPlatformIcon: React.FC<{ id: string; className?: string }> = ({ id, className = "w-4 h-4 shrink-0" }) => {
@@ -234,15 +260,19 @@ const parseTelegramUsername = (raw?: string) => {
 };
 
 // In-memory cache for ultra-fast Telegram availability checks
-const tgCheckCache = new Map<string, { exists: boolean | null; title?: string; photoUrl?: string; isSyntaxValid: boolean; message?: string }>();
+const tgCheckCache = new Map<string, { exists: boolean | null; title?: string; photoUrl?: string; isSyntaxValid: boolean; message?: string; timedOut?: boolean }>();
 
-// Real-time Telegram Username Availability Checker (Ultra-fast parallel check with cache)
-const checkTelegramAvailability = async (cleanUsername: string): Promise<{
+// Real-time Telegram Username Availability Checker (Ultra-fast parallel check with cache & 15s timeout)
+const checkTelegramAvailability = async (
+  cleanUsername: string,
+  signal?: AbortSignal
+): Promise<{
   exists: boolean | null;
   title?: string;
   photoUrl?: string;
   isSyntaxValid: boolean;
   message?: string;
+  timedOut?: boolean;
 }> => {
   if (!cleanUsername) {
     return { exists: false, isSyntaxValid: false, message: 'Username belum diisi' };
@@ -260,22 +290,47 @@ const checkTelegramAvailability = async (cleanUsername: string): Promise<{
 
   const lowerKey = cleanUsername.toLowerCase();
   if (tgCheckCache.has(lowerKey)) {
+    console.log(`[TelegramCheck] Cache hit for @${cleanUsername}`);
     return tgCheckCache.get(lowerKey)!;
   }
 
-  const unavatarUrl = `https://unavatar.io/telegram/${cleanUsername}?fallback=false`;
+  console.log(`[TelegramCheck] Request starting for @${cleanUsername}`);
+  const startTime = Date.now();
+
+  const timeoutController = new AbortController();
+  const timeoutId = setTimeout(() => {
+    console.warn(`[TelegramCheck] Request timeout (15s) for @${cleanUsername}`);
+    timeoutController.abort();
+  }, 15000);
+
+  const onExternalAbort = () => {
+    timeoutController.abort();
+  };
+
+  if (signal) {
+    if (signal.aborted) {
+      clearTimeout(timeoutId);
+      console.log(`[TelegramCheck] Request aborted before fetch for @${cleanUsername}`);
+      throw new DOMException('Aborted', 'AbortError');
+    }
+    signal.addEventListener('abort', onExternalAbort);
+  }
 
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-    const response = await fetch(`${API_BASE_URL}/api/check-telegram/${cleanUsername}`, { signal: controller.signal });
+    const response = await fetch(`${API_BASE_URL}/api/check-telegram/${cleanUsername}`, {
+      signal: timeoutController.signal
+    });
     clearTimeout(timeoutId);
+    if (signal) signal.removeEventListener('abort', onExternalAbort);
+
+    const duration = Date.now() - startTime;
+    console.log(`[TelegramCheck] Request completed in ${duration}ms for @${cleanUsername}`);
 
     if (!response.ok) {
       const res = {
         exists: null,
         title: `@${cleanUsername}`,
+        photoUrl: undefined,
         isSyntaxValid: true,
         message: `Format username @${cleanUsername} valid.`
       };
@@ -299,7 +354,7 @@ const checkTelegramAvailability = async (cleanUsername: string): Promise<{
       const res = {
         exists: true,
         title: data.title || `@${cleanUsername}`,
-        photoUrl: data.photoUrl || unavatarUrl,
+        photoUrl: data.photoUrl || undefined,
         isSyntaxValid: true,
         message: `Username @${cleanUsername} terdaftar aktif.`
       };
@@ -311,15 +366,37 @@ const checkTelegramAvailability = async (cleanUsername: string): Promise<{
     const res = {
       exists: null,
       title: `@${cleanUsername}`,
+      photoUrl: undefined,
       isSyntaxValid: true,
       message: `Format username @${cleanUsername} valid.`
     };
     tgCheckCache.set(lowerKey, res);
     return res;
-  } catch {
+  } catch (err: any) {
+    clearTimeout(timeoutId);
+    if (signal) signal.removeEventListener('abort', onExternalAbort);
+
+    if (err.name === 'AbortError') {
+      if (signal?.aborted) {
+        console.log(`[TelegramCheck] Request aborted for @${cleanUsername}`);
+        throw err;
+      }
+      console.warn(`[TelegramCheck] Request timed out for @${cleanUsername}`);
+      return {
+        exists: null,
+        title: `@${cleanUsername}`,
+        photoUrl: undefined,
+        isSyntaxValid: true,
+        timedOut: true,
+        message: `Pemeriksaan username @${cleanUsername} melebihi batas waktu 15 detik. Menggunakan format standar.`
+      };
+    }
+
+    console.error(`[TelegramCheck] Request failed for @${cleanUsername}:`, err);
     const res = {
       exists: null,
       title: `@${cleanUsername}`,
+      photoUrl: undefined,
       isSyntaxValid: true,
       message: `Format username @${cleanUsername} valid.`
     };
@@ -327,6 +404,234 @@ const checkTelegramAvailability = async (cleanUsername: string): Promise<{
     return res;
   }
 };
+
+interface TelegramPreviewCardProps {
+  cleanTg: string;
+  formattedTg: string;
+  tgUrl: string;
+  tgStatus: {
+    status: 'idle' | 'checking' | 'exists' | 'not_found' | 'invalid_syntax' | 'format_valid';
+    title?: string;
+    photoUrl?: string;
+    message?: string;
+    timedOut?: boolean;
+  };
+  isCheckingTg: boolean;
+  applicantName?: string;
+  formImgErr: boolean;
+  onImgErr: () => void;
+}
+
+const TelegramPreviewCard: React.FC<TelegramPreviewCardProps> = React.memo(({
+  cleanTg,
+  formattedTg,
+  tgUrl,
+  tgStatus,
+  isCheckingTg,
+  applicantName,
+  formImgErr,
+  onImgErr
+}) => {
+  if (!cleanTg || (tgStatus.status === 'idle' && !isCheckingTg)) return null;
+
+  if (isCheckingTg && tgStatus.status === 'idle') {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: -4 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="p-3.5 rounded-2xl bg-sky-950/40 border border-sky-500/30 flex items-center gap-3 shadow-md"
+      >
+        <Loader2 className="w-5 h-5 text-sky-400 animate-spin shrink-0" />
+        <div>
+          <span className="text-xs font-bold text-sky-300">Memeriksa Akun Telegram...</span>
+          <p className="text-[10px] text-slate-400 font-mono">Verifikasi keberadaan username @{cleanTg} di server Telegram</p>
+        </div>
+      </motion.div>
+    );
+  }
+
+  if (tgStatus.status === 'invalid_syntax') {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: -4 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="p-3.5 rounded-2xl bg-amber-950/70 border border-amber-500/40 flex items-start gap-3 shadow-lg relative"
+      >
+        <div className="w-9 h-9 rounded-full bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0">
+          <AlertTriangle className="w-5 h-5" />
+        </div>
+        <div className="space-y-0.5 flex-1">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-amber-300">Format Username Tidak Valid</span>
+            {isCheckingTg && (
+              <span className="text-[9px] bg-sky-500/10 text-sky-300 px-2 py-0.5 rounded-full border border-sky-500/20 font-medium flex items-center gap-1">
+                <Loader2 className="w-2.5 h-2.5 animate-spin" /> Memeriksa...
+              </span>
+            )}
+          </div>
+          <p className="text-[11px] text-amber-200/90 font-medium">{tgStatus.message}</p>
+        </div>
+      </motion.div>
+    );
+  }
+
+  if (tgStatus.status === 'format_valid') {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: -4 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-start justify-between gap-3 shadow-xl"
+      >
+        <div className="flex items-start gap-3 flex-1">
+          <div className="w-10 h-10 rounded-full bg-white dark:bg-slate-950 border border-slate-900 flex items-center justify-center text-slate-700 dark:text-slate-300 shrink-0 shadow-inner">
+            <Check className="w-5 h-5 text-sky-400" />
+          </div>
+          <div className="space-y-1 flex-1">
+            <div className="flex items-center justify-between gap-2 flex-wrap w-full">
+              <span className="text-xs font-black text-slate-900 dark:text-white font-mono">{formattedTg}</span>
+              <div className="flex items-center gap-1.5">
+                {isCheckingTg && (
+                  <span className="text-[9px] bg-sky-500/10 text-sky-300 px-2 py-0.5 rounded-full border border-sky-500/20 font-medium flex items-center gap-1">
+                    <Loader2 className="w-2.5 h-2.5 animate-spin" /> Memeriksa...
+                  </span>
+                )}
+                <span className="text-[9px] bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-2.5 py-0.5 rounded-full border border-slate-200 dark:border-slate-800 font-bold flex items-center gap-1 uppercase tracking-wider">
+                  Format Valid
+                </span>
+              </div>
+            </div>
+            <p className="text-xs text-sky-300 font-bold">
+              ✓ Format penulisan username valid
+            </p>
+            <p className="text-[10px] text-slate-600 dark:text-slate-400 leading-relaxed">
+              {tgStatus.message || 'Format username benar, namun keberadaan akun di Telegram tidak dapat divalidasi otomatis secara real-time saat ini.'}
+            </p>
+          </div>
+        </div>
+
+        <a
+          href={tgUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-750 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 text-[11px] font-bold flex items-center gap-1 transition-all shrink-0"
+        >
+          <span>Cek Link</span>
+          <ExternalLink className="w-3 h-3" />
+        </a>
+      </motion.div>
+    );
+  }
+
+  if (tgStatus.status === 'not_found') {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: -4 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="p-3.5 rounded-2xl bg-gradient-to-r from-rose-950/90 via-red-950/80 to-slate-900 border border-rose-500/60 flex items-start justify-between gap-3 shadow-xl"
+      >
+        <div className="flex items-start gap-3 flex-1">
+          <div className="w-10 h-10 rounded-full bg-rose-500/20 border border-rose-500/50 flex items-center justify-center text-rose-400 shrink-0 shadow-inner">
+            <UserX className="w-5 h-5" />
+          </div>
+          <div className="space-y-1 flex-1">
+            <div className="flex items-center justify-between gap-2 flex-wrap w-full">
+              <span className="text-xs font-black text-slate-900 dark:text-white font-mono">{formattedTg}</span>
+              <div className="flex items-center gap-1.5">
+                {isCheckingTg && (
+                  <span className="text-[9px] bg-sky-500/10 text-sky-300 px-2 py-0.5 rounded-full border border-sky-500/20 font-medium flex items-center gap-1">
+                    <Loader2 className="w-2.5 h-2.5 animate-spin" /> Memeriksa...
+                  </span>
+                )}
+                <span className="text-[9px] bg-rose-500/30 text-rose-200 px-2.5 py-0.5 rounded-full border border-rose-500/40 font-black flex items-center gap-1 uppercase tracking-wider">
+                  <XCircle className="w-2.5 h-2.5 text-rose-400" />
+                  Tidak Terdaftar
+                </span>
+              </div>
+            </div>
+            <p className="text-xs text-rose-200 font-bold">
+              ⚠️ Username tidak ditemukan di Telegram!
+            </p>
+            <p className="text-[10px] text-slate-700 dark:text-slate-300">
+              Akun @{cleanTg} belum dibuat atau username salah eja. Mohon pastikan ejaan username pelamar sudah benar.
+            </p>
+          </div>
+        </div>
+
+        <a
+          href={tgUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="px-3 py-1.5 rounded-xl bg-rose-900/60 hover:bg-rose-800/80 border border-rose-500/40 text-rose-200 text-[11px] font-bold flex items-center gap-1 transition-all shrink-0"
+        >
+          <span>Cek Link</span>
+          <ExternalLink className="w-3 h-3" />
+        </a>
+      </motion.div>
+    );
+  }
+
+  // 'exists' Status
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -4 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-950/90 via-sky-950/80 to-slate-900 border border-emerald-500/50 flex items-center justify-between gap-3 shadow-xl"
+    >
+      <div className="flex items-center gap-3 flex-1">
+        {tgStatus.photoUrl && !formImgErr ? (
+          <div className="relative shrink-0">
+            <img referrerPolicy="no-referrer"
+              src={sanitizePhotoUrl(tgStatus.photoUrl)}
+              alt={applicantName || tgStatus.title || cleanTg}
+              className="w-12 h-12 rounded-full object-cover border-2 border-emerald-400 shadow-lg ring-2 ring-emerald-500/20"
+              onError={onImgErr}
+            />
+            <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-emerald-500 border-2 border-slate-900 flex items-center justify-center">
+              <Check className="w-2.5 h-2.5 text-slate-950 font-black" />
+            </div>
+          </div>
+        ) : (
+          <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white shadow-md shrink-0 font-bold border-2 border-emerald-400 text-lg uppercase ${getTelegramGradient(applicantName || tgStatus.title || cleanTg)}`}>
+            <span>{(applicantName || tgStatus.title || cleanTg).replace('@', '').trim().charAt(0).toUpperCase()}</span>
+          </div>
+        )}
+
+        <div className="space-y-0.5 flex-1">
+          <div className="flex items-center justify-between gap-2 flex-wrap w-full">
+            <span className="text-xs font-black text-slate-900 dark:text-white font-mono">{formattedTg}</span>
+            <div className="flex items-center gap-1.5">
+              {isCheckingTg && (
+                <span className="text-[9px] bg-sky-500/10 text-sky-300 px-2 py-0.5 rounded-full border border-sky-500/20 font-medium flex items-center gap-1">
+                  <Loader2 className="w-2.5 h-2.5 animate-spin" /> Memeriksa...
+                </span>
+              )}
+              <span className="text-[9px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-500/30 font-bold flex items-center gap-1">
+                <Check className="w-2.5 h-2.5 text-emerald-400" />
+                Terdaftar Aktif
+              </span>
+            </div>
+          </div>
+          <p className="text-[11px] font-bold text-slate-900 dark:text-white">
+            {applicantName || tgStatus.title || formattedTg}
+          </p>
+          <p className="text-[10px] text-slate-600 dark:text-slate-400 font-mono">
+            Link: <span className="text-sky-300">{tgUrl}</span>
+          </p>
+        </div>
+      </div>
+
+      <a
+        href={tgUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black flex items-center gap-1.5 transition-all shadow-md shrink-0 hover:scale-[1.03]"
+      >
+        <span>Buka Chat</span>
+        <ExternalLink className="w-3.5 h-3.5" />
+      </a>
+    </motion.div>
+  );
+});
 
 // Channel Platforms with Colors & Active Styles
 const CHANNELS = [
@@ -353,6 +658,7 @@ const ReportListCard: React.FC<{
 }> = ({ rep, isAdminOrOwner, onUpdateStatus, onUpdatePermission, onUpdateDetails, userPhotoMap, isPemeriksaan, isArsip }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [showMediaModal, setShowMediaModal] = useState(false);
+  const [imgErr, setImgErr] = useState(false);
   const { clean, formatted, url } = rep.applicantTelegramUsername ? parseTelegramUsername(rep.applicantTelegramUsername) : { clean: null, formatted: null, url: null };
 
   const { userProfile, telegramUser } = useAuth();
@@ -408,11 +714,6 @@ const ReportListCard: React.FC<{
         applicantPhotoUrl: newPhotoUrl
       };
 
-      // If the old videoUrl was just a fallback to the old profile picture, update it to the new one!
-      if (rep.videoUrl && (rep.videoUrl === rep.applicantPhotoUrl || rep.videoUrl.startsWith('https://unavatar.io/telegram/'))) {
-        updateData.videoUrl = newPhotoUrl;
-      }
-
       await onUpdateDetails(rep.reportId || '', updateData, rep.telegramId);
       setIsEditing(false);
       triggerHaptic('notification', 'success');
@@ -453,6 +754,17 @@ const ReportListCard: React.FC<{
 
   const isImageMedia = rep.videoUrl && (rep.videoUrl.startsWith('data:image/') || rep.videoUrl.match(/\.(jpeg|jpg|png|webp|gif)($|\?)/i));
 
+  const displayName = applicantPhotoInfo?.name || applicantPhotoInfo?.firstName || (clean ? clean : 'Pelamar');
+  const sanitizedApplicantPhotoUrl = useMemo(() => sanitizePhotoUrl(rep.applicantPhotoUrl), [rep.applicantPhotoUrl]);
+  const sanitizedApplicantInfoPhotoUrl = useMemo(() => sanitizePhotoUrl(applicantPhotoInfo?.photoUrl), [applicantPhotoInfo?.photoUrl]);
+
+  const hasPhoto = (sanitizedApplicantPhotoUrl || sanitizedApplicantInfoPhotoUrl || isImageMedia) && !imgErr;
+  const gradientClass = useMemo(() => getTelegramGradient(displayName), [displayName]);
+  const initial = useMemo(() => {
+    const cleanName = displayName.replace('@', '').trim();
+    return cleanName ? cleanName.charAt(0).toUpperCase() : 'P';
+  }, [displayName]);
+
   return (
     <div className="bg-white dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 text-xs overflow-hidden transition-all shadow-md hover:border-slate-300 dark:hover:border-slate-300 dark:border-slate-700">
       {/* Header Bar - Always Visible (Click to Collapse/Expand) */}
@@ -461,51 +773,49 @@ const ReportListCard: React.FC<{
           setIsExpanded(!isExpanded);
           triggerHaptic('selection');
         }}
-        className="p-3 flex items-center justify-between cursor-pointer select-none bg-slate-50 dark:bg-slate-950 hover:bg-slate-100 dark:hover:bg-slate-50 dark:bg-slate-900/60 transition-colors"
+        className="p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer select-none bg-slate-50 dark:bg-slate-950 hover:bg-slate-100 dark:hover:bg-slate-50 dark:bg-slate-900/60 transition-colors"
       >
-        <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-8 h-8 rounded-full overflow-hidden bg-slate-200 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 shrink-0 flex items-center justify-center shadow-inner">
-            {rep.applicantPhotoUrl ? (
-              <img referrerPolicy="no-referrer"                 src={rep.applicantPhotoUrl} 
+        <div className="flex items-start gap-2.5 min-w-0 flex-1">
+          <div className={`w-8 h-8 rounded-full overflow-hidden shrink-0 flex items-center justify-center shadow-inner ${
+            hasPhoto 
+              ? 'bg-slate-200 dark:bg-slate-900 border border-slate-300 dark:border-slate-700' 
+              : `${gradientClass} font-bold text-xs uppercase`
+          }`}>
+            {sanitizedApplicantPhotoUrl && !imgErr ? (
+              <img referrerPolicy="no-referrer"                 src={sanitizedApplicantPhotoUrl} 
                 alt="Foto Pelamar" 
                 className="w-full h-full object-cover" 
-                               />
-            ) : applicantPhotoInfo?.photoUrl ? (
-              <img referrerPolicy="no-referrer"                 src={applicantPhotoInfo.photoUrl} 
+                onError={() => setImgErr(true)}
+              />
+            ) : sanitizedApplicantInfoPhotoUrl && !imgErr ? (
+              <img referrerPolicy="no-referrer"                 src={sanitizedApplicantInfoPhotoUrl} 
                 alt="Foto Pelamar" 
                 className="w-full h-full object-cover" 
-                               />
-            ) : isImageMedia ? (
+                onError={() => setImgErr(true)}
+              />
+            ) : isImageMedia && !imgErr ? (
               <img referrerPolicy="no-referrer"                 src={rep.videoUrl} 
                 alt="Foto Pelamar" 
                 className="w-full h-full object-cover" 
-                               />
+                onError={() => setImgErr(true)}
+              />
             ) : (
-              <span className="text-[11px] font-black text-amber-600 dark:text-amber-400">
-                {(rep.applicantTelegramUsername || rep.applicantWhatsapp || 'P').replace('@', '').charAt(0).toUpperCase()}
-              </span>
+              <span>{initial}</span>
             )}
           </div>
-          <div className="flex flex-col min-w-0">
-            <span className="font-bold text-slate-900 dark:text-white text-xs truncate leading-tight flex items-center gap-1.5 flex-wrap">
-              <span>{applicantPhotoInfo?.name || applicantPhotoInfo?.firstName || (clean ? clean : 'Pelamar')}</span>
-              {rep.videoUrl && (
-                <span className="text-[9px] px-1.5 py-0.2 bg-sky-500/10 text-sky-600 dark:text-sky-400 rounded-md border border-sky-500/20 font-medium shrink-0 flex items-center gap-1">
-                  🎥 Video Bukti
+          <div className="flex flex-col min-w-0 gap-1 flex-1">
+            <div className="flex items-center justify-between gap-1.5 w-full">
+              <span className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm truncate leading-tight flex-1">
+                {displayName}
+              </span>
+              {rep.grup && (
+                <span className="text-[8px] sm:text-[9px] px-1.5 py-0.5 bg-purple-500/10 text-purple-600 dark:text-purple-400 rounded-md border border-purple-500/20 font-black shrink-0 flex items-center gap-0.5 uppercase tracking-wide">
+                  👥 {rep.grup === 'T0' ? 'T0-MARK' : rep.grup === 'V0' ? 'V0' : rep.grup === 'RECRUITER' ? 'RECRUITER' : rep.grup === 'T3' ? 'T0-MARK' : rep.grup}
                 </span>
               )}
-              {rep.posting !== undefined && rep.posting > 0 && (
-                <span className="text-[9px] px-1.5 py-0.2 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-md border border-indigo-500/20 font-bold shrink-0 flex items-center gap-1">
-                  📦 {rep.posting} Posting
-                </span>
-              )}
-              {(rep.isLate || (rep.fine && rep.fine > 0)) && (
-                <span className="text-[9px] px-1.5 py-0.2 bg-rose-500/10 text-rose-600 dark:text-rose-400 rounded-md border border-rose-500/20 font-black shrink-0 flex items-center gap-1">
-                  ⚠️ Terlambat (Denda Rp {(rep.fine || 5000).toLocaleString('id-ID')})
-                </span>
-              )}
-            </span>
-            <div className="flex items-center gap-2 text-[10px] text-slate-600 dark:text-slate-400 font-medium flex-wrap">
+            </div>
+            
+            <div className="flex items-center gap-1.5 text-[10px] text-slate-600 dark:text-slate-400 font-medium flex-wrap">
               {formatted ? (
                 <a 
                   href={url as string} 
@@ -521,34 +831,58 @@ const ReportListCard: React.FC<{
                 <span className="text-slate-500 dark:text-slate-400 text-[10px]">Tanpa Username Telegram</span>
               )}
             </div>
+
+            {/* Badges row */}
+            <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+              {rep.videoUrl && (
+                <span className="text-[8px] sm:text-[9px] px-1.5 py-0.5 bg-sky-500/10 text-sky-600 dark:text-sky-400 rounded-md border border-sky-500/20 font-medium shrink-0 flex items-center gap-1">
+                  🎥 Video
+                </span>
+              )}
+              {rep.posting !== undefined && rep.posting > 0 && (
+                <span className="text-[8px] sm:text-[9px] px-1.5 py-0.5 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-md border border-indigo-500/20 font-bold shrink-0 flex items-center gap-1">
+                  📦 {rep.posting} Post
+                </span>
+              )}
+              {!!(rep.isLate || (rep.fine && rep.fine > 0)) && (
+                <span className="text-[8px] sm:text-[9px] px-1.5 py-0.5 bg-rose-500/10 text-rose-600 dark:text-rose-400 rounded-md border border-rose-500/20 font-black shrink-0 flex items-center gap-1">
+                  ⚠️ Terlambat
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between sm:justify-end gap-2.5 w-full sm:w-auto pt-2 sm:pt-0 border-t border-slate-200/50 dark:border-slate-800/40 sm:border-0" onClick={(e) => e.stopPropagation()}>
           {isAdminOrOwner ? (
-            <select
-              value={rep.result || 'Pending'}
-              onChange={(e) => onUpdateStatus(rep.reportId || '', e.target.value as 'Pending' | 'ACC' | 'REJECT', rep.telegramId, rep.applicantTelegramUsername)}
-              className={`px-2 py-0.5 rounded-full text-[10px] font-black border outline-none appearance-none cursor-pointer ${
-                rep.result === 'ACC'
-                  ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30'
-                  : rep.result === 'REJECT'
-                  ? 'bg-rose-500/20 text-rose-700 dark:text-rose-300 border-rose-500/30'
-                  : 'bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/30'
-              }`}
-            >
-              <option value="Pending" className="bg-white dark:bg-slate-900 text-amber-600 dark:text-amber-400">
-                {isPemeriksaan ? 'Pending (Belum Diperiksa)' : 'Pending'}
-              </option>
-              <option value="ACC" className="bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400">
-                {isPemeriksaan ? 'ACC (Bekerja)' : 'ACC'}
-              </option>
-              <option value="REJECT" className="bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400">
-                {isPemeriksaan ? 'REJECT (Tidak Bekerja)' : 'REJECT'}
-              </option>
-            </select>
+            <div className="relative">
+              <select
+                value={rep.result || 'Pending'}
+                onChange={(e) => onUpdateStatus(rep.reportId || '', e.target.value as 'Pending' | 'ACC' | 'REJECT', rep.telegramId, rep.applicantTelegramUsername)}
+                className={`pl-2.5 pr-7 py-1 rounded-full text-[10px] font-black border outline-none cursor-pointer appearance-none transition-all ${
+                  rep.result === 'ACC'
+                    ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30'
+                    : rep.result === 'REJECT'
+                    ? 'bg-rose-500/20 text-rose-700 dark:text-rose-300 border-rose-500/30'
+                    : 'bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/30'
+                }`}
+              >
+                <option value="Pending" className="bg-white dark:bg-slate-900 text-amber-600 dark:text-amber-400">
+                  {isPemeriksaan ? 'Pending (Belum)' : 'Pending'}
+                </option>
+                <option value="ACC" className="bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400">
+                  {isPemeriksaan ? 'ACC (Bekerja)' : 'ACC'}
+                </option>
+                <option value="REJECT" className="bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400">
+                  {isPemeriksaan ? 'REJECT (Tidak)' : 'REJECT'}
+                </option>
+              </select>
+              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2">
+                <ChevronDown className="w-3 h-3 text-slate-500" />
+              </div>
+            </div>
           ) : (
-            <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${
+            <span className={`px-2.5 py-1 rounded-full text-[10px] font-black border ${
               rep.result === 'ACC'
                 ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30'
                 : rep.result === 'REJECT'
@@ -558,7 +892,7 @@ const ReportListCard: React.FC<{
               {rep.result === 'ACC'
                 ? (isPemeriksaan ? 'ACC (Bekerja)' : 'ACC')
                 : rep.result === 'REJECT'
-                ? (isPemeriksaan ? 'REJECT (Tidak Bekerja)' : 'REJECT')
+                ? (isPemeriksaan ? 'REJECT (Tidak)' : 'REJECT')
                 : 'Pending'}
             </span>
           )}
@@ -570,7 +904,7 @@ const ReportListCard: React.FC<{
               setIsExpanded(!isExpanded);
               triggerHaptic('selection');
             }}
-            className="p-1.5 rounded-xl bg-slate-200 dark:bg-slate-900 hover:bg-slate-300 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white border border-slate-300 dark:border-slate-800 transition-all flex items-center gap-1 text-[10px] font-bold shadow-sm"
+            className="px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-slate-900 hover:bg-slate-200 dark:hover:bg-slate-850 text-slate-800 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-slate-800 transition-all flex items-center gap-1 text-[10px] font-bold shadow-sm"
             title={isExpanded ? "Sembunyikan Detail" : "Lihat Detail Akun"}
           >
             <span>{isExpanded ? 'Tutup' : 'Detail'}</span>
@@ -876,11 +1210,21 @@ const ReportListCard: React.FC<{
 export const DataHarianPage: React.FC = () => {
   const { userProfile, telegramUser } = useAuth();
   const { reports, submitReport, updateStatus, updatePermission, updateDetails, isLoading } = useReports();
-  const [activeTab, setActiveTab] = useState<'formulir' | 'minggu_ini' | 'pemeriksaan'>('formulir');
+  const [activeTab, setActiveTab] = useState<'formulir' | 'minggu_ini' | 'pemeriksaan'>('minggu_ini');
+
+  useEffect(() => {
+    if (userProfile) {
+      const isAdm = userProfile.role === 'Admin' || userProfile.role === 'Owner';
+      if (!isAdm && activeTab === 'minggu_ini') {
+        setActiveTab('formulir');
+      }
+    }
+  }, [userProfile?.role]);
   const [pemeriksaanSubTab, setPemeriksaanSubTab] = useState<'pemeriksaan' | 'arsip'>('pemeriksaan');
   const [pemeriksaanFilter, setPemeriksaanFilter] = useState<'pending' | 'bekerja' | 'tidak_bekerja'>('pending');
   const [activeDayTab, setActiveDayTab] = useState<'Semua' | 'Senin' | 'Selasa' | 'Rabu' | 'Kamis' | 'Jumat' | 'Sabtu' | 'Minggu'>('Semua');
   const [selectedRecruiter, setSelectedRecruiter] = useState<string>('Semua');
+  const [selectedOnBehalfRecruiter, setSelectedOnBehalfRecruiter] = useState<string>('');
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [expandedArchiveWeekKey, setExpandedArchiveWeekKey] = useState<string | null>(null);
   const [expandedArchiveDayKey, setExpandedArchiveDayKey] = useState<string | null>(null);
@@ -1120,6 +1464,26 @@ export const DataHarianPage: React.FC = () => {
 
     return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
   }, [allUsers, reports]);
+
+  const onBehalfRecruiterObj = useMemo(() => {
+    if (!isAdminOrOwner) return null;
+    return recruitersList.find(r => r.key === selectedOnBehalfRecruiter) || null;
+  }, [isAdminOrOwner, recruitersList, selectedOnBehalfRecruiter]);
+
+  useEffect(() => {
+    if (isAdminOrOwner && recruitersList.length > 0 && !selectedOnBehalfRecruiter) {
+      setSelectedOnBehalfRecruiter(recruitersList[0].key);
+    }
+  }, [isAdminOrOwner, recruitersList, selectedOnBehalfRecruiter]);
+
+  useEffect(() => {
+    if (isAdminOrOwner && onBehalfRecruiterObj) {
+      setFormData(prev => ({
+        ...prev,
+        recruiterUsername: onBehalfRecruiterObj.username
+      }));
+    }
+  }, [isAdminOrOwner, onBehalfRecruiterObj]);
 
   // Admin/Owner sees all reports, regular users see only theirs
   const userReports = useMemo(() => {
@@ -1459,6 +1823,7 @@ export const DataHarianPage: React.FC = () => {
     recruiterUsername: autoRecruiterUsername,
     channel: 'Facebook',
     applicantWhatsapp: '',
+    applicantName: '',
     uid9Kucing: '',
     applicantTelegramUsername: '',
     result: 'Pending',
@@ -1525,6 +1890,8 @@ export const DataHarianPage: React.FC = () => {
   };
   const [showReview, setShowReview] = useState<boolean>(false);
   const [isCheckingDuplicate, setIsCheckingDuplicate] = useState<boolean>(false);
+  const [isCompressingVideo, setIsCompressingVideo] = useState(false);
+  const [compressionProgress, setCompressionProgress] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [formStep, setFormStep] = useState<'upload' | 'data'>('upload');
 
@@ -1537,171 +1904,74 @@ export const DataHarianPage: React.FC = () => {
     setScanProgress(0);
     setScanError(null);
     triggerHaptic('impact');
+    
+    // Helper to convert File to Base64
+    const fileToBase64 = (f: File): Promise<string> => {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(f);
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = error => reject(error);
+      });
+    };
+
     try {
-      // Run Tesseract.js OCR directly in the browser
-      const result = await Tesseract.recognize(
-        file,
-        'eng',
-        {
-          logger: m => {
-            if (m.status === 'recognizing text') {
-              setScanProgress(Math.round(m.progress * 100));
-            }
-          }
-        }
-      );
+      setScanProgress(20);
+      const base64Image = await fileToBase64(file);
+      setScanProgress(50);
+      
+      const response = await fetch('/api/scan-uid', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          image: base64Image,
+          mimeType: file.type,
+        }),
+      });
 
-      const text = result.data.text || '';
+      setScanProgress(80);
 
-      let extractedUid = '';
-
-      // Helper to check if a sequence looks like a typical Indonesian phone number
-      // (Starts with 08..., 62..., +62..., or 8... and length is 9-14 digits)
-      const isPhoneNumber = (numStr: string) => {
-        const clean = numStr.replace(/\D/g, '');
-        if ((clean.startsWith('08') || clean.startsWith('62') || clean.startsWith('8')) && clean.length >= 9 && clean.length <= 14) {
-          return true;
-        }
-        return false;
-      };
-
-      // Helper to clean common OCR confusion characters into numbers
-      const cleanOcrDigits = (str: string) => {
-        return str
-          .replace(/o/gi, '0')     // 'o' or 'O' to '0'
-          .replace(/[ilI|]/g, '1') // 'i', 'l', 'I', or pipe '|' to '1'
-          .replace(/s/gi, '5')     // 's' or 'S' to '5'
-          .replace(/z/gi, '2')     // 'z' or 'Z' to '2'
-          .replace(/b/g, '6')      // 'b' to '6'
-          .replace(/g/g, '9')      // 'g' to '9'
-          .replace(/\D/g, '');     // Strip all other non-digits
-      };
-
-      const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-
-      // --- STAGE 1: Keyword scanning with multi-line lookahead ---
-      for (let i = 0; i < lines.length; i++) {
-        const lineLower = lines[i].toLowerCase();
-        const hasKeyword = lineLower.includes('uid') || 
-                            lineLower.includes('user id') || 
-                            lineLower.includes('id pelamar') || 
-                            lineLower.includes('id:') || 
-                            lineLower.includes('id ') ||
-                            lineLower.includes('pelamar');
-
-        if (hasKeyword) {
-          // 1a. Check same line (excluding the keyword label itself)
-          const cleanLine = lineLower
-            .replace(/user\s*id/g, '')
-            .replace(/id\s*pelamar/g, '')
-            .replace(/id/g, '')
-            .replace(/uid/g, '')
-            .replace(/pelamar/g, '');
-
-          // Look for any string that contains 5-15 digits or digit-lookalikes
-          const sameLineMatches = cleanLine.match(/[0-9oilszbg|]{5,15}/gi);
-          if (sameLineMatches) {
-            for (const match of sameLineMatches) {
-              const cleaned = cleanOcrDigits(match);
-              if (cleaned.length >= 5 && cleaned.length <= 15 && !isPhoneNumber(cleaned)) {
-                extractedUid = cleaned;
-                break;
-              }
-            }
-          }
-          if (extractedUid) break;
-
-          // 1b. Check next line
-          if (i + 1 < lines.length) {
-            const nextLine = lines[i + 1];
-            const nextLineMatches = nextLine.match(/[0-9oilszbg|]{5,15}/gi);
-            if (nextLineMatches) {
-              for (const match of nextLineMatches) {
-                const cleaned = cleanOcrDigits(match);
-                if (cleaned.length >= 5 && cleaned.length <= 15 && !isPhoneNumber(cleaned)) {
-                  extractedUid = cleaned;
-                  break;
-                }
-              }
-            }
-          }
-          if (extractedUid) break;
-
-          // 1c. Check second next line
-          if (i + 2 < lines.length) {
-            const afterNextLine = lines[i + 2];
-            const afterNextLineMatches = afterNextLine.match(/[0-9oilszbg|]{5,15}/gi);
-            if (afterNextLineMatches) {
-              for (const match of afterNextLineMatches) {
-                const cleaned = cleanOcrDigits(match);
-                if (cleaned.length >= 5 && cleaned.length <= 15 && !isPhoneNumber(cleaned)) {
-                  extractedUid = cleaned;
-                  break;
-                }
-              }
-            }
-          }
-          if (extractedUid) break;
-        }
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || `Server error (${response.status}) saat memproses screenshot.`);
       }
 
-      // --- STAGE 2: Keyword search with spaces removed (for spaced out numbers like "U I D : 1 2 3 4 5") ---
-      if (!extractedUid) {
-        for (let i = 0; i < lines.length; i++) {
-          const lineLower = lines[i].toLowerCase();
-          if (lineLower.includes('uid') || lineLower.includes('user') || lineLower.includes('pelamar') || lineLower.includes('id')) {
-            const nextLineText = lines[i + 1] ? lines[i + 1] : '';
-            // Combine current and next line, strip all whitespace
-            const combinedNoSpaces = (lines[i] + nextLineText).replace(/\s+/g, '').toLowerCase();
-            const keywordMatch = combinedNoSpaces.match(/(?:uid|userid|idpelamar|id|pelamar)(?::|;|=|-)*([0-9oilszbg|]{5,15})/i);
-            if (keywordMatch && keywordMatch[1]) {
-              const cleaned = cleanOcrDigits(keywordMatch[1]);
-              if (cleaned.length >= 5 && cleaned.length <= 15 && !isPhoneNumber(cleaned)) {
-                extractedUid = cleaned;
-                break;
-              }
+      const resJson = await response.json();
+      if (resJson.success && resJson.data) {
+        const aiData = resJson.data;
+        const extractedUid = aiData.uid ? aiData.uid.trim() : '';
+        const extractedWa = aiData.whatsapp ? aiData.whatsapp.replace(/\D/g, '').trim() : '';
+        const extractedTg = aiData.telegramUsername ? aiData.telegramUsername.replace(/^@/, '').trim() : '';
+        const extractedName = aiData.name ? aiData.name.trim() : '';
+        
+        if (extractedUid) {
+          setFormData(prev => {
+            const updated = { ...prev, uid9Kucing: extractedUid };
+            if (extractedWa && !prev.applicantWhatsapp) {
+              updated.applicantWhatsapp = extractedWa;
             }
-          }
-        }
-      }
-
-      // --- STAGE 3: Fallback line-by-line standalone digits ---
-      if (!extractedUid) {
-        for (const line of lines) {
-          // Find standalone blocks of 5-15 digits that are not phone numbers
-          const standaloneMatches = line.match(/\b([0-9]{5,15})\b/g);
-          if (standaloneMatches) {
-            for (const match of standaloneMatches) {
-              if (!isPhoneNumber(match)) {
-                extractedUid = match;
-                break;
-              }
+            if (extractedTg && !prev.applicantTelegramUsername) {
+              updated.applicantTelegramUsername = extractedTg;
             }
-          }
-          if (extractedUid) break;
-        }
-      }
-
-      // --- STAGE 4: Fallback ANY digits sequence with OCR cleanup ---
-      if (!extractedUid) {
-        const generalMatches = text.match(/[0-9oilszbg|]{5,15}/gi);
-        if (generalMatches) {
-          for (const match of generalMatches) {
-            const cleaned = cleanOcrDigits(match);
-            if (cleaned.length >= 5 && cleaned.length <= 15 && !isPhoneNumber(cleaned)) {
-              extractedUid = cleaned;
-              break;
+            if (extractedName && !prev.applicantName) {
+              updated.applicantName = extractedName;
             }
+            return updated;
+          });
+          setScanProgress(100);
+          triggerHaptic('notification', 'success');
+          let msg = `Berhasil mendeteksi UID: ${extractedUid}`;
+          if (extractedWa || extractedTg) {
+            msg += ` dan melengkapi form otomatis (WA/Telegram)`;
           }
+          showAlert('success', 'Gemini AI Berhasil 🎉', msg);
+        } else {
+          throw new Error(aiData.reasoning || 'UID tidak terdeteksi oleh Gemini AI dalam screenshot. Pastikan screenshot memperlihatkan profil / UID dengan jelas.');
         }
-      }
-
-      if (extractedUid) {
-        setFormData(prev => ({ ...prev, uid9Kucing: extractedUid }));
-        triggerHaptic('notification', 'success');
-        showAlert('success', 'UID Terdeteksi 🎉', `Berhasil mendeteksi UID 9Kucing: ${extractedUid}`);
       } else {
-        throw new Error('UID tidak terdeteksi. Silakan coba screenshot lain, atau ketik UID secara manual.');
+        throw new Error(resJson.error || 'Gagal memproses screenshot dengan Gemini AI.');
       }
     } catch (err) {
       console.error(err);
@@ -1721,7 +1991,14 @@ export const DataHarianPage: React.FC = () => {
     title?: string;
     photoUrl?: string;
     message?: string;
+    timedOut?: boolean;
   }>({ status: 'idle' });
+  const [isCheckingTg, setIsCheckingTg] = useState(false);
+  const tgAbortControllerRef = useRef<AbortController | null>(null);
+  const latestTgCheckIdRef = useRef<number>(0);
+
+  const [formImgErr, setFormImgErr] = useState(false);
+  const handleFormImgErr = useCallback(() => setFormImgErr(true), []);
 
   const [settings, setSettings] = useState<SystemSettings | null>(null);
 
@@ -1735,23 +2012,45 @@ export const DataHarianPage: React.FC = () => {
   useEffect(() => {
     const rawTg = formData.applicantTelegramUsername;
     if (!rawTg || !rawTg.trim()) {
+      if (tgAbortControllerRef.current) {
+        tgAbortControllerRef.current.abort();
+        tgAbortControllerRef.current = null;
+      }
+      setIsCheckingTg(false);
       setTgStatus({ status: 'idle' });
+      setFormData((prev) => ({ ...prev, applicantPhotoUrl: undefined, applicantName: '' }));
+      setFormImgErr(false);
       return;
     }
 
     const { clean: cleanTg } = parseTelegramUsername(rawTg);
 
     if (!cleanTg || cleanTg.length < 5 || !/^[a-zA-Z0-9_]{5,32}$/.test(cleanTg)) {
+      if (tgAbortControllerRef.current) {
+        tgAbortControllerRef.current.abort();
+        tgAbortControllerRef.current = null;
+      }
+      setIsCheckingTg(false);
       setTgStatus({
         status: 'invalid_syntax',
         message: 'Username Telegram minimal 5-32 karakter (hanya huruf, angka, & underscore)'
       });
+      setFormData((prev) => ({ ...prev, applicantName: '' }));
+      setFormImgErr(false);
       return;
     }
 
+    setFormImgErr(false);
+
     const lowerKey = cleanTg.toLowerCase();
     if (tgCheckCache.has(lowerKey)) {
+      if (tgAbortControllerRef.current) {
+        tgAbortControllerRef.current.abort();
+        tgAbortControllerRef.current = null;
+      }
+      setIsCheckingTg(false);
       const cached = tgCheckCache.get(lowerKey)!;
+      console.log(`[TelegramCheck] Cache hit for @${cleanTg}`);
       if (!cached.isSyntaxValid) {
         setTgStatus({ status: 'invalid_syntax', message: cached.message });
       } else if (cached.exists === false) {
@@ -1759,75 +2058,131 @@ export const DataHarianPage: React.FC = () => {
           status: 'not_found',
           message: `Username @${cleanTg} TIDAK TERDAFTAR di Telegram.`
         });
+        setFormData((prev) => ({ ...prev, applicantName: '' }));
       } else if (cached.exists === null) {
         setTgStatus({
           status: 'format_valid',
-          title: cached.title || `@${cleanTg}`,
-          message: `Format @${cleanTg} valid.`
+          title: cached.title,
+          message: cached.message || `Username @${cleanTg} valid (Status tersembunyi oleh setelan privasi Telegram).`
+        });
+        
+        setFormData((prev) => {
+          const up = { ...prev };
+          if (cached.photoUrl) {
+            up.applicantPhotoUrl = cached.photoUrl;
+          }
+          return up;
         });
       } else {
         setTgStatus({
           status: 'exists',
           title: cached.title || `@${cleanTg}`,
           photoUrl: cached.photoUrl,
-          message: `Username @${cleanTg} terdaftar aktif di Telegram.`
+          message: cached.message || `Username @${cleanTg} terdaftar aktif di Telegram.`
         });
-        if (cached.photoUrl) {
-          setFormData((prev) => ({ 
-            ...prev, 
-            applicantPhotoUrl: cached.photoUrl,
-            videoUrl: prev.videoUrl || cached.photoUrl 
-          }));
-        }
+        
+        setFormData((prev) => {
+          const up = { ...prev };
+          if (cached.photoUrl) {
+            up.applicantPhotoUrl = cached.photoUrl;
+          }
+          if (cached.title) {
+            up.applicantName = cached.title;
+          }
+          return up;
+        });
       }
       return;
     }
 
-    setTgStatus({
-      status: 'checking',
-      message: `Memeriksa keberadaan akun Telegram @${cleanTg}...`
-    });
+    // Set background checking indicator without clearing previous preview state
+    setIsCheckingTg(true);
 
+    const checkId = ++latestTgCheckIdRef.current;
     const timer = setTimeout(async () => {
-      const result = await checkTelegramAvailability(cleanTg);
-      if (!result.isSyntaxValid) {
-        setTgStatus({ status: 'invalid_syntax', message: result.message });
-      } else if (result.exists === false) {
-        setTgStatus({
-          status: 'not_found',
-          message: `Username @${cleanTg} TIDAK TERDAFTAR di Telegram.`
-        });
-      } else if (result.exists === null) {
-        setTgStatus({
-          status: 'format_valid',
-          title: result.title || `@${cleanTg}`,
-          message: `Format @${cleanTg} valid.`
-        });
-      } else {
-        setTgStatus({
-          status: 'exists',
-          title: result.title || `@${cleanTg}`,
-          photoUrl: result.photoUrl,
-          message: `Username @${cleanTg} terdaftar aktif di Telegram.`
-        });
-        if (result.photoUrl) {
-          setFormData((prev) => ({ 
-            ...prev, 
-            applicantPhotoUrl: result.photoUrl,
-            videoUrl: prev.videoUrl || result.photoUrl 
-          }));
+      if (tgAbortControllerRef.current) {
+        console.log(`[TelegramCheck] Aborting previous pending request before starting new check for @${cleanTg}`);
+        tgAbortControllerRef.current.abort();
+      }
+
+      const controller = new AbortController();
+      tgAbortControllerRef.current = controller;
+
+      try {
+        const result = await checkTelegramAvailability(cleanTg, controller.signal);
+
+        // Guard against race conditions if user typed again before response returned
+        if (checkId !== latestTgCheckIdRef.current) {
+          console.log(`[TelegramCheck] Discarding outdated request for @${cleanTg}`);
+          return;
+        }
+
+        setIsCheckingTg(false);
+
+        if (!result.isSyntaxValid) {
+          setTgStatus({ status: 'invalid_syntax', message: result.message });
+        } else if (result.exists === false) {
+          setTgStatus({
+            status: 'not_found',
+            message: `Username @${cleanTg} TIDAK TERDAFTAR di Telegram.`
+          });
+          setFormData((prev) => ({ ...prev, applicantName: '' }));
+        } else if (result.exists === null) {
+          setTgStatus({
+            status: 'format_valid',
+            title: result.title,
+            timedOut: result.timedOut,
+            message: result.message || `Username @${cleanTg} valid (Status tersembunyi oleh setelan privasi Telegram).`
+          });
+          
+          setFormData((prev) => {
+            const up = { ...prev };
+            if (result.photoUrl) {
+              up.applicantPhotoUrl = result.photoUrl;
+            }
+            return up;
+          });
+        } else {
+          const detectedName = result.title || `@${cleanTg}`;
+          setTgStatus({
+            status: 'exists',
+            title: detectedName,
+            photoUrl: result.photoUrl,
+            message: `Username @${cleanTg} terdaftar aktif di Telegram.`
+          });
+          
+          setFormData((prev) => {
+            const up = { ...prev };
+            if (result.photoUrl) {
+              up.applicantPhotoUrl = result.photoUrl;
+            }
+            if (detectedName) {
+              up.applicantName = detectedName;
+            }
+            return up;
+          });
+        }
+      } catch (err: any) {
+        if (err.name === 'AbortError') {
+          console.log(`[TelegramCheck] Request aborted for @${cleanTg}`);
+          return;
+        }
+        if (checkId === latestTgCheckIdRef.current) {
+          setIsCheckingTg(false);
         }
       }
-    }, 250);
+    }, 1000);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+    };
   }, [formData.applicantTelegramUsername]);
 
   // Keep date & recruiter username always auto-updated
   useEffect(() => {
     let activeRecName = autoRecruiterUsername;
-    if (isAdminOrOwner && selectedRecruiter !== 'Semua') {
-      const selectedRec = recruitersList.find(r => r.key === selectedRecruiter || r.telegramId === selectedRecruiter);
+    if (isAdminOrOwner && selectedOnBehalfRecruiter) {
+      const selectedRec = recruitersList.find(r => r.key === selectedOnBehalfRecruiter);
       if (selectedRec) {
         activeRecName = selectedRec.username || selectedRec.name || autoRecruiterUsername;
       }
@@ -1837,7 +2192,7 @@ export const DataHarianPage: React.FC = () => {
       date: todayStr,
       recruiterUsername: activeRecName
     }));
-  }, [todayStr, autoRecruiterUsername, isAdminOrOwner, selectedRecruiter, recruitersList]);
+  }, [todayStr, autoRecruiterUsername, isAdminOrOwner, selectedOnBehalfRecruiter, recruitersList]);
 
   // Live countdown to midnight (00:00)
   const [timeRemainingMs, setTimeRemainingMs] = useState<number>(0);
@@ -1860,17 +2215,22 @@ export const DataHarianPage: React.FC = () => {
         if (type !== 'literal') parts[type] = parseInt(value);
       });
 
-      // We create "local" dates using Jakarta values to get a relative difference
-      // This works because both dates share the same local offset
-      const jakartaTime = new Date(2000, 0, 1, parts.hour, parts.minute, parts.second);
-      const midnightTime = new Date(2000, 0, 1, 23, 59, 59, 999);
-      
-      const diff = midnightTime.getTime() - jakartaTime.getTime();
-      const totalDayMs = 24 * 60 * 60 * 1000;
-      const elapsedMs = (parts.hour * 3600 + parts.minute * 60 + parts.second) * 1000;
-      const pct = Math.min(100, Math.max(0, (elapsedMs / totalDayMs) * 100));
+      // Calculate elapsed time since last 10:00 AM
+      let elapsedSeconds = 0;
+      if (parts.hour >= 10) {
+        // From 10:00 AM to current time
+        elapsedSeconds = (parts.hour - 10) * 3600 + parts.minute * 60 + parts.second;
+      } else {
+        // From 10:00 AM previous day (which is 14 hours until midnight + current hours)
+        elapsedSeconds = 14 * 3600 + (parts.hour * 3600) + parts.minute * 60 + parts.second;
+      }
 
-      setTimeRemainingMs(Math.max(0, diff));
+      const totalDaySeconds = 24 * 3600;
+      const remainingSeconds = totalDaySeconds - elapsedSeconds;
+      
+      const pct = Math.min(100, Math.max(0, (elapsedSeconds / totalDaySeconds) * 100));
+
+      setTimeRemainingMs(Math.max(0, remainingSeconds * 1000));
       setElapsedPercent(pct);
     };
 
@@ -1899,6 +2259,12 @@ export const DataHarianPage: React.FC = () => {
     e.preventDefault();
     setError(null);
     setSuccessMsg(null);
+
+    if (isAdminOrOwner && !selectedOnBehalfRecruiter) {
+      setError('Sebagai Admin/Owner, Anda tidak mengirimkan data harian sendiri. Silakan pilih recruiter terlebih dahulu!');
+      showAlert('warning', 'Pilih Recruiter ⚠️', 'Sebagai Admin/Owner, Anda wajib memilih salah satu recruiter untuk menginput data harian atas nama mereka.');
+      return;
+    }
 
     if (!formData.videoUrl) {
       setError('Video bukti pelamar wajib diupload terlebih dahulu.');
@@ -1990,63 +2356,79 @@ export const DataHarianPage: React.FC = () => {
         date: todayStr, // Ensure auto set date
         recruiterUsername: formData.recruiterUsername || autoRecruiterUsername, // Ensure auto set recruiter username
         applicantTelegramUsername: finalTg,
+        applicantName: formData.applicantName || tgStatus.title || 'Tidak Diketahui',
+        applicantPhotoUrl: formData.applicantPhotoUrl || tgStatus.photoUrl || undefined,
         result: 'Pending' as 'Pending' | 'ACC' | 'REJECT',
         grup: targetGrup
       };
-
-      await submitReport(reportData);
       
       // Send to Telegram using real-time settings or fallback (skip if T3/Dipromosikan)
       let telegramNotice = '';
       if (targetGrup === 'T3') {
         telegramNotice = ' (Status T0-MARK Dipromosikan: disimpan di sistem, tidak dikirim ke Telegram)';
       } else {
-        try {
-          let currentSettings = settings;
-          if (!currentSettings || !currentSettings.telegramGroupId) {
-            try {
-              const sys = await getSystemSettings();
-              if (sys) currentSettings = sys;
-            } catch (sysErr) {
-              console.warn('[DataHarian] Fallback fetch system settings error:', sysErr);
-            }
+        let currentSettings = settings;
+        if (!currentSettings || !currentSettings.telegramGroupId) {
+          try {
+            const sys = await getSystemSettings();
+            if (sys) currentSettings = sys;
+          } catch (sysErr) {
+            console.warn('[DataHarian] Fallback fetch system settings error:', sysErr);
           }
+        }
 
-          const groupId = currentSettings?.telegramGroupId || '';
-          let topicId = '';
-          if (targetGrup === 'T0') topicId = currentSettings?.telegramTopicT0 || '';
-          if (targetGrup === 'V0') topicId = currentSettings?.telegramTopicV0 || '';
-          if (targetGrup === 'RECRUITER') topicId = currentSettings?.telegramTopicRecruiter || '';
+        const groupId = currentSettings?.telegramGroupId || '';
+        let topicId = '';
+        if (targetGrup === 'T0') topicId = currentSettings?.telegramTopicT0 || '';
+        if (targetGrup === 'V0') topicId = currentSettings?.telegramTopicV0 || '';
+        if (targetGrup === 'RECRUITER') topicId = currentSettings?.telegramTopicRecruiter || '';
 
-          // Construct custom text identical to preview
-          const tgUname = reportData.applicantTelegramUsername ? `@${reportData.applicantTelegramUsername.replace(/^@/, '')}` : '-';
-          const recr = `@${(reportData.recruiterUsername || '').replace(/^@/, '')}`;
-          const grupDisplay = reportData.grup === 'T0' ? 'T0-MARK' : reportData.grup === 'V0' ? 'V0' : reportData.grup === 'RECRUITER' ? 'RECRUITER' : reportData.grup === 'T3' ? 'T0-MARK (Dipromosikan)' : (reportData.grup || '-');
-          const tgName = tgStatus.title || 'Tidak Diketahui';
-          
-          const customText = `UID : ${reportData.uid9Kucing}
+        // Construct custom text identical to preview
+        const rawTg = reportData.applicantTelegramUsername ? reportData.applicantTelegramUsername.replace(/^@+/, '') : '';
+        const tgUname = rawTg ? `<a href="https://t.me/${rawTg}">@${rawTg}</a>` : '-';
+        const rawRec = reportData.recruiterUsername ? reportData.recruiterUsername.replace(/^@+/, '') : '';
+        const recr = rawRec ? `@${rawRec}` : '-';
+        const grupDisplay = reportData.grup === 'T0' ? 'T0-MARK' : reportData.grup === 'V0' ? 'V0' : reportData.grup === 'RECRUITER' ? 'RECRUITER' : reportData.grup === 'T3' ? 'T0-MARK (Dipromosikan)' : (reportData.grup || '-');
+        const tgName = reportData.applicantName || 'Tidak Diketahui';
+        const photoLink = reportData.applicantPhotoUrl ? `\nFoto Profil : <a href="${reportData.applicantPhotoUrl}">Lihat Foto Pelamar</a>` : '';
+        
+        const customText = `UID : ${reportData.uid9Kucing}
 WA : ${reportData.applicantWhatsapp}
 Nama : <b>${tgName}</b>
 Username Telegram : <b>${tgUname}</b>
 Rekomendasi dari : <b>${recr}</b>
 Info dari sosmed : <b>${reportData.channel || '-'}</b>
+Grub : <b>${grupDisplay}</b>${photoLink}`;
 
-Grub : <b>${grupDisplay}</b>`;
+        // Send synchronously to make sure it actually lands in Telegram Group Topic
+        setSuccessMsg('Sedang mengompresi video dan mengirim ke Telegram (Harap tunggu)...');
+        const res = await sendReportToTelegramApi(reportData, formData.videoUrl, groupId, topicId, customText);
+        if (!res.success) {
+          throw new Error(`Gagal mengirim ke grup Telegram: ${res.error || 'Terjadi kesalahan jaringan'}. Harap pastikan format video valid, ukuran di bawah 50MB, dan koneksi internet stabil!`);
+        }
+        telegramNotice = ' Tersinkron ke Telegram & Google Sheets.';
+      }
 
-          // Send asynchronously to make UI faster
-          sendReportToTelegramApi(reportData, formData.videoUrl, groupId, topicId, customText).then(res => {
-            if (!res.success) {
-              console.error('Failed to send to telegram:', res.error);
-            }
-          });
-          telegramNotice = ' (Sedang dikirim ke Telegram...)';
-        } catch (e) {
-          console.error('Error sending telegram notification:', e);
-          telegramNotice = ` (Error Telegram: ${e instanceof Error ? e.message : 'Koneksi gagal'})`;
+      // Save to Firestore database only after Telegram delivery is confirmed (or bypassed for T3)
+      // We exclude videoUrl from Firestore to keep the database lightweight, 
+      // as the video is already sent and stored in Telegram.
+      const { videoUrl: _v, ...firestoreData } = reportData;
+
+      let customSenderInfo: { telegramId: string; username: string; name: string } | undefined = undefined;
+      if (isAdminOrOwner && selectedOnBehalfRecruiter) {
+        const recObj = recruitersList.find(r => r.key === selectedOnBehalfRecruiter);
+        if (recObj) {
+          customSenderInfo = {
+            telegramId: recObj.telegramId || '999999999',
+            username: recObj.username.replace(/^@/, ''),
+            name: recObj.name
+          };
         }
       }
 
-      const successMessage = `Data Harian pelamar berhasil disimpan!${telegramNotice ? telegramNotice : ' Tersinkron ke Telegram & Google Sheets.'}`;
+      await submitReport(firestoreData as any, customSenderInfo);
+
+      const successMessage = `Data Harian pelamar berhasil disimpan!${telegramNotice}`;
       setSuccessMsg(successMessage);
       showAlert('success', 'Berhasil Disimpan 🎉', successMessage);
 
@@ -2083,7 +2465,7 @@ Grub : <b>${grupDisplay}</b>`;
     >
       {/* Live Timer Section */}
       <GlassCard className="p-4 border-sky-500/30 dark:border-sky-500/20 bg-sky-50/80 dark:bg-sky-500/5 overflow-hidden relative">
-        <div className="absolute top-0 right-0 p-2 opacity-10">
+        <div className="absolute top-0 right-0 p-2 opacity-10 pointer-events-none">
           <Sparkles className="w-12 h-12 text-sky-500" />
         </div>
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between relative z-10 gap-3">
@@ -2339,7 +2721,7 @@ Grub : <b>${grupDisplay}</b>`;
                           <span className="flex items-center justify-center w-4 h-4 rounded-full bg-sky-500/10 text-sky-500 text-[10px] font-bold shrink-0 mt-0.5">1</span>
                           <div>
                             <strong className="text-slate-900 dark:text-white block font-bold">Upload Video Bukti Pelamar</strong>
-                            <span className="text-[10px]">Pilih/unggah video interaksi Anda dengan pelamar. Format yang diizinkan `.mp4`, `.webm`, `.mov` (maksimal 20MB). Penggunaan foto atau screenshot sebagai bukti video dilarang.</span>
+                            <span className="text-[10px]">Pilih/unggah video interaksi Anda dengan pelamar. Format yang diizinkan `.mp4`, `.webm`, `.mov`, `.gif` (maksimal 200MB). Penggunaan foto (selain GIF) dilarang.</span>
                           </div>
                         </div>
 
@@ -2433,7 +2815,7 @@ Grub : <b>${grupDisplay}</b>`;
                             <Clock className="w-3.5 h-3.5 text-emerald-500" />
                             Batas Waktu Pengiriman
                           </div>
-                          <p className="text-[9.5px]">Data harian wajib diinput sebelum pukul <strong className="text-slate-900 dark:text-slate-200">23:59 WIB</strong> setiap hari. Sistem akan melakukan reset kumulatif otomatis pada pukul 00:00 WIB.</p>
+                          <p className="text-[9.5px]">Data harian wajib diinput sebelum pukul <strong className="text-slate-900 dark:text-slate-200">10:00 WIB</strong> keesokan harinya. Sistem akan melakukan pergantian hari laporan otomatis pada pukul 10:00 WIB.</p>
                         </div>
 
                         <div className="p-2 rounded-xl bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-1">
@@ -2470,6 +2852,74 @@ Grub : <b>${grupDisplay}</b>`;
 
         </div>
 
+        {/* Input Atas Nama Recruiter Selection for Admin/Owner */}
+        {isAdminOrOwner && (
+          <div className="bg-purple-500/10 border border-purple-500/20 p-4 rounded-2xl space-y-3">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-purple-500/20 text-purple-400">
+                <UserCheck className="w-4 h-4" />
+              </div>
+              <div>
+                <span className="block text-[8px] font-black uppercase text-purple-400 tracking-wider">Mode Admin</span>
+                <span className="block text-xs font-bold text-slate-900 dark:text-white">Input Atas Nama Recruiter</span>
+              </div>
+            </div>
+            <div className="relative">
+              <select
+                value={selectedOnBehalfRecruiter}
+                onChange={(e) => {
+                  setSelectedOnBehalfRecruiter(e.target.value);
+                  triggerHaptic('selection');
+                }}
+                className="w-full pl-11 pr-8 py-2.5 rounded-xl text-xs font-black border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-purple-500 cursor-pointer appearance-none"
+              >
+                <option value="" disabled>-- Pilih Recruiter --</option>
+                {recruitersList.map((rec) => (
+                  <option key={rec.key} value={rec.key}>
+                    {rec.name} ({rec.username})
+                  </option>
+                ))}
+              </select>
+              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2.5 text-slate-600 dark:text-slate-400">
+                <ChevronDown className="w-3.5 h-3.5" />
+              </div>
+              <div className="absolute left-2.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-slate-50 dark:bg-slate-900 overflow-hidden border border-slate-200 dark:border-slate-800 flex items-center justify-center">
+                {(() => {
+                  if (!selectedOnBehalfRecruiter) {
+                    return (
+                      <div className="w-full h-full flex items-center justify-center text-[10px] font-black text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900">
+                        <Users className="w-3 h-3 text-purple-400" />
+                      </div>
+                    );
+                  }
+                  const recObj = recruitersList.find(r => r.key === selectedOnBehalfRecruiter);
+                  const matched = (recObj?.telegramId ? userPhotoMap.get(recObj.telegramId) : undefined) ||
+                                  (recObj?.cleanUsername ? userPhotoMap.get(recObj.cleanUsername) : undefined) ||
+                                  userPhotoMap.get(selectedOnBehalfRecruiter.toLowerCase());
+                  if (matched?.photoUrl) {
+                    return (
+                      <img src={matched.photoUrl} 
+                        alt="Recruiter" 
+                        className="w-full h-full object-cover"
+                        referrerPolicy="no-referrer" />
+                    );
+                  }
+                  return (
+                    <div className="w-full h-full flex items-center justify-center text-[10px] font-black text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-900">
+                      {matched?.firstName?.charAt(0).toUpperCase() || recObj?.name?.charAt(0).toUpperCase() || selectedOnBehalfRecruiter.charAt(0).toUpperCase()}
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+            {!selectedOnBehalfRecruiter && (
+              <p className="text-[10px] text-amber-500 font-bold leading-tight">
+                ⚠️ Anda harus memilih recruiter terlebih dahulu sebelum dapat menginput data harian!
+              </p>
+            )}
+          </div>
+        )}
+
         {/* Step Navigation Tabs */}
         <div className="flex items-center p-1 bg-white dark:bg-slate-950/80 rounded-2xl border border-slate-900/60 shadow-inner gap-1.5">
           <button
@@ -2495,6 +2945,11 @@ Grub : <b>${grupDisplay}</b>`;
           <button
             type="button"
             onClick={() => {
+              if (isAdminOrOwner && !selectedOnBehalfRecruiter) {
+                setError('Anda wajib memilih recruiter terlebih dahulu.');
+                showAlert('warning', 'Pilih Recruiter ⚠️', 'Harap pilih recruiter terlebih dahulu sebelum melanjutkan!');
+                return;
+              }
               if (!formData.videoUrl) {
                 setError('Video bukti pelamar wajib diupload terlebih dahulu.');
                 showAlert('warning', 'Upload Video Bukti Dulu ⚠️', 'Harap upload video bukti pelamar terlebih dahulu!');
@@ -2559,46 +3014,79 @@ Grub : <b>${grupDisplay}</b>`;
 
                 <input
                   type="file"
-                  accept="video/*"
+                  accept="video/*,image/gif"
                   id="bukti-video-input"
                   onChange={async (e) => {
                     const file = e.target.files?.[0];
                     if (file) {
-                      if (!file.type.startsWith('video/')) {
-                        showAlert('error', 'Format File Salah ⚠️', 'Hanya diperbolehkan mengupload file video bukti pelamar (format video). Foto tidak diizinkan!');
+                      const isGif = file.type === 'image/gif' || /\.gif$/i.test(file.name);
+                      const isVideo = file.type.startsWith('video/') || 
+                                      /\.(mp4|mov|webm|mkv|3gp|avi|m4v|qt)$/i.test(file.name) || isGif;
+                      if (!isVideo) {
+                        showAlert('error', 'Format File Salah ⚠️', 'Hanya diperbolehkan mengupload file video bukti pelamar (format video atau GIF). Foto selain GIF tidak diizinkan!');
                         return;
                       }
                       
-                      // Max 50MB for Telegram Bot
-                      if (file.size > 50 * 1024 * 1024) { 
-                        showAlert('error', 'Video Terlalu Besar ❌', 'Ukuran maksimal video yang diizinkan Telegram adalah 50MB.');
+                      if (file.size > 200 * 1024 * 1024) { 
+                        showAlert('error', 'Video Terlalu Besar ❌', 'Ukuran maksimal video yang diizinkan adalah 200MB.');
                         return;
                       }
 
-                      showAlert('warning', 'Memproses Video...', 'Sedang membaca file video bukti, mohon tunggu sebentar.');
-                      
-                      try {
+                      if (isGif) {
                         const reader = new FileReader();
                         reader.onload = (event) => {
-                          const dataUrl = event.target?.result as string;
-                          setFormData((prev) => ({ ...prev, videoUrl: dataUrl }));
-                          setError(null);
-                          showAlert('success', 'Video Bukti Siap ✅', 'Video bukti pelamar berhasil dimuat dan siap dikirim!');
-                        };
-                        reader.onerror = () => {
-                          throw new Error('Gagal membaca file video');
+                          if (event.target?.result) {
+                            setFormData((prev) => ({ ...prev, videoUrl: event.target!.result as string }));
+                            showAlert('success', 'GIF Berhasil Dimuat ✅', 'File GIF bukti pelamar berhasil ditambahkan.');
+                          }
                         };
                         reader.readAsDataURL(file);
-                      } catch (err: any) {
-                        console.error('Error processing media file:', err);
-                        showAlert('error', 'Gagal Memproses File', err.message || 'Gagal memproses file video bukti.');
+                        return;
+                      }
+
+                      setIsCompressingVideo(true);
+                      setCompressionProgress(0);
+                      showAlert('warning', 'Mengompresi Video ⏳', 'Video sedang dikompresi sebelum diunggah (tunggu beberapa saat).');
+
+                      try {
+                        const compressedFile = await compressVideo(file, (progress) => {
+                          setCompressionProgress(Math.round(progress * 100));
+                        });
+                        
+                        const blobUrl = URL.createObjectURL(compressedFile);
+                        setFormData((prev) => ({ ...prev, videoUrl: blobUrl }));
+                        showAlert('success', 'Video Siap ✅', 'Video berhasil dikompresi dan dimuat.');
+                      } catch (err) {
+                        console.error('Compression failed:', err);
+                        // Fallback to original
+                        const blobUrl = URL.createObjectURL(file);
+                        setFormData((prev) => ({ ...prev, videoUrl: blobUrl }));
+                        showAlert('warning', 'Kompresi Gagal ⚠️', 'Gagal mengompresi video, menggunakan ukuran asli.');
+                      } finally {
+                        setIsCompressingVideo(false);
                       }
                     }
                   }}
                   className="hidden"
                 />
 
-                {formData.videoUrl ? (
+                {isCompressingVideo ? (
+                  <div className="flex flex-col items-center justify-center p-8 text-center bg-slate-50 dark:bg-slate-900/40 border-2 border-dashed border-sky-500/30 rounded-2xl min-h-[160px] space-y-3">
+                    <div className="w-10 h-10 rounded-full border-4 border-sky-500/20 border-t-sky-500 animate-spin flex items-center justify-center mb-1" />
+                    <span className="text-xs font-extrabold text-slate-800 dark:text-slate-200">
+                      Mengompresi Video...
+                    </span>
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
+                      Proses Optimasi: {compressionProgress}% (Mohon tunggu sebentar...)
+                    </span>
+                    <div className="w-full max-w-xs bg-slate-200 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                      <div 
+                        className="bg-sky-500 h-full transition-all duration-200"
+                        style={{ width: `${compressionProgress}%` }}
+                      />
+                    </div>
+                  </div>
+                ) : formData.videoUrl ? (
                   <div className="space-y-3">
                     <div className="relative rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-black aspect-video max-w-md mx-auto flex items-center justify-center shadow-inner">
                       {formData.videoUrl.startsWith('data:image/') || formData.videoUrl.match(/\.(jpeg|jpg|png|webp|gif)($|\?)/i) ? (
@@ -2648,7 +3136,7 @@ Grub : <b>${grupDisplay}</b>`;
                       Pilih / Upload Video Bukti Pelamar
                     </span>
                     <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium mt-1 max-w-xs">
-                      Format file video yang diperbolehkan (`mp4`, `webm`, `mov`). Penggunaan foto/screenshot dilarang.
+                      Format file video yang diperbolehkan (`mp4`, `webm`, `mov`, `gif`). Penggunaan foto dilarang.
                     </span>
                   </label>
                 )}
@@ -2832,7 +3320,7 @@ Grub : <b>${grupDisplay}</b>`;
                     {isScanningUID ? (
                       <div className="flex flex-col items-center gap-2">
                         <Loader2 className="w-8 h-8 text-sky-400 animate-spin" />
-                        <span className="text-xs font-bold text-sky-300 animate-pulse">Membaca screenshot via Tesseract OCR...</span>
+                        <span className="text-xs font-bold text-sky-300 animate-pulse">Membaca screenshot via Gemini AI...</span>
                         {scanProgress > 0 && (
                           <div className="w-32 bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden mt-1">
                             <div 
@@ -2841,7 +3329,7 @@ Grub : <b>${grupDisplay}</b>`;
                             />
                           </div>
                         )}
-                        <span className="text-[10px] text-slate-500 dark:text-slate-400">{scanProgress > 0 ? `Proses: ${scanProgress}%` : 'Mempersiapkan OCR...'}</span>
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400">{scanProgress > 0 ? `Proses: ${scanProgress}%` : 'Menghubungkan ke Gemini AI...'}</span>
                       </div>
                     ) : (
                       <div className="flex flex-col items-center gap-1.5 text-center">
@@ -2893,7 +3381,22 @@ Grub : <b>${grupDisplay}</b>`;
                   required
                 />
 
-                {/* 6. Username Telegram Pelamar */}
+                {/* 6. Nama Pelamar */}
+                <Input
+                  label="Nama Pelamar (Otomatis)"
+                  type="text"
+                  placeholder="Terisi otomatis dari Telegram..."
+                  icon={<User className="w-4 h-4 text-indigo-400" />}
+                  value={formData.applicantName || ''}
+                  readOnly={true}
+                  disabled={true}
+                  required
+                  helperText="Nama terisi secara otomatis setelah memverifikasi Username Telegram di bawah."
+                />
+              </div>
+
+              <div className="grid grid-cols-1 gap-3.5">
+                {/* 7. Username Telegram Pelamar */}
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between px-1">
                     <label className="text-xs font-bold tracking-wider text-slate-600 dark:text-slate-400 uppercase">
@@ -2930,179 +3433,17 @@ Grub : <b>${grupDisplay}</b>`;
               {/* Live Real Telegram Account Verification & Status Preview */}
               {(() => {
                 const { clean: cleanTg, formatted: formattedTg, url: tgUrl } = parseTelegramUsername(formData.applicantTelegramUsername);
-                if (!cleanTg || tgStatus.status === 'idle') return null;
-
-                if (tgStatus.status === 'checking') {
-                  return (
-                    <motion.div
-                      initial={{ opacity: 0, y: -4 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="p-3.5 rounded-2xl bg-sky-950/40 border border-sky-500/30 flex items-center gap-3 shadow-md"
-                    >
-                      <Loader2 className="w-5 h-5 text-sky-400 animate-spin shrink-0" />
-                      <div>
-                        <span className="text-xs font-bold text-sky-300">Memeriksa Akun Telegram...</span>
-                        <p className="text-[10px] text-slate-600 dark:text-slate-400 font-mono">Verifikasi keberadaan username @{cleanTg} di server Telegram</p>
-                      </div>
-                    </motion.div>
-                  );
-                }
-
-                if (tgStatus.status === 'invalid_syntax') {
-                  return (
-                    <motion.div
-                      initial={{ opacity: 0, y: -4 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="p-3.5 rounded-2xl bg-amber-950/70 border border-amber-500/40 flex items-start gap-3 shadow-lg"
-                    >
-                      <div className="w-9 h-9 rounded-full bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0">
-                        <AlertTriangle className="w-5 h-5" />
-                      </div>
-                      <div className="space-y-0.5">
-                        <span className="text-xs font-bold text-amber-300">Format Username Tidak Valid</span>
-                        <p className="text-[11px] text-amber-200/90 font-medium">{tgStatus.message}</p>
-                      </div>
-                    </motion.div>
-                  );
-                }
-
-                if (tgStatus.status === 'format_valid') {
-                  return (
-                    <motion.div
-                      initial={{ opacity: 0, y: -4 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-start justify-between gap-3 shadow-xl"
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className="w-10 h-10 rounded-full bg-white dark:bg-slate-950 border border-slate-900 flex items-center justify-center text-slate-700 dark:text-slate-300 shrink-0 shadow-inner">
-                          <Check className="w-5 h-5 text-sky-400" />
-                        </div>
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-xs font-black text-slate-900 dark:text-white font-mono">{formattedTg}</span>
-                            <span className="text-[9px] bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-2.5 py-0.5 rounded-full border border-slate-200 dark:border-slate-800 font-bold flex items-center gap-1 uppercase tracking-wider">
-                              Format Valid
-                            </span>
-                          </div>
-                          <p className="text-xs text-sky-300 font-bold">
-                            ✓ Format penulisan username valid
-                          </p>
-                          <p className="text-[10px] text-slate-600 dark:text-slate-400 leading-relaxed">
-                            Format username benar, namun keberadaan akun di Telegram tidak dapat divalidasi otomatis secara real-time saat ini.
-                          </p>
-                        </div>
-                      </div>
-
-                      <a
-                        href={tgUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-750 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 text-[11px] font-bold flex items-center gap-1 transition-all shrink-0"
-                      >
-                        <span>Cek Link</span>
-                        <ExternalLink className="w-3 h-3" />
-                      </a>
-                    </motion.div>
-                  );
-                }
-
-                if (tgStatus.status === 'not_found') {
-                  return (
-                    <motion.div
-                      initial={{ opacity: 0, y: -4 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="p-3.5 rounded-2xl bg-gradient-to-r from-rose-950/90 via-red-950/80 to-slate-900 border border-rose-500/60 flex items-start justify-between gap-3 shadow-xl"
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className="w-10 h-10 rounded-full bg-rose-500/20 border border-rose-500/50 flex items-center justify-center text-rose-400 shrink-0 shadow-inner">
-                          <UserX className="w-5 h-5" />
-                        </div>
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-xs font-black text-slate-900 dark:text-white font-mono">{formattedTg}</span>
-                            <span className="text-[9px] bg-rose-500/30 text-rose-200 px-2.5 py-0.5 rounded-full border border-rose-500/40 font-black flex items-center gap-1 uppercase tracking-wider">
-                              <XCircle className="w-2.5 h-2.5 text-rose-400" />
-                              Tidak Terdaftar
-                            </span>
-                          </div>
-                          <p className="text-xs text-rose-200 font-bold">
-                            ⚠️ Username tidak ditemukan di Telegram!
-                          </p>
-                          <p className="text-[10px] text-slate-700 dark:text-slate-300">
-                            Akun @{cleanTg} belum dibuat atau username salah eja. Mohon pastikan ejaan username pelamar sudah benar.
-                          </p>
-                        </div>
-                      </div>
-
-                      <a
-                        href={tgUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="px-3 py-1.5 rounded-xl bg-rose-900/60 hover:bg-rose-800/80 border border-rose-500/40 text-rose-200 text-[11px] font-bold flex items-center gap-1 transition-all shrink-0"
-                      >
-                        <span>Cek Link</span>
-                        <ExternalLink className="w-3 h-3" />
-                      </a>
-                    </motion.div>
-                  );
-                }
-
-                // 'exists' Status
                 return (
-                  <motion.div
-                    initial={{ opacity: 0, y: -4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-950/90 via-sky-950/80 to-slate-900 border border-emerald-500/50 flex items-center justify-between gap-3 shadow-xl"
-                  >
-                    <div className="flex items-center gap-3">
-                      {tgStatus.photoUrl ? (
-                        <div className="relative shrink-0">
-                          <img referrerPolicy="no-referrer"
-                            src={tgStatus.photoUrl}
-                            alt={tgStatus.title || cleanTg}
-                            className="w-12 h-12 rounded-full object-cover border-2 border-emerald-400 shadow-lg ring-2 ring-emerald-500/20"
-                            onError={(e) => {
-                              // Fallback if image fails to load
-                              e.currentTarget.style.display = 'none';
-                            }}
-                          />
-                          <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-emerald-500 border-2 border-slate-900 flex items-center justify-center">
-                            <Check className="w-2.5 h-2.5 text-slate-950 font-black" />
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-emerald-500 to-sky-500 flex items-center justify-center text-slate-950 shadow-md shrink-0 font-bold border-2 border-emerald-400">
-                          <CheckCircle2 className="w-6 h-6" />
-                        </div>
-                      )}
-
-                      <div className="space-y-0.5">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-xs font-black text-slate-900 dark:text-white font-mono">{formattedTg}</span>
-                          <span className="text-[9px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-500/30 font-bold flex items-center gap-1">
-                            <Check className="w-2.5 h-2.5 text-emerald-400" />
-                            Terdaftar Aktif
-                          </span>
-                        </div>
-                        <p className="text-[11px] font-bold text-slate-900 dark:text-white">
-                          {tgStatus.title || formattedTg}
-                        </p>
-                        <p className="text-[10px] text-slate-600 dark:text-slate-400 font-mono">
-                          Link: <span className="text-sky-300">{tgUrl}</span>
-                        </p>
-                      </div>
-                    </div>
-
-                    <a
-                      href={tgUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black flex items-center gap-1.5 transition-all shadow-md shrink-0 hover:scale-[1.03]"
-                    >
-                      <span>Buka Chat</span>
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </a>
-                  </motion.div>
+                  <TelegramPreviewCard
+                    cleanTg={cleanTg}
+                    formattedTg={formattedTg}
+                    tgUrl={tgUrl}
+                    tgStatus={tgStatus}
+                    isCheckingTg={isCheckingTg}
+                    applicantName={formData.applicantName}
+                    formImgErr={formImgErr}
+                    onImgErr={handleFormImgErr}
+                  />
                 );
               })()}
 
@@ -3189,11 +3530,6 @@ Grub : <b>${grupDisplay}</b>`;
                 </div>
               </div>
               <div className="flex flex-col items-end gap-1">
-                <span className="text-[10px] font-black text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded-xl border border-amber-500/20">
-                  {activeDayTab === 'Semua' 
-                    ? `📦 ${totalPostingMingguIni} Posting` 
-                    : `📦 ${totalPostingFilteredMingguIni} Posting`}
-                </span>
                 <span className="text-[9px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-tighter">
                   {activeDayTab === 'Semua' 
                     ? `${reportsMingguIni.length} Laporan` 
@@ -3654,7 +3990,7 @@ Grub : <b>${grupDisplay}</b>`;
               </div>
               <div className="flex justify-between py-1 border-b border-slate-900/50">
                 <span className="text-slate-500 dark:text-slate-400 font-bold">Nama :</span>
-                <span className="text-blue-400 font-bold">{tgStatus.title || 'Tidak Diketahui'}</span>
+                <span className="text-blue-400 font-bold">{formData.applicantName || tgStatus.title || 'Tidak Diketahui'}</span>
               </div>
               <div className="flex justify-between py-1 border-b border-slate-900/50">
                 <span className="text-slate-500 dark:text-slate-400 font-bold">Username Telegram :</span>
@@ -3664,7 +4000,7 @@ Grub : <b>${grupDisplay}</b>`;
               </div>
               <div className="flex justify-between py-1 border-b border-slate-900/50">
                 <span className="text-slate-500 dark:text-slate-400 font-bold">Rekomendasi dari :</span>
-                <span className="text-purple-400 font-bold">@{autoRecruiterUsername.replace(/^@/, '')}</span>
+                <span className="text-purple-400 font-bold">@{(formData.recruiterUsername || autoRecruiterUsername).replace(/^@/, '')}</span>
               </div>
               <div className="flex justify-between py-1 border-b border-slate-900/50">
                 <span className="text-slate-500 dark:text-slate-400 font-bold">Info dari sosmed :</span>

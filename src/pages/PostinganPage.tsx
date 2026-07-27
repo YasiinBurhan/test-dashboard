@@ -54,11 +54,7 @@ const getApiBaseUrl = () => {
   if (import.meta.env.VITE_BACKEND_URL) {
     return import.meta.env.VITE_BACKEND_URL;
   }
-  const hostname = typeof window !== 'undefined' ? window.location.hostname : '';
-  if (hostname.endsWith('.vercel.app')) {
-    return '';
-  }
-  return 'https://test-dashboard-lake-pi.vercel.app';
+  return '';
 };
 
 const API_BASE_URL = getApiBaseUrl();
@@ -967,7 +963,7 @@ export const PostinganPage: React.FC = () => {
       let sendSuccess = false;
 
       // 1. Try backend server endpoint if API_BASE_URL is configured
-      if (API_BASE_URL) {
+      if (API_BASE_URL !== undefined) {
         try {
           const response = await fetch(`${API_BASE_URL}/api/telegram/send-post`, {
             method: 'POST',
@@ -1015,7 +1011,7 @@ export const PostinganPage: React.FC = () => {
           const topicNum = targetTopic && !isNaN(Number(targetTopic)) ? Number(targetTopic) : undefined;
 
           let textContent = `📌 <b>LINK POSTINGAN BARU</b>\n\n`;
-          textContent += `👤 <b>Recruiter:</b> ${recruiterName} (${recruiterUsername ? '@' + recruiterUsername : '-'})\n`;
+          textContent += `👤 <b>Recruiter:</b> ${recruiterName} (${recruiterUsername ? formatUsername(recruiterUsername) : '-'})\n`;
           textContent += `📊 <b>Jumlah Link:</b> ${validLinks.length}\n\n`;
           validLinks.forEach((l, idx) => {
             textContent += `${effectiveStartNum + idx}. ${l.url}\n`;
@@ -1245,11 +1241,10 @@ export const PostinganPage: React.FC = () => {
                 <p className="text-[9.5px] text-slate-600 dark:text-slate-400 font-bold">{formatDateWithDay(getWIBDate())}</p>
               </div>
             </div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-2">
               <span className="text-[8px] sm:text-[9px] font-black uppercase text-amber-700 dark:text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded-lg border border-amber-500/20 flex items-center gap-1">
                 <Timer className="w-3 h-3 animate-pulse" /> Batas: 22:00 WIB
               </span>
-
             </div>
           </div>
 
@@ -1784,7 +1779,7 @@ export const PostinganPage: React.FC = () => {
                                     {activeRec.firstName} {activeRec.lastName || ''}
                                   </div>
                                   <div className="text-[9px] text-slate-500 dark:text-slate-400 font-medium truncate">
-                                    {activeRec.username ? `@${activeRec.username.replace(/^@/, '')}` : (activeRec.role === 'Admin' || activeRec.role === 'Owner' ? activeRec.role : 'Recruiter')}
+                                    {activeRec.username ? formatUsername(activeRec.username) : (activeRec.role === 'Admin' || activeRec.role === 'Owner' ? activeRec.role : 'Recruiter')}
                                   </div>
                                 </div>
                               </div>
@@ -1838,7 +1833,7 @@ export const PostinganPage: React.FC = () => {
                                           {rec.firstName} {rec.lastName || ''}
                                         </div>
                                         <div className="text-[9.5px] text-slate-500 dark:text-slate-400 font-medium truncate">
-                                          {rec.username ? `@${rec.username.replace(/^@/, '')}` : `ID: ${rec.telegramId}`}
+                                          {rec.username ? formatUsername(rec.username) : `ID: ${rec.telegramId}`}
                                         </div>
                                       </div>
                                     </div>
@@ -2336,7 +2331,7 @@ export const PostinganPage: React.FC = () => {
                                 </span>
                                 {activeRec.username && (
                                   <span className="text-[9.5px] text-sky-600 dark:text-sky-400 font-semibold truncate">
-                                    (@{activeRec.username.replace(/^@/, '')})
+                                    ({formatUsername(activeRec.username)})
                                   </span>
                                 )}
                               </div>
@@ -2432,7 +2427,7 @@ export const PostinganPage: React.FC = () => {
                                         {rec.firstName} {rec.lastName || ''}
                                       </div>
                                       <div className="text-[9.5px] text-slate-500 dark:text-slate-400 font-medium truncate">
-                                        {rec.username ? `@${rec.username.replace(/^@/, '')}` : `ID: ${rec.telegramId}`}
+                                        {rec.username ? formatUsername(rec.username) : `ID: ${rec.telegramId}`}
                                       </div>
                                     </div>
                                   </div>
@@ -2871,7 +2866,7 @@ export const PostinganPage: React.FC = () => {
                                    const cardLinkCount = Array.isArray(post.links) ? post.links.length : 0;
                                    const cardEndNum = cardLinkCount > 0 ? (cardStartNum + cardLinkCount - 1) : cardStartNum;
                                    const { name: recruiterName, username: recruiterUsername, photoUrl: recruiterPhoto } = getPostRecruiterInfo(post);
-                                   const recruiterTag = recruiterUsername ? `@${recruiterUsername.replace(/^@/, '')}` : '';
+                                   const recruiterTag = recruiterUsername ? formatUsername(recruiterUsername) : '';
 
                                    return (
                                      <GlassCard key={post.id} className="p-4 space-y-3 border-slate-200 dark:border-slate-800/40">
@@ -3158,7 +3153,7 @@ export const PostinganPage: React.FC = () => {
                               {rec.firstName} {rec.lastName || ''}
                             </h4>
                             <p className="text-[10px] text-slate-600 dark:text-slate-400 font-medium truncate">
-                              {rec.username ? `@${rec.username}` : String(rec.telegramId)}
+                              {rec.username ? formatUsername(rec.username) : String(rec.telegramId)}
                             </p>
                           </div>
                           <div className="shrink-0">

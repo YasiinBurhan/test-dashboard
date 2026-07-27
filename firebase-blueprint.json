@@ -87,6 +87,41 @@
         "updatedAt": { "type": "string" }
       },
       "required": ["id"]
+    },
+    "RecruiterSalary": {
+      "title": "Recruiter Salary Slip",
+      "description": "Weekly or monthly salary slip for recruiters with full breakdown of postings, recruits, commissions, bonuses, and deductions",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "periode": { "type": "string" },
+        "username": { "type": "string" },
+        "recruiterName": { "type": "string" },
+        "telegramId": { "type": "string" },
+        "hariEfektif": { "type": "integer" },
+        "totalPostingan": { "type": "integer" },
+        "deklarasiT0": { "type": "integer" },
+        "sebenarnyaT0": { "type": "integer" },
+        "t3": { "type": "integer" },
+        "deklarasiV0": { "type": "integer" },
+        "sebenarnyaV0": { "type": "integer" },
+        "levelGaji": { "type": "string" },
+        "tingkatPenerimaan": { "type": "number" },
+        "rasioPeningkatan": { "type": "number" },
+        "gajiPokok": { "type": "number" },
+        "komisi": { "type": "number" },
+        "bonusT0": { "type": "number" },
+        "bonusT3": { "type": "number" },
+        "otherBonus": { "type": "number" },
+        "deduksi": { "type": "number" },
+        "totalGaji": { "type": "number" },
+        "status": { "type": "string", "enum": ["Draft", "Paid"] },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "note": { "type": "string" }
+      },
+      "required": ["id", "periode", "username", "telegramId", "totalGaji", "status", "createdAt"]
     }
   },
   "firestore": {
@@ -109,6 +144,10 @@
     "/posts/{postId}": {
       "schema": { "$ref": "#/entities/Post" },
       "description": "Batch posting history"
+    },
+    "/salaries/{salaryId}": {
+      "schema": { "$ref": "#/entities/RecruiterSalary" },
+      "description": "Salary slip records for recruiters"
     }
   }
 }

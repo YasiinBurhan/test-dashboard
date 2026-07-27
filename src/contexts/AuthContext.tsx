@@ -8,7 +8,7 @@ interface AuthContextType extends AuthState {
   refreshProfile: () => Promise<UserProfile | null>;
   logout: () => void;
   continueLogin: () => Promise<void>;
-  loginManually: (telegramId: string, name?: string, username?: string) => Promise<{ success: boolean; error?: string }>;
+  loginManually: (telegramId: string, pin?: string, name?: string, username?: string) => Promise<{ success: boolean; error?: string }>;
   registerManually: (telegramId: string, name: string, username?: string) => void;
 }
 
@@ -264,7 +264,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   };
 
-  const loginManually = async (telegramIdInput: string, nameInput?: string, usernameInput?: string) => {
+  const loginManually = async (telegramIdInput: string, pinInput?: string, nameInput?: string, usernameInput?: string) => {
     setState((prev) => ({ ...prev, isLoading: true, error: null }));
     const cleanId = String(telegramIdInput || '').trim().replace(/^@/, '');
     if (!cleanId) {
@@ -276,6 +276,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const profile = await withTimeout(findUserProfileByIdOrUsername(cleanId), 8000, null);
 
       if (profile) {
+        // Verify PIN if the profile has a PIN set
+        if (profile.pin && profile.pin !== pinInput) {
+          setState((prev) => ({ ...prev, isLoading: false }));
+          return { success: false, error: 'Kode Akses (PIN) salah.' };
+        } else if (!profile.pin && pinInput) {
+           // Allow login but it means they haven't set up PIN yet in WebApp, ideally we can set it now or just let them in.
+           // Actually, let's just proceed.
+        }
+
         const tgUser: TelegramUser = {
           id: Number(profile.telegramId) || 12345678,
           first_name: profile.firstName || nameInput?.trim() || 'User',

@@ -43,6 +43,7 @@ export interface UserProfile {
   updatedAt: string;
   approvedBy?: string;
   approvedAt?: string;
+  pin?: string;
 }
 
 export interface RegistrationFormData {
@@ -64,6 +65,7 @@ export interface DailyReport {
   applicantWhatsapp?: string;
   uid9Kucing?: string;
   applicantTelegramUsername?: string;
+  applicantName?: string;
   result?: 'Pending' | 'ACC' | 'REJECT';
   grup?: 'T0' | 'V0' | 'RECRUITER' | 'T3';
   visit?: number;
@@ -88,6 +90,7 @@ export interface DailyReportFormData {
   applicantWhatsapp?: string;
   uid9Kucing?: string;
   applicantTelegramUsername?: string;
+  applicantName?: string;
   result?: 'Pending' | 'ACC' | 'REJECT';
   grup?: 'T0' | 'V0' | 'RECRUITER' | 'T3';
   visit?: number;
@@ -109,7 +112,7 @@ export interface AppNotification {
   targetRole?: 'Owner' | 'Admin' | 'Recruiter' | 'ADMIN_OWNER' | 'ALL';
   title: string;
   message: string;
-  type: 'NEW_REPORT' | 'STATUS_CHANGE' | 'PROMOTION' | 'AUDIT_COMPLETE' | 'SYSTEM';
+  type: 'NEW_REPORT' | 'STATUS_CHANGE' | 'PROMOTION' | 'AUDIT_COMPLETE' | 'SYSTEM' | 'RECRUITER_REGISTERED';
   readBy?: string[]; // list of telegramIds who have read this notification
   senderName?: string;
   createdAt: string;
@@ -173,3 +176,34 @@ export interface ApiResponse<T = unknown> {
   data?: T;
   error?: string;
 }
+
+export interface RecruiterSalary {
+  id: string;              // Firestore document ID (e.g., `${telegramId}_${periode}`)
+  periode: string;         // Week/Period identifier (e.g., "Periode 20-26 Juli 2026")
+  username: string;        // Telegram username
+  recruiterName: string;   // Full/First Name of recruiter
+  telegramId: string;      // Recruiter Telegram ID
+  hariEfektif: number;     // Hari Efektif
+  totalPostingan: number;  // TOTAL POSTINGAN
+  deklarasiT0: number;     // Deklarasi T0
+  sebenarnyaT0: number;    // Sebenarnya T0
+  t3: number;              // T3
+  deklarasiV0: number;     // Deklarasi V0
+  sebenarnyaV0: number;    // Sebenarnya V0
+  levelGaji: string;       // Level Gaji
+  tingkatPenerimaan: number; // Tingkat Penerimaan (%)
+  rasioPeningkatan: number;  // Rasio Peningkatan (%)
+  gajiPokok: number;       // Gaji Pokok (Rp)
+  komisi: number;          // Komisi (Rp)
+  bonusT0: number;         // Bonus (T0) (Rp)
+  bonusT3: number;         // Bonus (T3) (Rp)
+  otherBonus: number;      // Other Bonus (Rp)
+  deduksi: number;         // Deduksi (Rp)
+  totalGaji: number;       // Total Gaji (Rp)
+  status: 'Draft' | 'Paid'; // Status slip gaji
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;       // Admin/Owner who submitted
+  note?: string;           // Optional note
+}
+

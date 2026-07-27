@@ -1,8 +1,26 @@
 {
-	"appId": "com.rekrutmen.laporanharian",
-	"appName": "Laporan Harian Rekrutmen",
+	"appId": "com.azurlize.team",
+	"appName": "AzurLize Team",
 	"webDir": "dist",
 	"server": {
 		"androidScheme": "https"
+	},
+	"plugins": {
+		"StatusBar": {
+			"overlaysWebView": true,
+			"style": "DARK",
+			"backgroundColor": "#00000000"
+		},
+		"PushNotifications": {
+			"presentationOptions": [
+				"badge",
+				"sound",
+				"alert"
+			]
+		},
+		"LocalNotifications": {
+			"smallIcon": "ic_stat_icon_config_sample",
+			"iconColor": "#3b82f6"
+		}
 	}
 }

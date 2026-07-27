@@ -1,0 +1,2 @@
+sed -i 's/loginManually: (telegramId: string, name?: string, username?: string) => Promise<{ success: boolean; error?: string }>;/loginManually: (telegramId: string, pin?: string, name?: string, username?: string) => Promise<{ success: boolean; error?: string }>;/' src/contexts/AuthContext.tsx
+sed -i 's/const loginManually = async (telegramIdInput: string, nameInput?: string, usernameInput?: string) => {/const loginManually = async (telegramIdInput: string, pinInput?: string, nameInput?: string, usernameInput?: string) => {/' src/contexts/AuthContext.tsx

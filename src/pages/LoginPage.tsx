@@ -6,6 +6,7 @@ import { AzurLizeLogo } from '../components/logo/AzurLizeLogo';
 import { useAuth } from '../hooks/useAuth';
 import { formatUsername } from '../utils/format';
 import { createUserProfile, getUserProfile } from '../firebase/services/userService';
+import { createNotification } from '../firebase/services/notificationService';
 import { RegistrationFormData } from '../types';
 import { User, Mail, Phone, ShieldCheck, CheckCircle2 } from 'lucide-react';
 
@@ -107,6 +108,16 @@ export const LoginPage: React.FC = () => {
         status: 'Pending',
         approved: false
       });
+
+      // Send notification to Admin & Owner
+      const cleanUsername = username ? username.replace(/^@+/, '') : 'No Username';
+      await createNotification({
+        targetRole: 'ADMIN_OWNER',
+        title: 'Recruiter Baru Mendaftar 👤',
+        message: `Recruiter baru ${firstName}${lastName ? ' ' + lastName : ''} (@${cleanUsername}) telah mendaftar dan menunggu persetujuan.`,
+        type: 'RECRUITER_REGISTERED',
+        senderName: 'System'
+      }).catch(err => console.warn('Failed to send registration notification:', err));
 
       // Instantly refresh profile in AuthContext to transition to pending page
       await refreshProfile();

@@ -4,7 +4,7 @@ import { AzurLizeLogo } from '../components/logo/AzurLizeLogo';
 import { Button } from '../components/common/Button';
 import { Input } from '../components/common/Input';
 import { useAuth } from '../hooks/useAuth';
-import { LogIn, UserPlus, ChevronLeft, Hash, User, ShieldAlert, Sparkles } from 'lucide-react';
+import { LogIn, UserPlus, ChevronLeft, Hash, User, ShieldAlert, Sparkles, Lock } from 'lucide-react';
 
 export const BrowserNoticePage: React.FC = () => {
   const { loginManually, registerManually } = useAuth();
@@ -12,11 +12,13 @@ export const BrowserNoticePage: React.FC = () => {
   const [showManualForm, setShowManualForm] = useState(false);
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [telegramId, setTelegramId] = useState('');
+  const [pin, setPin] = useState('');
   const [name, setName] = useState('');
   const [username, setUsername] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isCapacitor, setIsCapacitor] = useState(false);
+  const [showForgotPinMsg, setShowForgotPinMsg] = useState(false);
 
   // Detect if running inside a Capacitor/Native WebView APK environment
   useEffect(() => {
@@ -45,7 +47,7 @@ export const BrowserNoticePage: React.FC = () => {
 
     setIsLoading(true);
     try {
-      const result = await loginManually(cleanId, name.trim(), username.trim());
+      const result = await loginManually(cleanId, pin, name.trim(), username.trim());
       if (!result.success) {
         setError(result.error || 'Gagal masuk.');
       }
@@ -218,7 +220,39 @@ export const BrowserNoticePage: React.FC = () => {
                   required
                   className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />
-                <p className="text-[10px] text-slate-500 dark:text-slate-400 -mt-3 pl-1 leading-relaxed">
+                <Input
+                  label="Kode Akses (PIN)"
+                  type="password"
+                  placeholder="Kosongkan jika belum mengatur PIN"
+                  icon={<Lock className="w-4 h-4" />}
+                  value={pin}
+                  onChange={(e) => setPin(e.target.value)}
+                />
+
+                <div className="flex justify-end -mt-3 pr-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowForgotPinMsg(!showForgotPinMsg)}
+                    className="text-[11px] font-semibold text-sky-400 hover:text-sky-300 transition-colors hover:underline cursor-pointer"
+                  >
+                    Lupa PIN / Kode Akses?
+                  </button>
+                </div>
+
+                {showForgotPinMsg && (
+                  <div className="bg-amber-500/10 border border-amber-500/25 p-3.5 rounded-2xl text-[11px] text-amber-300 space-y-1.5 leading-relaxed border-dashed">
+                    <p className="font-bold flex items-center gap-1.5 text-amber-400 text-xs">
+                      💡 Cara Mendapatkan / Memulihkan PIN:
+                    </p>
+                    <ol className="list-decimal list-inside space-y-1 pl-1 text-slate-300 font-medium text-left">
+                      <li>Buka Bot Telegram Resmi kami: <a href="https://t.me/azurlize_recruitment_bot" target="_blank" rel="noopener noreferrer" className="text-sky-400 underline hover:text-sky-300 font-bold">@azurlize_recruitment_bot</a></li>
+                      <li>Kirim perintah <code className="text-amber-300 bg-slate-800/80 px-1 py-0.5 rounded border border-slate-700 font-mono">/pin</code> di dalam obrolan bot.</li>
+                      <li>Bot akan secara otomatis mengirimkan <b>ID Telegram</b> dan <b>Kode PIN login</b> Anda secara pribadi, instan, dan aman.</li>
+                    </ol>
+                  </div>
+                )}
+
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 -mt-2 pl-1 leading-relaxed">
                   *Dapatkan ID dari bot Telegram seperti <span className="text-sky-400">@userinfobot</span> (ketik /id).
                 </p>
 

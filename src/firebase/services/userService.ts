@@ -32,7 +32,7 @@ export function subscribeToUserProfile(telegramId: string, onUpdate: (profile: U
       onUpdate(null);
     }
   }, (error) => {
-    console.error('Error listening to user profile:', error);
+    console.warn('Notice listening to user profile:', error);
     onUpdate(null);
   });
   return unsubscribe;
@@ -137,6 +137,22 @@ export async function updateUserStatus(
       approved,
       approvedBy,
       approvedAt: now,
+      updatedAt: now
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `users/${telegramId}`);
+  }
+}
+
+export async function updateUserPin(
+  telegramId: string,
+  pin: string
+): Promise<void> {
+  try {
+    const userRef = doc(db, 'users', String(telegramId));
+    const now = new Date().toISOString();
+    await updateDoc(userRef, {
+      pin,
       updatedAt: now
     });
   } catch (error) {

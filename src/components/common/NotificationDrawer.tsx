@@ -18,7 +18,8 @@ import {
   FileSpreadsheet,
   AlertCircle,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  User
 } from 'lucide-react';
 
 interface NotificationDrawerProps {
@@ -88,6 +89,8 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({
       
       if (notif.type === 'STATUS_CHANGE' || notif.type === 'PROMOTION' || notif.type === 'AUDIT_COMPLETE') {
         targetTab = 'data_harian';
+      } else if (notif.type === 'RECRUITER_REGISTERED') {
+        targetTab = 'admin';
       } else if (notif.type === 'NEW_REPORT') {
         // Decide based on message/title content
         const isDailySummary = notif.title?.toLowerCase().includes('laporan harian') || 
@@ -142,6 +145,8 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({
         return <Rocket className="w-4 h-4 text-sky-400" />;
       case 'AUDIT_COMPLETE':
         return <Bell className="w-4 h-4 text-indigo-400" />;
+      case 'RECRUITER_REGISTERED':
+        return <User className="w-4 h-4 text-sky-400" />;
       default:
         return <AlertCircle className="w-4 h-4 text-slate-600 dark:text-slate-400" />;
     }

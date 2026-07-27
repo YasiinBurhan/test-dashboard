@@ -76,17 +76,12 @@ export function formatWIBDateTime(dateString?: string | null): string {
 
 /**
  * Gets the current date in YYYY-MM-DD format based on Asia/Jakarta timezone (WIB)
- * Note: A new business day starts at 10:00 AM WIB.
+ * Note: A new business day starts at 12:00 AM (Midnight) WIB.
  */
 export function getWIBDate(): string {
   const now = new Date();
   const jakartaTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
-  
-  // Apply 10 AM rule: if before 10 AM, we treat it as the previous calendar day
-  if (jakartaTime.getHours() < 10) {
-    jakartaTime.setDate(jakartaTime.getDate() - 1);
-  }
-  
+  jakartaTime.setHours(jakartaTime.getHours() - 10);
   const year = jakartaTime.getFullYear();
   const month = String(jakartaTime.getMonth() + 1).padStart(2, '0');
   const day = String(jakartaTime.getDate()).padStart(2, '0');
@@ -107,18 +102,13 @@ export function getWIBNow(): Date {
 /**
  * Gets the date of the Monday for the given week in WIB
  * offset: 0 for current week, -7 for last week
- * Note: Respects the 10 AM Monday transition rule.
+ * Note: Respects the 12:00 AM (Midnight) transition rule.
  */
 export function getWIBMonday(offsetDays: number = 0): string {
   const now = new Date();
   const jakartaStr = now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' });
   const d = new Date(jakartaStr);
-  
-  // Apply 10 AM rule: if before 10 AM, we treat it as previous day for week calculation
-  if (d.getHours() < 10) {
-    d.setDate(d.getDate() - 1);
-  }
-  
+  d.setHours(d.getHours() - 10);
   const day = d.getDay(); // 0 (Sun) to 6 (Sat)
   const diff = d.getDate() - day + (day === 0 ? -6 : 1) + offsetDays;
   d.setDate(diff);

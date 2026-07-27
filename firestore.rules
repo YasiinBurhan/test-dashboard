@@ -17,6 +17,11 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    // 3b. COLLECTION: DATA HARIAN (Data Pelamar Individual)
+    match /data_harian/{reportId} {
+      allow read, write: if true;
+    }
+
     // Fallback alias for daily_reports if used
     match /daily_reports/{reportId} {
       allow read, write: if true;
@@ -32,8 +37,18 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    // 5b. COLLECTION: SALARIES (Slip Gaji Recruiter)
+    match /salaries/{salaryId} {
+      allow read, write: if true;
+    }
+
     // 6. COLLECTION: NOTIFICATIONS (Notifikasi Real-time)
     match /notifications/{notificationId} {
+      allow read, write: if true;
+    }
+
+    // Default fallback rule
+    match /{document=**} {
       allow read, write: if true;
     }
   }

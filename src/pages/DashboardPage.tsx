@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useMemo } from 'react';
-import { motion } from 'motion/react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { GlassCard } from '../components/common/GlassCard';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { TabType } from '../components/navigation/BottomNav';
@@ -35,7 +35,10 @@ import {
   UserCheck,
   Crown,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  ChevronDown,
+  Check,
+  Users
 } from 'lucide-react';
 
 interface DashboardPageProps {
@@ -55,8 +58,21 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setActiveTab }) =>
   const [allPosts, setAllPosts] = useState<BatchPost[]>([]);
   const [isLoadingPosts, setIsLoadingPosts] = useState(true);
   const [selectedWeekOffset, setSelectedWeekOffset] = useState<number>(0); // 0 = Minggu Ini, -7 = Minggu Lalu
+  const [selectedRecruiterFilter, setSelectedRecruiterFilter] = useState<string>(''); // For filtering in Dashboard
+  const [isRecruiterFilterDropdownOpen, setIsRecruiterFilterDropdownOpen] = useState(false);
   const [timeLeft, setTimeLeft] = useState<string>('');
   const [activityPage, setActivityPage] = useState<number>(1);
+  const recruiterFilterDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (recruiterFilterDropdownRef.current && !recruiterFilterDropdownRef.current.contains(event.target as Node)) {
+        setIsRecruiterFilterDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   useEffect(() => {
     let unsubPosts: (() => void) | undefined;
@@ -168,7 +184,25 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setActiveTab }) =>
   const weekRangeInfo = useMemo(() => getWIBWeekRange(targetMondayStr), [targetMondayStr]);
 
   // Calculate stats - use allReports for Admin/Owner, myReports for Recruiter
-  const reportsToUse = isAdminOrOwner ? allReports : myReports;
+  const reportsToUse = useMemo(() => {
+    if (isAdminOrOwner) {
+      if (selectedRecruiterFilter) {
+        const selectedUser = allUsers.find(u => String(u.telegramId) === selectedRecruiterFilter);
+        return allReports.filter(r => {
+          const matchId = r.telegramId && String(r.telegramId) === selectedRecruiterFilter;
+          if (matchId) return true;
+          if (selectedUser && selectedUser.username) {
+            const reportUname = (r.recruiterUsername || r.username || '').replace(/@/g, '').trim().toLowerCase();
+            const selectedUname = selectedUser.username.replace(/@/g, '').trim().toLowerCase();
+            if (reportUname && selectedUname && reportUname === selectedUname) return true;
+          }
+          return false;
+        });
+      }
+      return allReports;
+    }
+    return myReports;
+  }, [isAdminOrOwner, allReports, myReports, selectedRecruiterFilter, allUsers]);
 
   // Filter reports specifically for the selected week (Resets every Monday 10:00 AM WIB)
   const selectedWeekReports = useMemo(() => {
@@ -189,16 +223,63 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setActiveTab }) =>
     return selectedWeekReports.reduce((acc, curr) => acc + (Number(curr.visit) || 0), 0);
   }, [selectedWeekReports]);
 
-  const totalApplicants = useMemo(() => {
-    return selectedWeekReports.reduce((acc, curr) => acc + (Number(curr.applicant) || 0), 0);
+  const { totalApplicants, totalQuality } = useMemo(() => {
+    let appCount = 0;
+    let qualCount = 0;
+    
+    const detailedGroups = new Set<string>();
+    selectedWeekReports.forEach(r => {
+      const isDetailed = !!(r.applicantWhatsapp || r.uid9Kucing || r.applicantTelegramUsername);
+      if (isDetailed) {
+        const rDate = r.date || (r.createdAt ? r.createdAt.split('T')[0] : '');
+        const userKey = r.telegramId ? String(r.telegramId) : (r.recruiterUsername || r.username || 'user');
+        detailedGroups.add(`${userKey}_${rDate}`);
+      }
+    });
+
+    selectedWeekReports.forEach(r => {
+      const isDetailed = !!(r.applicantWhatsapp || r.uid9Kucing || r.applicantTelegramUsername);
+      const rDate = r.date || (r.createdAt ? r.createdAt.split('T')[0] : '');
+      const userKey = r.telegramId ? String(r.telegramId) : (r.recruiterUsername || r.username || 'user');
+      const groupKey = `${userKey}_${rDate}`;
+
+      if (isDetailed) {
+        appCount += 1;
+        if (r.result === 'ACC' && (r.grup === 'T0' || r.grup === 'T3' || r.grup === 'V0')) qualCount += 1;
+      } else {
+        if (!detailedGroups.has(groupKey)) {
+          appCount += (Number(r.applicant) || 0);
+          qualCount += (Number(r.quality) || 0);
+        }
+      }
+    });
+
+    return { totalApplicants: appCount, totalQuality: qualCount };
   }, [selectedWeekReports]);
 
-  const totalQuality = useMemo(() => {
-    return selectedWeekReports.reduce((acc, curr) => acc + (Number(curr.quality) || 0), 0);
-  }, [selectedWeekReports]);
+  const postsToUse = useMemo(() => {
+    if (isAdminOrOwner) {
+      if (selectedRecruiterFilter) {
+        const selectedUser = allUsers.find(u => String(u.telegramId) === selectedRecruiterFilter);
+        return allPosts.filter(p => {
+          const matchId = p.telegramId && String(p.telegramId) === selectedRecruiterFilter;
+          if (matchId) return true;
+          if (selectedUser && selectedUser.username) {
+            const postUname = (p.username || '').replace(/@/g, '').trim().toLowerCase();
+            const selectedUname = selectedUser.username.replace(/@/g, '').trim().toLowerCase();
+            if (postUname && selectedUname && postUname === selectedUname) return true;
+          }
+          return false;
+        });
+      }
+      return allPosts;
+    }
+    const myTgId = userProfile?.telegramId || (telegramUser?.id ? String(telegramUser.id) : '');
+    return allPosts.filter(p => String(p.telegramId) === myTgId);
+  }, [isAdminOrOwner, allPosts, userProfile, telegramUser, selectedRecruiterFilter, allUsers]);
 
   const totalPostings = useMemo(() => {
-    const selectedWeekPosts = allPosts.filter(p => {
+    const selectedWeekPosts = postsToUse.filter(p => {
       const pDate = p.date || (p.createdAt ? p.createdAt.split('T')[0] : '');
       if (!pDate) return false;
       return getWIBMondayOfDate(pDate) === targetMondayStr;
@@ -206,7 +287,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setActiveTab }) =>
     const postsFromCollection = selectedWeekPosts.reduce((acc, curr) => acc + (Array.isArray(curr.links) ? curr.links.length : 0), 0);
     const manualPostingsFromReports = selectedWeekReports.reduce((acc, curr) => acc + (Number(curr.posting) || 0), 0);
     return Math.max(postsFromCollection, manualPostingsFromReports);
-  }, [allPosts, selectedWeekReports, targetMondayStr]);
+  }, [postsToUse, selectedWeekReports, targetMondayStr]);
 
   // 2. Metrics sourced from Halaman Data Harian (ACC T0 & ACC V0)
   // An entry in Data Harian is ACC if r.result === 'ACC' in the selected week
@@ -234,52 +315,68 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setActiveTab }) =>
     }).reduce((acc, curr) => acc + (Number(curr.applicant) || 1), 0);
   }, [reportsToUse, targetMondayStr]);
 
-  // Helper to check if a report meets target (1 Effective Day)
-  const isReportEffective = (r: DailyReport, postsList: BatchPost[]): boolean => {
-    if (r.effectiveStatus === 'YES') return true;
-
-    const recruits = Number(r.applicant) || 0;
-    if (recruits >= 3) return true;
-
-    let requiredPosting = 90;
-    if (recruits === 2) requiredPosting = 30;
-    else if (recruits === 1) requiredPosting = 60;
-
-    const reportDate = r.date || (r.createdAt ? r.createdAt.split('T')[0] : '');
-    const reportTgId = r.telegramId ? String(r.telegramId) : '';
-    const reportUname = (r.recruiterUsername || r.username || '').replace(/@/g, '').trim().toLowerCase();
-
-    let postCount = Number(r.posting) || 0;
-    if (reportDate && postsList.length > 0) {
-      const matchingPosts = postsList.filter(p => {
-        const pDate = p.date || (p.createdAt ? p.createdAt.split('T')[0] : '');
-        if (pDate !== reportDate) return false;
-        const pTgId = p.telegramId ? String(p.telegramId) : '';
-        const pUname = (p.username || '').replace(/@/g, '').trim().toLowerCase();
-        return (reportTgId && pTgId === reportTgId) || (reportUname && pUname === reportUname);
-      });
-      const postLinks = matchingPosts.reduce((sum, p) => sum + (Array.isArray(p.links) ? p.links.length : 0), 0);
-      postCount = Math.max(postCount, postLinks);
-    }
-
-    return postCount >= requiredPosting;
-  };
-
+  // Calculation of effective days this week
   const totalEffectiveDays = useMemo(() => {
-    const effectiveKeySet = new Set<string>();
+    // Aggregate data per day
+    const dailyStats: Record<string, { applicants: number }> = {};
+    const effectiveDates = new Set<string>();
+
     selectedWeekReports.forEach(r => {
       const rDate = r.date || (r.createdAt ? r.createdAt.split('T')[0] : '');
       if (!rDate) return;
-
-      const userKey = r.telegramId ? String(r.telegramId) : (r.recruiterUsername || r.username || 'user');
-      const fullKey = `${userKey}_${rDate}`;
-
-      if (isReportEffective(r, allPosts)) {
-        effectiveKeySet.add(fullKey);
+      
+      if (!dailyStats[rDate]) {
+        dailyStats[rDate] = { applicants: 0 };
+      }
+      
+      const isDetailed = !!(r.applicantWhatsapp || r.uid9Kucing || r.applicantTelegramUsername);
+      if (isDetailed) {
+        dailyStats[rDate].applicants += 1;
+      } else {
+        // Summary
+        dailyStats[rDate].applicants = Math.max(dailyStats[rDate].applicants, Number(r.applicant) || 0);
       }
     });
-    return effectiveKeySet.size;
-  }, [selectedWeekReports, allPosts]);
+
+    Object.keys(dailyStats).forEach(date => {
+      const applicants = dailyStats[date].applicants;
+      
+      let requiredPosting = 90;
+      if (applicants >= 3) requiredPosting = 0;
+      else if (applicants === 2) requiredPosting = 30;
+      else if (applicants === 1) requiredPosting = 60;
+      
+      const postsOnDate = postsToUse.filter(p => {
+        const pDate = p.date || (p.createdAt ? p.createdAt.split('T')[0] : '');
+        return pDate === date;
+      });
+      const postCount = postsOnDate.reduce((sum, p) => sum + (Array.isArray(p.links) ? p.links.length : 0), 0);
+      
+      if (applicants >= 3 || postCount >= requiredPosting) {
+        effectiveDates.add(date);
+      }
+    });
+    
+    // Also check posts collection for days with 0 applicants but 90+ posts
+    postsToUse.forEach(p => {
+      const pDate = p.date || (p.createdAt ? p.createdAt.split('T')[0] : '');
+      if (!pDate) return;
+      const postMonday = getWIBMondayOfDate(pDate);
+      if (postMonday !== targetMondayStr) return;
+      
+      const postsOnDate = postsToUse.filter(ap => {
+        const apDate = ap.date || (ap.createdAt ? ap.createdAt.split('T')[0] : '');
+        return apDate === pDate;
+      });
+      const postCount = postsOnDate.reduce((sum, ap) => sum + (Array.isArray(ap.links) ? ap.links.length : 0), 0);
+      
+      if (postCount >= 90) {
+        effectiveDates.add(pDate);
+      }
+    });
+
+    return effectiveDates.size;
+  }, [selectedWeekReports, postsToUse, targetMondayStr]);
 
   const totalFines = useMemo(() => {
     return selectedWeekReports.reduce((sum, r) => sum + (r.fine !== undefined ? r.fine : (r.isLate ? 5000 : 0)), 0);
@@ -333,22 +430,27 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setActiveTab }) =>
       };
     });
 
-    if (allReports.length) {
-      allReports.forEach(r => {
-        // Only count approved reports (ACC)
-        if (r.result !== 'ACC') return;
+    if (allReports.length || allPosts.length) {
+      const dailyStats: Record<string, Record<string, {
+        applicants: number;
+        quality: number;
+        visits: number;
+        accT0: number;
+        accV0: number;
+        fines: number;
+        channels: Record<string, number>;
+        isDetailed: boolean;
+      }>> = {};
 
+      allReports.forEach(r => {
         const reportDate = r.date || (r.createdAt ? r.createdAt.split('T')[0] : '');
         if (!reportDate) return;
-
-        // Check if report falls into target Monday week
         const reportMonday = getWIBMondayOfDate(reportDate);
         if (reportMonday !== targetMondayStr) return;
 
         const reportTgId = r.telegramId ? String(r.telegramId) : '';
         const reportCleanUname = (r.recruiterUsername || r.username || '').replace(/@/g, '').trim().toLowerCase();
 
-        // Check if report belongs to Admin or Owner
         const matchedUser = allUsers.find(u => 
           (reportTgId && String(u.telegramId) === reportTgId) ||
           (reportCleanUname && u.username && u.username.replace(/@/g, '').trim().toLowerCase() === reportCleanUname)
@@ -358,89 +460,121 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setActiveTab }) =>
           return;
         }
 
-        // Match key in stats or matching user in allUsers
         let key = reportTgId;
-        if (!key || !stats[key]) {
-          if (matchedUser) {
-            key = String(matchedUser.telegramId) || matchedUser.username.replace(/@/g, '').trim().toLowerCase();
-          } else {
-            key = reportTgId || reportCleanUname || 'Unknown';
-          }
+        if (matchedUser) {
+          key = String(matchedUser.telegramId) || matchedUser.username.replace(/@/g, '').trim().toLowerCase();
+        } else {
+          key = reportTgId || reportCleanUname || 'Unknown';
         }
-
+        
         if (!stats[key]) {
           stats[key] = {
             telegramId: reportTgId || (matchedUser ? String(matchedUser.telegramId) : ''),
             name: r.name || (matchedUser ? `${matchedUser.firstName} ${matchedUser.lastName || ''}`.trim() : 'Recruiter'),
             username: r.recruiterUsername || r.username || matchedUser?.username || '',
-            points: 0,
-            count: 0,
-            applicantCount: 0,
-            qualityCount: 0,
-            visitCount: 0,
-            accT0Count: 0,
-            accV0Count: 0,
-            effectiveDaysCount: 0,
-            effectiveDates: new Set<string>(),
-            fineTotal: 0,
-            photo: matchedUser?.photoUrl || '',
-            channels: {}
+            points: 0, count: 0, applicantCount: 0, qualityCount: 0, visitCount: 0, accT0Count: 0, accV0Count: 0, effectiveDaysCount: 0,
+            effectiveDates: new Set<string>(), fineTotal: 0, photo: matchedUser?.photoUrl || '', channels: {}
           };
         }
 
-        stats[key].count += 1;
-        const applicant = Number(r.applicant) || 0;
-        const quality = Number(r.quality) || 0;
-        const visit = Number(r.visit) || 0;
+        if (!dailyStats[key]) dailyStats[key] = {};
+        if (!dailyStats[key][reportDate]) {
+          dailyStats[key][reportDate] = { applicants: 0, quality: 0, visits: 0, accT0: 0, accV0: 0, fines: 0, channels: {}, isDetailed: false };
+        }
 
-        stats[key].applicantCount += applicant;
-        stats[key].qualityCount += quality;
-        stats[key].visitCount += visit;
-
-        if (r.result === 'ACC') {
-          if (r.grup === 'T0' || r.grup === 'T3') {
-            stats[key].accT0Count += applicant > 0 ? applicant : 1;
-          } else if (r.grup === 'V0') {
-            stats[key].accV0Count += applicant > 0 ? applicant : 1;
+        const isDetailed = !!(r.applicantWhatsapp || r.uid9Kucing || r.applicantTelegramUsername);
+        if (isDetailed) {
+          dailyStats[key][reportDate].isDetailed = true;
+          // Kirim Data (ALL results) count as applicants
+          dailyStats[key][reportDate].applicants += 1;
+          
+          if (r.result === 'ACC') {
+            let isT0orV0 = false;
+            if (r.grup === 'T0' || r.grup === 'T3') {
+              dailyStats[key][reportDate].accT0 += 1;
+              dailyStats[key][reportDate].quality += 1;
+              isT0orV0 = true;
+            } else if (r.grup === 'V0') {
+              dailyStats[key][reportDate].accV0 += 1;
+              dailyStats[key][reportDate].quality += 1;
+              isT0orV0 = true;
+            }
+            
+            if (isT0orV0 && r.channel && r.channel.trim()) {
+              const ch = r.channel.trim();
+              dailyStats[key][reportDate].channels[ch] = (dailyStats[key][reportDate].channels[ch] || 0) + 1;
+            }
           }
+        } else {
+          // Laporan Harian (Summary)
+          // We only use summary numbers if detailed data wasn't provided for this day
+          if (!dailyStats[key][reportDate].isDetailed) {
+            dailyStats[key][reportDate].applicants = Math.max(dailyStats[key][reportDate].applicants, Number(r.applicant) || 0);
+            dailyStats[key][reportDate].quality = Math.max(dailyStats[key][reportDate].quality, Number(r.quality) || 0);
+          }
+          // Add visits and fines from summary
+          dailyStats[key][reportDate].visits += (Number(r.visit) || 0);
+          const fineVal = r.fine !== undefined ? r.fine : (r.isLate ? 5000 : 0);
+          dailyStats[key][reportDate].fines += fineVal;
         }
-
-        if (isReportEffective(r, allPosts)) {
-          stats[key].effectiveDates.add(reportDate);
-        }
-
-        const fineVal = r.fine !== undefined ? r.fine : (r.isLate ? 5000 : 0);
-        stats[key].fineTotal += fineVal;
-
-        // Track channel
-        if (r.channel && r.channel.trim()) {
-          const ch = r.channel.trim();
-          const chCount = applicant > 0 ? applicant : 1;
-          stats[key].channels[ch] = (stats[key].channels[ch] || 0) + chCount;
-          overallChannels[ch] = (overallChannels[ch] || 0) + chCount;
-        }
-
-        // Points: 1 per applicant, 3 per quality, 0.1 per visit
-        stats[key].points += (applicant * 1) + (quality * 3) + (visit * 0.1);
       });
-    }
+      
+      // Process daily aggregations
+      Object.keys(dailyStats).forEach(key => {
+        Object.keys(dailyStats[key]).forEach(date => {
+          const ds = dailyStats[key][date];
+          stats[key].count += 1;
+          stats[key].applicantCount += ds.applicants;
+          stats[key].qualityCount += (ds.accT0 + ds.accV0);
+          stats[key].visitCount += ds.visits;
+          stats[key].accT0Count += ds.accT0;
+          stats[key].accV0Count += ds.accV0;
+          stats[key].fineTotal += ds.fines;
+          
+          Object.keys(ds.channels).forEach(ch => {
+            stats[key].channels[ch] = (stats[key].channels[ch] || 0) + ds.channels[ch];
+            overallChannels[ch] = (overallChannels[ch] || 0) + ds.channels[ch];
+          });
+          
+          stats[key].points += (ds.accT0 + ds.accV0);
+          
+          // Determine if effective day
+          let requiredPosting = 90;
+          if (ds.applicants >= 3) requiredPosting = 0;
+          else if (ds.applicants === 2) requiredPosting = 30;
+          else if (ds.applicants === 1) requiredPosting = 60;
+          
+          let postCount = 0;
+          const userPostsOnDate = allPosts.filter(ap => {
+            const apDate = ap.date || (ap.createdAt ? ap.createdAt.split('T')[0] : '');
+            if (apDate !== date) return false;
+            const apTgId = ap.telegramId ? String(ap.telegramId) : '';
+            const apCleanUname = (ap.username || '').replace(/@/g, '').trim().toLowerCase();
+            const s = stats[key];
+            return (s.telegramId && apTgId === s.telegramId) || (s.username && apCleanUname === s.username.replace(/@/g, '').toLowerCase());
+          });
+          postCount = userPostsOnDate.reduce((sum, ap) => sum + (Array.isArray(ap.links) ? ap.links.length : 0), 0);
+          
+          if (ds.applicants >= 3 || postCount >= requiredPosting) {
+            stats[key].effectiveDates.add(date);
+          }
+        });
+      });
 
-    // Also check posts collection for recruiters who posted links meeting target
-    if (allPosts.length) {
+      // Process users who ONLY posted links (no reports)
       allPosts.forEach(p => {
         const postDate = p.date || (p.createdAt ? p.createdAt.split('T')[0] : '');
         if (!postDate) return;
         const postMonday = getWIBMondayOfDate(postDate);
         if (postMonday !== targetMondayStr) return;
-
+        
         const postTgId = p.telegramId ? String(p.telegramId) : '';
         const postCleanUname = (p.username || '').replace(/@/g, '').trim().toLowerCase();
-
         const key = Object.keys(stats).find(k => {
           const s = stats[k];
           return (postTgId && s.telegramId === postTgId) || (postCleanUname && s.username && s.username.replace(/@/g, '').trim().toLowerCase() === postCleanUname);
         });
-
+        
         if (key && stats[key]) {
           const userPostsOnDate = allPosts.filter(ap => {
             const apDate = ap.date || (ap.createdAt ? ap.createdAt.split('T')[0] : '');
@@ -484,10 +618,14 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setActiveTab }) =>
     const topChannelOverall = sortedOverallCh.length > 0 ? { name: sortedOverallCh[0][0], count: sortedOverallCh[0][1] } : null;
 
     return {
-      topRecruiters: filteredRecruiters.slice(0, 3), // Hanya ambil top 3 recruiter
+      topRecruiters: filteredRecruiters.slice(0, 3),
       topChannelOverall
     };
   }, [allReports, allUsers, targetMondayStr]);
+
+  const totalAllRecruitersCount = useMemo(() => {
+    return allUsers.filter(u => u.role === 'Recruiter').length;
+  }, [allUsers]);
 
   const podiumRecruiters = useMemo(() => {
     return topRecruiters.slice(0, 3);
@@ -525,7 +663,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setActiveTab }) =>
       };
     });
 
-    const postList = (allPosts || []).map(p => ({
+    const postList = (postsToUse || []).map(p => ({
       id: p.id || `post-${Math.random()}`,
       username: p.username || p.name || '',
       name: p.name || p.username || '',
@@ -547,13 +685,14 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setActiveTab }) =>
     }));
 
     const combined = [...reportList, ...postList];
+
     return combined
       .sort((a, b) => {
         const timeA = new Date(a.createdAt || a.date).getTime();
         const timeB = new Date(b.createdAt || b.date).getTime();
         return timeB - timeA;
       });
-  }, [reportsToUse, allPosts]);
+  }, [reportsToUse, postsToUse]);
 
   const ACTIVITIES_PER_PAGE = 5;
   const totalActivityPages = Math.ceil(allRecentActivities.length / ACTIVITIES_PER_PAGE) || 1;
@@ -761,7 +900,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setActiveTab }) =>
                         </div>
                         <div className="text-center w-full max-w-[85px]">
                           <span className="text-[10px] text-slate-800 dark:text-slate-300 font-extrabold block truncate leading-tight">{podiumRecruiters[1].name}</span>
-                          <span className="text-[11px] font-black text-slate-700 dark:text-slate-400 block mt-0.5">{Math.floor(podiumRecruiters[1].points)} <span className="text-[8px] font-medium text-slate-500 dark:text-slate-400">pt</span></span>
+                          <span className="text-[11px] font-black text-slate-700 dark:text-slate-400 block mt-0.5">{Math.floor(podiumRecruiters[1].points)} <span className="text-[8px] font-medium text-slate-500 dark:text-slate-400">ACC</span></span>
                         </div>
                       </motion.div>
                     ) : (
@@ -794,7 +933,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setActiveTab }) =>
                       </div>
                       <div className="text-center w-full max-w-[95px]">
                         <span className="text-xs text-amber-900 dark:text-amber-300 font-extrabold block truncate leading-tight">{podiumRecruiters[0].name}</span>
-                        <span className="text-xs font-black text-slate-900 dark:text-white block mt-0.5">{Math.floor(podiumRecruiters[0].points)} <span className="text-[9px] font-medium text-amber-600 dark:text-amber-400">pt</span></span>
+                        <span className="text-xs font-black text-slate-900 dark:text-white block mt-0.5">{Math.floor(podiumRecruiters[0].points)} <span className="text-[9px] font-medium text-amber-600 dark:text-amber-400">ACC</span></span>
                       </div>
                     </motion.div>
                   </div>
@@ -824,7 +963,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setActiveTab }) =>
                         </div>
                         <div className="text-center w-full max-w-[85px]">
                           <span className="text-[10px] text-slate-800 dark:text-slate-300 font-extrabold block truncate leading-tight">{podiumRecruiters[2].name}</span>
-                          <span className="text-[11px] font-black text-amber-800 dark:text-amber-600/80 block mt-0.5">{Math.floor(podiumRecruiters[2].points)} <span className="text-[8px] font-medium text-slate-500 dark:text-slate-400">pt</span></span>
+                          <span className="text-[11px] font-black text-amber-800 dark:text-amber-600/80 block mt-0.5">{Math.floor(podiumRecruiters[2].points)} <span className="text-[8px] font-medium text-slate-500 dark:text-slate-400">ACC</span></span>
                         </div>
                       </motion.div>
                     ) : (
@@ -941,10 +1080,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setActiveTab }) =>
             <div className="p-2.5 bg-slate-100/80 dark:bg-slate-950/40 border-t border-slate-200 dark:border-slate-800/50 flex items-center justify-between px-3.5">
               <span className="text-[9px] text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1.5 italic">
                 <Medal className="w-3 h-3 text-amber-500" />
-                Point: 1 pt/Kirim Data, 3 pt/Pelamar Disetujui, 0.1 pt/Tanya Kerja
+                Point: Total ACC T0 & V0
               </span>
               <span className="text-[9px] text-slate-600 dark:text-slate-400 font-bold">
-                Total: {topRecruiters.length} Recruiter
+                Total: {totalAllRecruitersCount} Recruiter
               </span>
             </div>
           )}
@@ -954,19 +1093,92 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setActiveTab }) =>
       {/* My Stats Summary Card */}
       <div className="space-y-3">
         <h3 className="text-xs font-bold text-slate-700 dark:text-slate-400 uppercase tracking-widest px-1">
-          {isAdminOrOwner ? 'Ringkasan Performa Semua Recruiter' : 'Ringkasan Performa Saya'}
+          {isAdminOrOwner ? (selectedRecruiterFilter ? 'Ringkasan Performa Recruiter' : 'Ringkasan Performa Semua Recruiter') : 'Ringkasan Performa Saya'}
         </h3>
 
         <GlassCard className="p-4 space-y-4 border-slate-200 dark:border-slate-800/80 bg-white/80 dark:bg-slate-950/20 shadow-lg">
-          <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800/60 pb-3">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-slate-200 dark:border-slate-800/60 pb-3 gap-3">
             <div className="flex items-center gap-2">
               <div className="p-1.5 rounded-xl bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20">
                 <BarChart2 className="w-4 h-4" />
               </div>
               <span className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">
-                {isAdminOrOwner ? 'Metrik Akumulasi Semua Laporan' : 'Metrik Akumulasi Laporan Saya'}
+                {isAdminOrOwner ? (selectedRecruiterFilter ? 'Metrik Recruiter' : 'Metrik Akumulasi Semua Laporan') : 'Metrik Akumulasi Laporan Saya'}
               </span>
             </div>
+            
+            {isAdminOrOwner && (
+              <div className="relative w-full sm:w-auto" ref={recruiterFilterDropdownRef}>
+                <button
+                  type="button"
+                  onClick={() => setIsRecruiterFilterDropdownOpen(!isRecruiterFilterDropdownOpen)}
+                  className="flex items-center justify-between w-full sm:w-64 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs font-bold px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                >
+                  <div className="flex items-center gap-2 truncate">
+                    {selectedRecruiterFilter ? (
+                      <>
+                        {allUsers.find(u => String(u.telegramId) === selectedRecruiterFilter)?.photoUrl ? (
+                          <img src={allUsers.find(u => String(u.telegramId) === selectedRecruiterFilter)?.photoUrl} alt="Profile" className="w-5 h-5 rounded-full object-cover" />
+                        ) : (
+                          <div className="w-5 h-5 rounded-full bg-indigo-100 dark:bg-indigo-500/20 flex items-center justify-center text-[9px] text-indigo-600 dark:text-indigo-400">
+                            {allUsers.find(u => String(u.telegramId) === selectedRecruiterFilter)?.firstName?.charAt(0) || '?'}
+                          </div>
+                        )}
+                        <span className="truncate">
+                          {allUsers.find(u => String(u.telegramId) === selectedRecruiterFilter)?.firstName} {allUsers.find(u => String(u.telegramId) === selectedRecruiterFilter)?.lastName || ''}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-slate-500 dark:text-slate-400">Semua Recruiter</span>
+                    )}
+                  </div>
+                  <ChevronDown className={`w-4 h-4 text-slate-500 transition-transform ${isRecruiterFilterDropdownOpen ? 'rotate-180' : ''}`} />
+                </button>
+
+                <AnimatePresence>
+                  {isRecruiterFilterDropdownOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -10 }}
+                      className="absolute right-0 z-50 w-full sm:w-64 mt-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl overflow-hidden max-h-60 overflow-y-auto"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => { setSelectedRecruiterFilter(''); setIsRecruiterFilterDropdownOpen(false); }}
+                        className={`w-full text-left px-3 py-2 text-xs font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-2 ${!selectedRecruiterFilter ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400' : 'text-slate-700 dark:text-slate-300'}`}
+                      >
+                        <div className="w-5 h-5 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0">
+                          <Users className="w-3 h-3 text-slate-500" />
+                        </div>
+                        Semua Recruiter
+                        {!selectedRecruiterFilter && <Check className="w-3 h-3 ml-auto" />}
+                      </button>
+                      {allUsers.filter(u => u.role === 'Recruiter').map(r => (
+                        <button
+                          key={r.telegramId}
+                          type="button"
+                          onClick={() => { setSelectedRecruiterFilter(String(r.telegramId)); setIsRecruiterFilterDropdownOpen(false); }}
+                          className={`w-full text-left px-3 py-2 text-xs font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-2 ${selectedRecruiterFilter === String(r.telegramId) ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400' : 'text-slate-700 dark:text-slate-300'}`}
+                        >
+                          {r.photoUrl ? (
+                            <img src={r.photoUrl} alt={r.firstName} className="w-5 h-5 rounded-full object-cover shrink-0" />
+                          ) : (
+                            <div className="w-5 h-5 rounded-full bg-indigo-100 dark:bg-indigo-500/20 flex items-center justify-center text-[9px] shrink-0">
+                              {r.firstName?.charAt(0) || '?'}
+                            </div>
+                          )}
+                          <span className="truncate">
+                            {r.firstName} {r.lastName || ''}
+                          </span>
+                          {selectedRecruiterFilter === String(r.telegramId) && <Check className="w-3 h-3 ml-auto shrink-0" />}
+                        </button>
+                      ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

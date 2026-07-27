@@ -1,9 +1,38 @@
 import express from 'express';
 import type { Request, Response } from 'express';
 import path from 'path';
+import fs from 'fs';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+
+const execPromise = promisify(exec);
 import dotenv from 'dotenv';
+import { initializeApp } from 'firebase/app';
+import { getFirestore, doc, getDoc } from 'firebase/firestore';
+import { GoogleGenAI, Type } from '@google/genai';
+
+// Lazy-initialized GoogleGenAI client to avoid crash if GEMINI_API_KEY is not set on startup
+let aiClient: GoogleGenAI | null = null;
+function getGeminiClient(): GoogleGenAI {
+  if (!aiClient) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error('GEMINI_API_KEY environment variable is required');
+    }
+    aiClient = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        }
+      }
+    });
+  }
+  return aiClient;
+}
+
 // import { createServer as createViteServer } from 'vite'; // Moved to dynamic import
 
 // Dynamic import helper for Google Sheets
@@ -27,11 +56,30 @@ const app = express();
 const PORT = 3000;
 
 // TODO: Configure TELEGRAM_BOT_TOKEN in .env for production verification
-const TELEGRAM_BOT_TOKEN = (process.env.TELEGRAM_BOT_TOKEN || '8892793996:AAFEBvD5fbQ8QAkUOFe5PHSFKHCocBbNSPA').trim().replace(/^["']|["']$/g, '');
+const TELEGRAM_BOT_TOKEN = (process.env.TELEGRAM_BOT_TOKEN || '8892793996:CAYzkJoLs661HwLRCY8qXBCdIKslXopcj9IYSEfsimUYRFLIf1hC0g').trim().replace(/^["']|["']$/g, '');
 const JWT_SECRET = (process.env.JWT_SECRET || 'azurlizeteam_secret_jwt_key_2026').trim().replace(/^["']|["']$/g, '');
 
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+// Initialize Firebase App for Server-Side Telegram Bot lookups
+let serverDb: any = null;
+try {
+  const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
+  if (fs.existsSync(configPath)) {
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    const firebaseApp = initializeApp(config);
+    const dbId = config.firestoreDatabaseId && config.firestoreDatabaseId !== '(default)'
+      ? config.firestoreDatabaseId
+      : undefined;
+    serverDb = dbId ? getFirestore(firebaseApp, dbId) : getFirestore(firebaseApp);
+    console.log('[Firebase Node] Firestore successfully initialized on Server!');
+  } else {
+    console.warn('[Firebase Node] firebase-applet-config.json not found on server.');
+  }
+} catch (err) {
+  console.error('[Firebase Node] Failed to initialize Firebase on server:', err);
+}
+
+app.use(express.json({ limit: '500mb' }));
+app.use(express.urlencoded({ limit: '500mb', extended: true }));
 
 // Enable CORS for all origins (including Vercel deployments)
 app.use((req, res, next) => {
@@ -247,6 +295,95 @@ app.post('/api/sheets/sync-report', async (req: Request, res: Response) => {
   }
 });
 
+// API Endpoint: Scan Screenshot using Gemini AI for UID, WA, and Telegram Username
+app.post('/api/scan-uid', async (req: Request, res: Response) => {
+  try {
+    const { image, mimeType } = req.body;
+    if (!image) {
+      res.status(400).json({ success: false, error: 'File gambar screenshot wajib dikirimkan.' });
+      return;
+    }
+
+    let base64Data = image;
+    let resolvedMimeType = mimeType || 'image/png';
+    if (image.startsWith('data:')) {
+      const match = image.match(/^data:([^;]+);base64,(.+)$/);
+      if (match) {
+        resolvedMimeType = match[1];
+        base64Data = match[2];
+      }
+    }
+
+    const ai = getGeminiClient();
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.6-flash',
+      contents: [
+        {
+          inlineData: {
+            data: base64Data,
+            mimeType: resolvedMimeType,
+          },
+        },
+        {
+          text: `Analyze this screenshot of a game/application. Please accurately extract the following fields if visible:
+1. "uid": This is the player's/applicant's unique game/application UID (usually a standalone numeric code of 5 to 15 digits). For example: "UID: 12345678" or "ID: 12345678".
+2. "whatsapp": This is the player's/applicant's WhatsApp or phone number (starts with 08, 62, +62, etc.).
+3. "telegramUsername": This is the Telegram username (often labeled as Username, Telegram handle, dsb.).
+
+Return the response in JSON format.`,
+        },
+      ],
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            uid: {
+              type: Type.STRING,
+              description: 'The extracted application/game UID numeric sequence (5 to 15 digits). If not found, return empty string.',
+            },
+            whatsapp: {
+              type: Type.STRING,
+              description: 'The WhatsApp number if visible. If not found, return empty string.',
+            },
+            telegramUsername: {
+              type: Type.STRING,
+              description: 'The Telegram username with or without @. If not found, return empty string.',
+            },
+            name: {
+              type: Type.STRING,
+              description: 'The display name or full name of the user/applicant if visible. If not found, return empty string.',
+            },
+            confidence: {
+              type: Type.NUMBER,
+              description: 'Confidence score from 0 to 1.',
+            },
+            reasoning: {
+              type: Type.STRING,
+              description: 'Brief explanation of what was found or why it couldn\'t be found.',
+            },
+          },
+          required: ['uid', 'whatsapp', 'telegramUsername', 'name'],
+        },
+      },
+    });
+
+    const resultText = response.text || '{}';
+    const parsed = JSON.parse(resultText);
+
+    res.json({
+      success: true,
+      data: parsed,
+    });
+  } catch (err) {
+    console.error('[Scan Screenshot] Error processing screenshot with Gemini AI:', err);
+    res.status(500).json({
+      success: false,
+      error: err instanceof Error ? err.message : 'Gagal memproses screenshot menggunakan Gemini AI.',
+    });
+  }
+});
+
 // API Endpoint: Real-time Telegram Username Checker
 app.get('/api/check-telegram/:username', async (req: Request, res: Response) => {
   try {
@@ -276,20 +413,27 @@ app.get('/api/check-telegram/:username', async (req: Request, res: Response) => 
 
     const isTelegramPage = html.includes('tgme_page') || html.includes('Telegram Web') || html.includes('content="Telegram"');
     if (!isTelegramPage) {
-      res.json({ success: true, exists: null, isSyntaxValid: true, title: `@${username}` });
+      res.json({ success: true, exists: null, isSyntaxValid: true, title: username });
       return;
     }
 
     const isUserNotFoundMsg = html.includes('User not found') || html.includes('Page not found');
     const isNotFoundText = html.includes('If you have <strong>Telegram</strong>, you can contact') || html.includes('If you have Telegram, you can contact');
-    const hasPageTitle = html.includes('tgme_page_title') || html.includes('tgme_page_extra');
+    
+    // Use regex to match actual class attributes of elements, avoiding CSS rule strings in style tags
+    const hasPageTitle = /class=["'][^"']*(tgme_page_title|tgme_page_extra)[^"']*["']/i.test(html);
 
-    if (isUserNotFoundMsg || (isNotFoundText && !hasPageTitle) || (!hasPageTitle && html.includes('If you have Telegram'))) {
-      res.json({ success: true, exists: false, isSyntaxValid: true, title: `@${username}` });
+    if (isUserNotFoundMsg) {
+      res.json({ success: true, exists: false, isSyntaxValid: true, title: username });
       return;
     }
 
-    let extractedTitle = `@${username}`;
+    if ((isNotFoundText && !hasPageTitle) || (!hasPageTitle && html.includes('If you have Telegram'))) {
+      res.json({ success: true, exists: null, isSyntaxValid: true, title: username });
+      return;
+    }
+
+    let extractedTitle = username;
     const titleMatch = html.match(/<div class="tgme_page_title"[^>]*><span[^>]*>(.*?)<\/span><\/div>/s) || html.match(/<meta property="og:title" content="(.*?)"/);
     if (titleMatch && titleMatch[1]) {
       const cleanTitle = titleMatch[1].replace(/<[^>]+>/g, '').trim();
@@ -303,15 +447,31 @@ app.get('/api/check-telegram/:username', async (req: Request, res: Response) => 
                          html.match(/<meta\s+content=["'](.*?)["']\s+property=["']og:image["']/i);
     if (ogImageMatch && ogImageMatch[1]) {
       const candidate = ogImageMatch[1];
-      if (!candidate.includes('telegram-logo') && !candidate.includes('static/images/telegram')) {
+      if (!candidate.includes('telegram-logo') && 
+          !candidate.includes('static/images') && 
+          !candidate.includes('t_logo') && 
+          !candidate.includes('telegram.org') && 
+          !candidate.includes('default_avatar')) {
         photoUrl = candidate;
       }
     }
     if (!photoUrl) {
       const imgMatch = html.match(/<img[^>]*class=["'][^"']*tgme_page_photo_image[^"']*["'][^>]*src=["'](.*?)["']/i);
       if (imgMatch && imgMatch[1]) {
-        photoUrl = imgMatch[1];
+        const candidate = imgMatch[1];
+        if (!candidate.includes('telegram-logo') && 
+            !candidate.includes('static/images') && 
+            !candidate.includes('t_logo') && 
+            !candidate.includes('telegram.org') && 
+            !candidate.includes('default_avatar')) {
+          photoUrl = candidate;
+        }
       }
+    }
+    
+    // Always provide unavatar fallback if no native photo URL was found
+    if (!photoUrl) {
+      photoUrl = unavatarUrl;
     }
 
     res.json({
@@ -319,7 +479,7 @@ app.get('/api/check-telegram/:username', async (req: Request, res: Response) => 
       exists: true,
       isSyntaxValid: true,
       title: extractedTitle,
-      photoUrl: photoUrl || unavatarUrl
+      photoUrl: photoUrl
     });
   } catch (err) {
     res.json({ success: false, exists: null, isSyntaxValid: true, error: err instanceof Error ? err.message : 'Fetch failed' });
@@ -343,14 +503,39 @@ app.post('/api/telegram/webhook', async (req: Request, res: Response) => {
       const chatId = msg.chat.id;
       const threadId = msg.message_thread_id;
       const firstName = msg.from?.first_name || 'Teman';
+      const senderId = msg.from?.id;
       
       let responseText = `👋 <b>Halo, ${firstName}! Selamat datang di AzurLizeTeam Bot!</b>\n\n`;
       responseText += `Saya adalah bot asisten untuk <b>AzurLizeTeam</b>.\n\n`;
+      
+      let userPinText = '';
+      if (senderId && serverDb) {
+        try {
+          const userRef = doc(serverDb, 'users', String(senderId));
+          const docSnap = await getDoc(userRef);
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            if (data.pin) {
+              userPinText = `🔑 <b>Kode PIN login Anda:</b> <code>${data.pin}</code>\n<i>Gunakan PIN di atas untuk masuk di Aplikasi APK / Browser Mandiri. Jangan bagikan PIN ini demi keamanan!</i>\n\n`;
+            } else {
+              userPinText = `🔑 <b>Akun Anda terdaftar, namun PIN belum diatur.</b>\n<i>Silakan masuk lalu buat/atur PIN Anda melalui menu Profil di dalam aplikasi.</i>\n\n`;
+            }
+          }
+        } catch (dbErr) {
+          console.error('[Telegram Webhook] Error looking up user pin during /start:', dbErr);
+        }
+      }
+      
       responseText += `🚀 <b>Mini Web App kami sudah siap digunakan!</b> Anda dapat mengelola laporan harian, memantau data pelamar, memeriksa postingan harian, dan melihat statistik performa secara langsung dan real-time.\n\n`;
+      
+      if (userPinText) {
+        responseText += userPinText;
+      }
+      
       responseText += `📱 <b>Cara membuka Mini Web App:</b>\n`;
       responseText += `• Klik tombol <b>"Buka Mini App"</b> di bawah ini.\n`;
       responseText += `• Atau klik tombol menu/web app di pojok kiri bawah obrolan ini.\n\n`;
-      responseText += `<i>Jika Anda membutuhkan bantuan info chat/grup, gunakan perintah /id atau /info. Selamat bekerja!</i>`;
+      responseText += `<i>Jika Anda lupa PIN, ketik perintah /pin untuk mendapatkan PIN login Anda secara instan dan aman.</i>`;
 
       // Get WebApp URL dynamically (defaulting to Firebase hosting domain)
       const host = req.get('host');
@@ -376,6 +561,52 @@ app.post('/api/telegram/webhook', async (req: Request, res: Response) => {
           text: responseText,
           parse_mode: 'HTML',
           reply_markup: keyboard,
+          message_thread_id: threadId
+        })
+      });
+    }
+
+    if (msg && msg.text && msg.text.startsWith('/pin')) {
+      const chatId = msg.chat.id;
+      const threadId = msg.message_thread_id;
+      const senderId = msg.from?.id;
+      const firstName = msg.from?.first_name || 'Teman';
+
+      let responseText = '';
+      if (!senderId) {
+        responseText = `❌ Gagal memproses data Telegram ID Anda.`;
+      } else if (!serverDb) {
+        responseText = `⚠️ Database Firestore server belum siap. Hubungi Admin.`;
+      } else {
+        try {
+          const userRef = doc(serverDb, 'users', String(senderId));
+          const docSnap = await getDoc(userRef);
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            const userPin = data.pin || '<i>Belum diatur (Silakan login ke aplikasi lalu atur PIN di halaman Profil)</i>';
+            responseText = `🔑 <b>INFORMASI KODE PIN (AKSES MASUK)</b>\n\n`;
+            responseText += `👤 <b>Nama:</b> ${data.firstName || data.name || firstName}\n`;
+            responseText += `🆔 <b>ID Telegram:</b> <code>${senderId}</code>\n`;
+            responseText += `🔐 <b>PIN Anda:</b> <code>${userPin}</code>\n\n`;
+            responseText += `<i>Gunakan ID Telegram dan PIN di atas untuk masuk di Aplikasi APK atau Browser Mandiri. Jaga kerahasiaan PIN Anda!</i>`;
+          } else {
+            responseText = `❌ <b>Akun Anda Belum Terdaftar!</b>\n\n`;
+            responseText += `ID Telegram Anda (<code>${senderId}</code>) belum tercatat di database AzurLizeTeam.\n\n`;
+            responseText += `Silakan buka Aplikasi APK atau buka Mini Web App untuk mendaftar profil baru terlebih dahulu.`;
+          }
+        } catch (dbErr) {
+          console.error('[Telegram Webhook] Error looking up user pin during /pin:', dbErr);
+          responseText = `⚠️ Terjadi kesalahan internal saat membaca data PIN Anda.`;
+        }
+      }
+
+      await fetch(`https://api.telegram.org/bot${activeToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: responseText,
+          parse_mode: 'HTML',
           message_thread_id: threadId
         })
       });
@@ -570,7 +801,7 @@ app.post('/api/telegram/test-send', async (req: Request, res: Response) => {
 // API Endpoint: Send Post (Multiple Images) to Telegram Group
 app.post('/api/telegram/send-post', async (req: Request, res: Response) => {
   try {
-    const { links, startNumber, images, recruiterName, recruiterUsername, groupId, topicId } = req.body;
+    const { links, startNumber, images, recruiterName, recruiterUsername, groupId, topicId, botToken } = req.body;
     
     if (!images || !Array.isArray(images) || images.length === 0) {
       res.status(400).json({ success: false, error: 'Setidaknya satu gambar diperlukan.' });
@@ -584,7 +815,8 @@ app.post('/api/telegram/send-post', async (req: Request, res: Response) => {
       return;
     }
 
-    if (!TELEGRAM_BOT_TOKEN) {
+    const activeToken = (botToken || TELEGRAM_BOT_TOKEN || '').trim();
+    if (!activeToken) {
       res.status(400).json({ success: false, error: 'Token Bot Telegram tidak dikonfigurasi.' });
       return;
     }
@@ -654,7 +886,7 @@ app.post('/api/telegram/send-post', async (req: Request, res: Response) => {
       const photoBlob = formData.get('photo0');
       if (photoBlob) photoFormData.append('photo', photoBlob);
 
-      let response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
+      let response = await fetch(`https://api.telegram.org/bot${activeToken}/sendPhoto`, {
         method: 'POST',
         body: photoFormData
       });
@@ -666,7 +898,7 @@ app.post('/api/telegram/send-post', async (req: Request, res: Response) => {
         result.description.toLowerCase().includes('message_thread_id')
       )) {
         photoFormData.delete('message_thread_id');
-        response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`, {
+        response = await fetch(`https://api.telegram.org/bot${activeToken}/sendPhoto`, {
           method: 'POST',
           body: photoFormData
         });
@@ -675,7 +907,7 @@ app.post('/api/telegram/send-post', async (req: Request, res: Response) => {
     } else {
       formData.append('media', JSON.stringify(mediaArray));
 
-      let response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMediaGroup`, {
+      let response = await fetch(`https://api.telegram.org/bot${activeToken}/sendMediaGroup`, {
         method: 'POST',
         body: formData
       });
@@ -689,7 +921,7 @@ app.post('/api/telegram/send-post', async (req: Request, res: Response) => {
       )) {
         console.warn('[Telegram API] sendMediaGroup thread error, retrying without message_thread_id:', result.description);
         formData.delete('message_thread_id');
-        response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMediaGroup`, {
+        response = await fetch(`https://api.telegram.org/bot${activeToken}/sendMediaGroup`, {
           method: 'POST',
           body: formData
         });
@@ -712,7 +944,7 @@ app.post('/api/telegram/send-post', async (req: Request, res: Response) => {
     };
     if (targetTopic) textPayload.message_thread_id = targetTopic;
 
-    let textResponse = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+    let textResponse = await fetch(`https://api.telegram.org/bot${activeToken}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(textPayload)
@@ -727,7 +959,7 @@ app.post('/api/telegram/send-post', async (req: Request, res: Response) => {
     )) {
       console.warn('[Telegram API] sendMessage thread error, retrying without message_thread_id:', textResult.description);
       delete textPayload.message_thread_id;
-      textResponse = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      textResponse = await fetch(`https://api.telegram.org/bot${activeToken}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(textPayload)
@@ -750,7 +982,7 @@ app.post('/api/telegram/send-post', async (req: Request, res: Response) => {
 // API Endpoint: Send Daily Report & Video directly to Telegram Group Topic
 app.post('/api/telegram/send-report', async (req: Request, res: Response) => {
   try {
-    const { report, videoDataUrl, groupId, topicId, customText } = req.body;
+    const { report, videoDataUrl, groupId, topicId, customText, botToken } = req.body;
     if (!report && !customText) {
       res.status(400).json({ success: false, error: 'Data laporan tidak ditemukan' });
       return;
@@ -766,7 +998,8 @@ app.post('/api/telegram/send-report', async (req: Request, res: Response) => {
       return;
     }
 
-    if (!TELEGRAM_BOT_TOKEN) {
+    const activeToken = (botToken || TELEGRAM_BOT_TOKEN || '').trim();
+    if (!activeToken) {
       res.status(400).json({ success: false, error: 'Token Bot Telegram tidak dikonfigurasi.' });
       return;
     }
@@ -780,8 +1013,10 @@ app.post('/api/telegram/send-report', async (req: Request, res: Response) => {
     if (customText) {
       captionHtml = customText;
     } else if (report) {
-      const recUsername = report.recruiterUsername ? `@${report.recruiterUsername.replace(/^@/, '')}` : (report.username ? `@${report.username}` : report.name);
-      const applicantTg = report.applicantTelegramUsername ? `@${report.applicantTelegramUsername.replace(/^@/, '')}` : '-';
+      const recUsername = report.recruiterUsername ? `@${report.recruiterUsername.replace(/^@+/, '')}` : (report.username ? `@${report.username.replace(/^@+/, '')}` : report.name);
+      const rawTg = report.applicantTelegramUsername ? report.applicantTelegramUsername.replace(/^@+/, '') : '';
+      const applicantTg = rawTg ? `<a href="https://t.me/${rawTg}">@${rawTg}</a>` : '-';
+      const photoLink = report.applicantPhotoUrl ? `\nFoto Profil : <a href="${report.applicantPhotoUrl}">Lihat Foto Pelamar</a>` : '';
 
       let rawGrup = report.grup || '-';
       let displayGrup = rawGrup;
@@ -796,103 +1031,171 @@ app.post('/api/telegram/send-report', async (req: Request, res: Response) => {
       captionHtml = `
 UID : ${report.uid9Kucing || '-'}
 WA : ${report.applicantWhatsapp || '-'}
-Username Telegram : ${applicantTg}
-Rekomendasi dari : ${recUsername}
-Info dari sosmed : ${report.channel || '-'}
-
-Grub : ${displayGrup}
+Nama : <b>${report.applicantName || report.name || 'Tidak Diketahui'}</b>
+Username Telegram : <b>${applicantTg}</b>
+Rekomendasi dari : <b>${recUsername}</b>
+Info dari sosmed : <b>${report.channel || '-'}</b>
+Grub : <b>${displayGrup}</b>${photoLink}
 `.trim();
     }
 
-    // Send video if available
-    if (videoDataUrl && typeof videoDataUrl === 'string' && videoDataUrl.startsWith('data:')) {
-      const match = videoDataUrl.match(/^data:(.*?);base64,(.*)$/);
-      if (match) {
-        const mimeType = match[1] || 'video/mp4';
-        const base64Data = match[2];
-        const buffer = Buffer.from(base64Data, 'base64');
-        const blob = new Blob([buffer], { type: mimeType });
+    let videoAttempted = false;
+    let videoErrorMsg = '';
 
-        const formData = new FormData();
-        formData.append('chat_id', targetGroup);
-        if (topicNum) {
-          formData.append('message_thread_id', String(topicNum));
-        }
-        formData.append('caption', captionHtml);
-        formData.append('parse_mode', 'HTML');
+    // Send video if available (Wrapped in try-catch to fallback on any failures)
+    try {
+      if (videoDataUrl && typeof videoDataUrl === 'string') {
+        videoAttempted = true;
+        
+        if (videoDataUrl.startsWith('data:')) {
+          const match = videoDataUrl.match(/^data:(.*?);base64,(.*)$/);
+          if (match) {
+            const mimeType = match[1] || 'video/mp4';
+            const base64Data = match[2];
+            const buffer = Buffer.from(base64Data, 'base64');
+            let ext = 'mp4';
+            if (mimeType.includes('quicktime') || mimeType.includes('mov')) ext = 'mov';
+            else if (mimeType.includes('gif')) ext = 'gif';
+            
+            // --- VIDEO COMPRESSION START ---
+            let blobToSend = new Blob([buffer], { type: mimeType });
+            let fileNameToSend = `laporan_${report?.reportId || Date.now()}.${ext}`;
+            
+            const tempId = crypto.randomBytes(8).toString('hex');
+            const inputPath = path.join('/tmp', `in_${tempId}.${ext}`);
+            const outputPath = path.join('/tmp', `out_${tempId}.mp4`);
+            
+            try {
+              console.log(`[Compression] Saving original video to ${inputPath} (${buffer.length} bytes)`);
+              await fs.promises.writeFile(inputPath, buffer);
+              
+              if (ext !== 'gif') {
+                console.log(`[Compression] Running ffmpeg compression...`);
+              // Settings: CRF 28, Scale to max 720p, keep audio with AAC
+              await execPromise(`ffmpeg -i "${inputPath}" -vcodec libx264 -crf 28 -preset fast -vf "scale=-2:720" -acodec aac -b:a 128k -movflags +faststart -y "${outputPath}"`);
+              
+              if (fs.existsSync(outputPath)) {
+                const compressedBuffer = await fs.promises.readFile(outputPath);
+                console.log(`[Compression] Success! ${buffer.length} -> ${compressedBuffer.length} bytes`);
+                blobToSend = new Blob([compressedBuffer], { type: 'video/mp4' });
+                fileNameToSend = `laporan_${report?.reportId || Date.now()}.mp4`;
+              }
+              }
+            } catch (compErr) {
+              console.warn('[Compression] ffmpeg failed, using original:', compErr);
+            } finally {
+              // Cleanup temp files
+              try {
+                if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
+                if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+              } catch (cleanupErr) {
+                console.warn('[Compression] Cleanup error:', cleanupErr);
+              }
+            }
+            // --- VIDEO COMPRESSION END ---
 
-        const ext = mimeType.includes('quicktime') || mimeType.includes('mov') ? 'mov' : 'mp4';
-        formData.append('video', blob, `laporan_${report?.reportId || Date.now()}.${ext}`);
+            const formData = new FormData();
+            formData.append('chat_id', targetGroup);
+            if (topicNum) {
+              formData.append('message_thread_id', String(topicNum));
+            }
+            formData.append('caption', captionHtml);
+            formData.append('parse_mode', 'HTML');
+            const isGifFile = ext === 'gif';
+            const fileParam = isGifFile ? 'animation' : 'video';
+            const apiMethod = isGifFile ? 'sendAnimation' : 'sendVideo';
 
-        let response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendVideo`, {
-          method: 'POST',
-          body: formData
-        });
+            formData.append(fileParam, blobToSend, fileNameToSend);
 
-        let result = await response.json();
+            let response = await fetch(`https://api.telegram.org/bot${activeToken}/${apiMethod}`, {
+              method: 'POST',
+              body: formData
+            });
 
-        // Fallback without topic if thread error
-        if (!result.ok && topicNum && result.description && (
-          result.description.toLowerCase().includes('thread') ||
-          result.description.toLowerCase().includes('topic') ||
-          result.description.toLowerCase().includes('message_thread_id')
-        )) {
-          console.warn('[Telegram API] sendVideo thread error, retrying without message_thread_id:', result.description);
-          formData.delete('message_thread_id');
-          response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendVideo`, {
+            let result = await response.json();
+
+            // Fallback without topic if thread error
+            if (!result.ok && topicNum && result.description && (
+              result.description.toLowerCase().includes('thread') ||
+              result.description.toLowerCase().includes('topic') ||
+              result.description.toLowerCase().includes('message_thread_id')
+            )) {
+              console.warn(`[Telegram API] ${apiMethod} thread error, retrying without message_thread_id:`, result.description);
+              formData.delete('message_thread_id');
+              response = await fetch(`https://api.telegram.org/bot${activeToken}/${apiMethod}`, {
+                method: 'POST',
+                body: formData
+              });
+              result = await response.json();
+            }
+
+            if (result.ok) {
+              res.json({ success: true, data: result.result, message: 'Laporan dan media berhasil terkirim ke Telegram Group Topic!' });
+              return;
+            } else {
+              console.warn(`[Telegram API] ${apiMethod} failed, falling back to text-only:`, result);
+              videoErrorMsg = result.description || 'Unknown Telegram Error';
+            }
+          }
+        } else if (videoDataUrl.startsWith('http')) {
+          const payload: Record<string, unknown> = {
+            chat_id: targetGroup,
+            video: videoDataUrl,
+            caption: captionHtml,
+            parse_mode: 'HTML'
+          };
+          if (topicNum) payload.message_thread_id = topicNum;
+
+          let response = await fetch(`https://api.telegram.org/bot${activeToken}/sendVideo`, {
             method: 'POST',
-            body: formData
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
           });
-          result = await response.json();
+          let result = await response.json();
+
+          // Fallback without topic
+          if (!result.ok && topicNum && result.description && (
+            result.description.toLowerCase().includes('thread') ||
+            result.description.toLowerCase().includes('topic') ||
+            result.description.toLowerCase().includes('message_thread_id')
+          )) {
+            delete payload.message_thread_id;
+            response = await fetch(`https://api.telegram.org/bot${activeToken}/sendVideo`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+            result = await response.json();
+          }
+
+          if (result.ok) {
+            res.json({ success: true, data: result.result, message: 'Laporan dan Video berhasil terkirim ke Telegram Group Topic!' });
+            return;
+          } else {
+            console.warn('[Telegram API] sendVideo (URL) failed, falling back to text-only:', result);
+            videoErrorMsg = result.description || 'Unknown Telegram Error';
+          }
+        } else if (videoDataUrl.startsWith('blob:')) {
+          videoErrorMsg = 'Format video blob: tidak didukung di server.';
         }
-
-        if (result.ok) {
-          res.json({ success: true, data: result.result, message: 'Laporan dan Video berhasil terkirim ke Telegram Group Topic!' });
-          return;
-        } else {
-          console.warn('[Telegram API] sendVideo failed, falling back to sendMessage:', result);
-        }
       }
-    } else if (videoDataUrl && typeof videoDataUrl === 'string' && videoDataUrl.startsWith('http')) {
-      const payload: Record<string, unknown> = {
-        chat_id: targetGroup,
-        video: videoDataUrl,
-        caption: captionHtml,
-        parse_mode: 'HTML'
-      };
-      if (topicNum) payload.message_thread_id = topicNum;
-
-      let response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendVideo`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      let result = await response.json();
-
-      // Fallback without topic
-      if (!result.ok && topicNum && result.description && (
-        result.description.toLowerCase().includes('thread') ||
-        result.description.toLowerCase().includes('topic') ||
-        result.description.toLowerCase().includes('message_thread_id')
-      )) {
-        delete payload.message_thread_id;
-        response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendVideo`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        result = await response.json();
-      }
-
-      if (result.ok) {
-        res.json({ success: true, data: result.result, message: 'Laporan dan Video berhasil terkirim ke Telegram Group Topic!' });
-        return;
-      }
+    } catch (vidErr: any) {
+      console.warn('[Telegram API] Exception during sendVideo, falling back to text-only:', vidErr);
+      videoErrorMsg = vidErr instanceof Error ? vidErr.message : 'Koneksi ke server Telegram terputus saat upload video.';
     }
 
-    // Text-only message fallback
+    // Photo / Text message fallback
+    const isBlobUrl = videoDataUrl && typeof videoDataUrl === 'string' && videoDataUrl.startsWith('blob:');
     const isDataUrl = videoDataUrl && typeof videoDataUrl === 'string' && videoDataUrl.startsWith('data:');
-    const rawText = captionHtml + (videoDataUrl && !isDataUrl ? `\n\n📹 Video Bukti: ${videoDataUrl}` : '');
+    
+    let rawText = captionHtml;
+    if (videoAttempted && videoErrorMsg) {
+      rawText += `\n\n⚠️ <b>Gagal Mengirim Video Bukti:</b>\n<i>${videoErrorMsg}</i>\n(Laporan data kerja tetap tercatat)`;
+    } else if (videoDataUrl && !isBlobUrl && !isDataUrl) {
+      rawText += `\n\n📹 Video Bukti: ${videoDataUrl}`;
+    } else if (videoDataUrl) {
+      rawText += `\n\n📹 Video Bukti: (Video Terlampir)`;
+    }
     
     const textPayload: Record<string, unknown> = {
       chat_id: targetGroup,
@@ -901,19 +1204,52 @@ Grub : ${displayGrup}
     };
     if (topicNum) textPayload.message_thread_id = topicNum;
 
-    let response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(textPayload)
-    });
+    let photoSuccess = false;
+    let result: any = null;
+    let response: any = null;
 
-    let result = await response.json();
+    if (report?.applicantPhotoUrl && typeof report.applicantPhotoUrl === 'string' && report.applicantPhotoUrl.startsWith('http')) {
+      try {
+        const photoPayload: Record<string, unknown> = {
+          chat_id: targetGroup,
+          photo: report.applicantPhotoUrl,
+          caption: rawText,
+          parse_mode: 'HTML'
+        };
+        if (topicNum) photoPayload.message_thread_id = topicNum;
+
+        const photoRes = await fetch(`https://api.telegram.org/bot${activeToken}/sendPhoto`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(photoPayload)
+        });
+        const photoResult = await photoRes.json();
+        if (photoResult.ok) {
+          photoSuccess = true;
+          result = photoResult;
+        } else {
+          console.warn('[Telegram API] sendPhoto failed, falling back to sendMessage:', photoResult);
+        }
+      } catch (photoErr) {
+        console.warn('[Telegram API] sendPhoto exception, falling back to sendMessage:', photoErr);
+      }
+    }
+
+    if (!photoSuccess) {
+      response = await fetch(`https://api.telegram.org/bot${activeToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(textPayload)
+      });
+
+      result = await response.json();
+    }
 
     // If parse_mode HTML error occurs, retry as plain text without parse_mode
     if (!result.ok && result.description && (result.description.includes('parse') || result.description.includes('HTML') || result.description.includes('entity'))) {
       console.warn('[Telegram API] HTML parse error, retrying without parse_mode:', result.description);
       delete textPayload.parse_mode;
-      response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      response = await fetch(`https://api.telegram.org/bot${activeToken}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(textPayload)
@@ -929,7 +1265,7 @@ Grub : ${displayGrup}
     )) {
       console.warn('[Telegram API] sendMessage thread error, retrying without message_thread_id:', result.description);
       delete textPayload.message_thread_id;
-      response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      response = await fetch(`https://api.telegram.org/bot${activeToken}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(textPayload)

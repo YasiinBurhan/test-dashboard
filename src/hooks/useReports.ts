@@ -6,7 +6,8 @@ import {
   subscribeToAllReports, 
   updateReportStatus,
   updateReportPermission,
-  updateReportDetails
+  updateReportDetails,
+  updateReportFine
 } from '../firebase/services/reportService';
 import { syncReportToSheetsApi } from '../services/api';
 import { useAuth } from './useAuth';
@@ -54,16 +55,19 @@ export function useReports() {
     };
   }, [telegramUserId, role]);
 
-  const submitReport = async (formData: DailyReportFormData) => {
+  const submitReport = async (
+    formData: DailyReportFormData,
+    customSenderInfo?: { telegramId: string; username: string; name: string }
+  ) => {
     if (!telegramUser && !userProfile) throw new Error('Pengguna tidak terautentikasi');
     setIsLoading(true);
     setError(null);
     try {
-      const currentTelegramId = userProfile?.telegramId || String(telegramUser?.id || '');
-      const currentUsername = userProfile?.username || telegramUser?.username || '';
-      const name = userProfile 
+      const currentTelegramId = customSenderInfo?.telegramId || userProfile?.telegramId || String(telegramUser?.id || '');
+      const currentUsername = customSenderInfo?.username || userProfile?.username || telegramUser?.username || '';
+      const name = customSenderInfo?.name || (userProfile 
         ? (userProfile.lastName ? `${userProfile.firstName} ${userProfile.lastName}` : userProfile.firstName)
-        : `${telegramUser?.first_name || ''} ${telegramUser?.last_name || ''}`.trim() || 'Recruiter';
+        : `${telegramUser?.first_name || ''} ${telegramUser?.last_name || ''}`.trim() || 'Recruiter');
 
       const newReport = await createDailyReport(
         {
@@ -147,6 +151,20 @@ export function useReports() {
     }
   };
 
+  const updateFine = async (reportId: string, fine: number) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      await updateReportFine(reportId, fine);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Gagal memperbarui denda.';
+      setError(msg);
+      throw new Error(msg);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return {
     reports,
     isLoading,
@@ -155,6 +173,7 @@ export function useReports() {
     submitReport,
     updateStatus,
     updatePermission,
-    updateDetails
+    updateDetails,
+    updateFine
   };
 }
