@@ -81,7 +81,6 @@ export function formatWIBDateTime(dateString?: string | null): string {
 export function getWIBDate(): string {
   const now = new Date();
   const jakartaTime = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
-  jakartaTime.setHours(jakartaTime.getHours() - 10);
   const year = jakartaTime.getFullYear();
   const month = String(jakartaTime.getMonth() + 1).padStart(2, '0');
   const day = String(jakartaTime.getDate()).padStart(2, '0');
@@ -108,7 +107,6 @@ export function getWIBMonday(offsetDays: number = 0): string {
   const now = new Date();
   const jakartaStr = now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' });
   const d = new Date(jakartaStr);
-  d.setHours(d.getHours() - 10);
   const day = d.getDay(); // 0 (Sun) to 6 (Sat)
   const diff = d.getDate() - day + (day === 0 ? -6 : 1) + offsetDays;
   d.setDate(diff);

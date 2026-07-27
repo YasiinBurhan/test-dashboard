@@ -602,11 +602,9 @@ export const OwnerPage: React.FC = () => {
     const isLocalDev = currentOrigin.includes('localhost:') || currentOrigin.includes('127.0.0.1:');
     const isFirebaseHosting = currentOrigin.includes('firebaseapp.com') || currentOrigin.includes('web.app');
     
-    let defaultBaseUrl = 'https://azurlize-team-3ba4f.firebaseapp.com';
+    let defaultBaseUrl = currentOrigin;
     if (API_BASE_URL !== '' && API_BASE_URL !== undefined) {
       defaultBaseUrl = API_BASE_URL;
-    } else if (!isLocalDev && !isFirebaseHosting) {
-      defaultBaseUrl = currentOrigin;
     }
 
     const targetBaseUrl = (settings?.webhookUrl?.trim() || defaultBaseUrl).replace(/\/$/, '');
@@ -1880,7 +1878,7 @@ export const OwnerPage: React.FC = () => {
               <label className="text-xs font-bold text-sky-300">Webhook Base URL (Domain Hosting)</label>
               <input
                 type="text"
-                placeholder="https://azurlize-team-3ba4f.firebaseapp.com"
+                placeholder={window.location.origin}
                 value={settings.webhookUrl || ''}
                 onChange={(e) => setSettings({ ...settings, webhookUrl: e.target.value })}
                 className="w-full bg-white dark:bg-slate-950 border border-sky-500/30 rounded-xl p-2.5 text-xs text-slate-900 dark:text-white outline-none focus:border-sky-400 font-mono"
@@ -1939,7 +1937,7 @@ export const OwnerPage: React.FC = () => {
                 <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">Webhook URL saat ini:</span>
                 <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-900 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800">
                   <Globe className="w-3 h-3 text-sky-400" />
-                  <span className="text-[10px] text-sky-300 font-mono truncate">{(settings?.webhookUrl || 'https://azurlize-team-3ba4f.firebaseapp.com').replace(/\/$/, '')}/api/telegram/webhook</span>
+                  <span className="text-[10px] text-sky-300 font-mono truncate">{(settings?.webhookUrl || window.location.origin).replace(/\/$/, '')}/api/telegram/webhook</span>
                 </div>
               </div>
 

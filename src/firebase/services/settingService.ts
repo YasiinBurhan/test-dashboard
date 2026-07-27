@@ -18,7 +18,7 @@ export function subscribeToSystemSettings(onUpdate: (settings: SystemSettings) =
         systemStatus: 'Operational',
         allowRegistrations: true,
         announcementHeader: 'Selamat Datang di Portal Rekrutmen AzurLizeTeam',
-        webhookUrl: 'https://azurlize-team-3ba4f.firebaseapp.com',
+        webhookUrl: typeof window !== 'undefined' ? window.location.origin : '',
         updatedAt: new Date().toISOString()
       });
     }
@@ -41,7 +41,7 @@ export async function getSystemSettings(): Promise<SystemSettings> {
       systemStatus: 'Operational',
       allowRegistrations: true,
       announcementHeader: 'Selamat Datang di Portal Rekrutmen AzurLizeTeam',
-      webhookUrl: 'https://azurlize-team-3ba4f.firebaseapp.com',
+      webhookUrl: typeof window !== 'undefined' ? window.location.origin : '',
       updatedAt: new Date().toISOString()
     };
 
