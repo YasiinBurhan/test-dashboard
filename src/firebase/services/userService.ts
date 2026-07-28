@@ -1,4 +1,4 @@
-import { db } from '../config';
+import { db, auth } from '../config';
 import { 
   doc, 
   getDoc, 
@@ -6,9 +6,12 @@ import {
   updateDoc, 
   collection, 
   getDocs, 
-  query, 
+  query,
   orderBy,
-  onSnapshot
+  onSnapshot,
+  where,
+  limit,
+  deleteDoc
 } from 'firebase/firestore';
 import { UserProfile, UserRole, UserStatus } from '../../types';
 import { handleFirestoreError, OperationType } from '../error';
@@ -71,17 +74,22 @@ export async function findUserProfileByIdOrUsername(idOrUsername: string): Promi
     console.warn('Direct doc lookup by ID failed:', err);
   }
 
-  // 2. Search all users for matching telegramId or username
+  // 2. Search all users for matching username
   try {
-    const allUsers = await getAllUsers();
-    const found = allUsers.find(
-      (u) =>
-        String(u.telegramId).trim() === clean ||
-        (u.username && u.username.toLowerCase() === clean.toLowerCase())
-    );
-    if (found) return found;
+    const usersRef = collection(db, 'users');
+    const q1 = query(usersRef, where('username', '==', clean), limit(1));
+    const snapshot = await getDocs(q1);
+    if (!snapshot.empty) {
+      return snapshot.docs[0].data() as UserProfile;
+    }
+
+    const q2 = query(usersRef, where('username', '==', clean.toLowerCase()), limit(1));
+    const snapshot2 = await getDocs(q2);
+    if (!snapshot2.empty) {
+      return snapshot2.docs[0].data() as UserProfile;
+    }
   } catch (err) {
-    console.warn('Search all users failed:', err);
+    console.warn('Search user by username failed:', err);
   }
 
   return null;
@@ -93,25 +101,14 @@ export async function createUserProfile(profile: Omit<UserProfile, 'createdAt' |
   let status = profile.status || 'Pending';
   let approved = profile.approved ?? false;
 
-  try {
-    const allUsers = await getAllUsers();
-    if (allUsers.length === 0) {
-      // First user registered in the system automatically becomes Active Owner!
-      role = 'Owner';
-      status = 'Active';
-      approved = true;
-    }
-  } catch (err) {
-    console.warn('Error checking existing users count during profile creation:', err);
-  }
-
   const fullProfile: UserProfile = {
     ...profile,
     createdAt: now,
     updatedAt: now,
     role,
     status,
-    approved
+    approved,
+    firebaseUid: auth.currentUser?.uid || ''
   };
 
   try {
@@ -157,6 +154,15 @@ export async function updateUserPin(
     });
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, `users/${telegramId}`);
+  }
+}
+
+export async function deleteUserProfile(telegramId: string): Promise<void> {
+  try {
+    const userRef = doc(db, 'users', String(telegramId));
+    await deleteDoc(userRef);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `users/${telegramId}`);
   }
 }
 

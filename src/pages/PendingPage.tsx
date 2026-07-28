@@ -4,11 +4,11 @@ import { GlassCard } from '../components/common/GlassCard';
 import { Button } from '../components/common/Button';
 import { AzurLizeLogo } from '../components/logo/AzurLizeLogo';
 import { useAuth } from '../hooks/useAuth';
-import { updateUserStatus, updateUserRole } from '../firebase/services/userService';
+import { activateOwnerPinApi } from '../services/api';
 import { Clock, RefreshCw, CheckCircle2, KeyRound, ShieldCheck } from 'lucide-react';
 
 export const PendingPage: React.FC = () => {
-  const { userProfile, refreshProfile, logout } = useAuth();
+  const { userProfile, refreshProfile, logout, token } = useAuth();
   const [isChecking, setIsChecking] = useState(false);
   const [showPinInput, setShowPinInput] = useState(false);
   const [pinCode, setPinCode] = useState('');
@@ -35,9 +35,8 @@ export const PendingPage: React.FC = () => {
     e.preventDefault();
     setPinError(null);
 
-    const validPins = ['azurlize', '123456', 'owner', 'admin'];
-    if (!validPins.includes(pinCode.trim().toLowerCase())) {
-      setPinError('Kode PIN Owner tidak valid. Gunakan "azurlize" atau "123456".');
+    if (!pinCode.trim()) {
+      setPinError('Mohon masukkan Kode PIN.');
       return;
     }
 
@@ -46,13 +45,21 @@ export const PendingPage: React.FC = () => {
       return;
     }
 
+    if (!token) {
+      setPinError('Sesi login tidak valid. Silakan masuk kembali.');
+      return;
+    }
+
     setIsActivating(true);
     try {
-      await updateUserRole(userProfile.telegramId, 'Owner', 'SelfPin');
-      await updateUserStatus(userProfile.telegramId, 'Active', true, 'SelfPin');
-      await refreshProfile();
+      const result = await activateOwnerPinApi(pinCode.trim(), token, userProfile.telegramId);
+      if (result.success) {
+        await refreshProfile();
+      } else {
+        setPinError(result.error || 'Kode PIN Owner tidak valid.');
+      }
     } catch (err) {
-      setPinError('Gagal mengaktifkan akun.');
+      setPinError('Terjadi kesalahan koneksi server.');
     } finally {
       setIsActivating(false);
     }

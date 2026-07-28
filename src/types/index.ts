@@ -45,6 +45,7 @@ export interface UserProfile {
   approvedAt?: string;
   pin?: string;
   lastSeen?: string;
+  firebaseUid?: string;
 }
 
 export interface RegistrationFormData {

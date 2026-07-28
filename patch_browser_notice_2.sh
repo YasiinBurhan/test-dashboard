@@ -1,1 +1,0 @@
-sed -i 's/import { LogIn, UserPlus, ChevronLeft, Hash, User, ShieldAlert, Sparkles } from '"'"'lucide-react'"'"';/import { LogIn, UserPlus, ChevronLeft, Hash, User, ShieldAlert, Sparkles, Lock } from '"'"'lucide-react'"'"';/' src/pages/BrowserNoticePage.tsx

@@ -1,8 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { TelegramThemeParams } from '../types';
 import { getTelegramWebApp } from '../telegram/webapp';
-import { Capacitor } from '@capacitor/core';
-import { StatusBar, Style } from '@capacitor/status-bar';
 
 interface ThemeContextType {
   colorScheme: 'light' | 'dark';
@@ -122,14 +120,6 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     root.style.setProperty('--tg-button-text-color', mergedParams.button_text_color!);
     root.style.setProperty('--tg-header-bg-color', mergedParams.header_bg_color!);
     root.style.setProperty('--tg-accent-text-color', mergedParams.accent_text_color!);
-
-    if (Capacitor.isNativePlatform()) {
-      try {
-        StatusBar.setStyle({ style: colorScheme === 'light' ? Style.Light : Style.Dark });
-      } catch (e) {
-        console.warn('StatusBar error', e);
-      }
-    }
 
     // Force quick cleanup of transition helper
     const timer = setTimeout(() => {

@@ -13,8 +13,6 @@ import {
 import { db } from '../config';
 import { handleFirestoreError, OperationType } from '../error';
 import { AppNotification, UserRole } from '../../types';
-import { Capacitor } from '@capacitor/core';
-import { LocalNotifications } from '@capacitor/local-notifications';
 
 const COLLECTION_NAME = 'notifications';
 
@@ -40,10 +38,6 @@ export async function createNotification(
 }
 
 export function requestNotificationPermission(): void {
-  if (Capacitor.isNativePlatform()) {
-    LocalNotifications.requestPermissions().catch(() => {});
-    return;
-  }
   if (typeof window !== 'undefined' && 'Notification' in window) {
     if (Notification.permission === 'default') {
       Notification.requestPermission().catch(() => {});
@@ -52,24 +46,6 @@ export function requestNotificationPermission(): void {
 }
 
 export function triggerSystemNotification(title: string, body: string): void {
-  if (Capacitor.isNativePlatform()) {
-    LocalNotifications.schedule({
-      notifications: [
-        {
-          id: Math.floor(Math.random() * 100000) + 1,
-          title,
-          body,
-          channelId: 'default',
-          smallIcon: 'ic_stat_icon_config_sample',
-          iconColor: '#3b82f6'
-        }
-      ]
-    }).catch((err) => {
-      console.warn('Native Local Notification schedule failed:', err);
-    });
-    return;
-  }
-
   if (typeof window !== 'undefined' && 'Notification' in window) {
     if (Notification.permission === 'granted') {
       try {

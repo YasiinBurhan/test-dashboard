@@ -1,1 +1,0 @@
-sed -i 's/const \[telegramId, setTelegramId\] = useState('"'"''"'"');/const \[telegramId, setTelegramId\] = useState('"'"''"'"');\n  const \[pin, setPin\] = useState('"'"''"'"');/' src/pages/BrowserNoticePage.tsx

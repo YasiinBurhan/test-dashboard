@@ -39,7 +39,7 @@ const formatDateDDMMYYYY = (dateString?: string) => {
 };
 
 export const OwnerPage: React.FC = () => {
-  const { users, changeStatus, changeRole, refetch: refetchUsers } = useRecruiters();
+  const { users, changeStatus, changeRole, deleteUser, refetch: refetchUsers } = useRecruiters();
 
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [settings, setSettings] = useState<SystemSettings | null>(null);
@@ -732,6 +732,16 @@ export const OwnerPage: React.FC = () => {
     }
   };
 
+  const handleDeleteUser = async (telegramId: string) => {
+    if (!window.confirm('Apakah Anda yakin ingin menghapus pengguna ini secara permanen?')) return;
+    try {
+      await deleteUser(telegramId);
+      await refetchUsers();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Gagal menghapus pengguna');
+    }
+  };
+
   // Overall Statistics
   const totalUsers = users.length;
   const activeCount = users.filter((u) => u.status === 'Active').length;
@@ -891,6 +901,12 @@ export const OwnerPage: React.FC = () => {
                         <AlertTriangle className="w-3 h-3" /> Suspend
                       </button>
                     )}
+                    <button
+                      onClick={() => handleDeleteUser(u.telegramId)}
+                      className="px-2 py-1 rounded-xl bg-rose-900/80 hover:bg-rose-800 text-rose-100 text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                    >
+                      <Trash2 className="w-3 h-3" /> Delete
+                    </button>
                   </div>
                 </div>
               </div>

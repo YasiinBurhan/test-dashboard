@@ -99,6 +99,18 @@ export const Header: React.FC<HeaderProps> = ({ title, showUserBadge = true, set
         
         if (lastUnreadRef.current !== null && unread > lastUnreadRef.current) {
           playNotificationSound();
+          
+          // Find the newest unread notification
+          const unreadNotifs = notifs.filter(
+            (n) => !n.readBy || !n.readBy.includes(userTelegramId)
+          );
+          if (unreadNotifs.length > 0) {
+            const latestNotif = unreadNotifs[0];
+            const event = new CustomEvent('in-app-push-notification', {
+              detail: latestNotif
+            });
+            window.dispatchEvent(event);
+          }
         }
         lastUnreadRef.current = unread;
         setUnreadCount(unread);

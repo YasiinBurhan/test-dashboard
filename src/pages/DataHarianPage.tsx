@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import Tesseract from 'tesseract.js';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { motion, AnimatePresence } from 'motion/react';
@@ -1906,6 +1907,8 @@ export const DataHarianPage: React.FC = () => {
   const [isScanningUID, setIsScanningUID] = useState(false);
   const [scanProgress, setScanProgress] = useState<number>(0);
   const [scanError, setScanError] = useState<string | null>(null);
+  const [uidScreenshotPreview, setUidScreenshotPreview] = useState<string | null>(null);
+  const [isGeminiUnavailable, setIsGeminiUnavailable] = useState<boolean>(false);
 
   const handleScanScreenshot = async (file: File) => {
     setIsScanningUID(true);
@@ -1924,64 +1927,137 @@ export const DataHarianPage: React.FC = () => {
     };
 
     try {
-      setScanProgress(20);
+      setScanProgress(15);
       const base64Image = await fileToBase64(file);
-      setScanProgress(50);
+      setUidScreenshotPreview(base64Image);
+      setScanProgress(30);
       
-      const response = await fetch(`${API_BASE_URL}/api/scan-uid`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          image: base64Image,
-          mimeType: file.type,
-        }),
-      });
+      let extractedUid = '';
+      let extractedWa = '';
+      let extractedTg = '';
+      let extractedName = '';
+      let usedLocalOcr = false;
 
-      setScanProgress(80);
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/scan-uid`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            image: base64Image,
+            mimeType: file.type,
+          }),
+        });
 
-      if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.error || `Server error (${response.status}) saat memproses screenshot.`);
+        if (!response.ok) {
+          if (errData.error === 'GEMINI_API_KEY_MISSING' || (errData.message && errData.message.includes('GEMINI_API_KEY'))) {
+            setIsGeminiUnavailable(true);
+          }
+          throw new Error(errData.message || errData.error || `Server error (${response.status}) saat memproses screenshot.`);
+        }
+
+        const resJson = errData; // Already parsed
+        if (resJson.success && resJson.data) {
+          const aiData = resJson.data;
+          extractedUid = aiData.uid ? aiData.uid.trim() : '';
+          extractedWa = aiData.whatsapp ? aiData.whatsapp.replace(/\D/g, '').trim() : '';
+          extractedTg = aiData.telegramUsername ? aiData.telegramUsername.replace(/^@/, '').trim() : '';
+          extractedName = aiData.name ? aiData.name.trim() : '';
+        }
+      } catch (serverErr: any) {
+        console.warn('Backend Gemini API tidak tersedia atau gagal, menggunakan OCR lokal (Tesseract.js)...', serverErr);
+        usedLocalOcr = true;
+        setIsGeminiUnavailable(true);
+        setScanProgress(40);
+        
+        // Execute client-side OCR
+        const ocrResult = await Tesseract.recognize(
+          file,
+          'eng',
+          {
+            logger: (m) => {
+              if (m.status === 'recognizing text') {
+                setScanProgress(Math.floor(40 + m.progress * 50));
+              }
+            }
+          }
+        );
+        
+        const text = ocrResult.data.text || '';
+        console.log('Tesseract Local OCR Extracted Text:', text);
+        
+        // Try to extract UID: look for pattern label (e.g. UID, ID) or a block of digits
+        const uidMatch = text.match(/(?:uid|id|user\s*id|player\s*id|akun|id\s*pelamar)\s*[:\-\s=]\s*(\d{5,15})/i);
+        if (uidMatch && uidMatch[1]) {
+          extractedUid = uidMatch[1];
+        } else {
+          // Alternative: look for standalone numeric words that are 5-15 digits long
+          const words = text.split(/[\s,;\n]+/);
+          const digitWords = words.map(w => w.replace(/\D/g, '')).filter(w => w.length >= 5 && w.length <= 15);
+          if (digitWords.length > 0) {
+            // Prefer numbers that are around 8-11 digits (typical game UID lengths)
+            const preferred = digitWords.find(w => w.length >= 8 && w.length <= 11);
+            extractedUid = preferred || digitWords[0];
+          }
+        }
+
+        // Try to extract WhatsApp number
+        const waMatch = text.match(/(?:wa|whatsapp|phone|telp|hp)\s*[:\-\s=]\s*(\+?\d{9,15})/i);
+        if (waMatch && waMatch[1]) {
+          extractedWa = waMatch[1].replace(/\D/g, '');
+        } else {
+          const generalWaMatch = text.match(/\b(?:08|\+?62|62)\d{8,11}\b/);
+          if (generalWaMatch) {
+            extractedWa = generalWaMatch[0].replace(/\D/g, '');
+          }
+        }
+
+        // Try to extract Telegram username
+        const tgMatch = text.match(/(?:tg|tele|telegram)\s*[:\-\s=]\s*@?([a-zA-Z0-9_]{5,32})/i);
+        if (tgMatch && tgMatch[1]) {
+          extractedTg = tgMatch[1];
+        } else {
+          const handleMatch = text.match(/@([a-zA-Z0-9_]{5,32})/);
+          if (handleMatch && handleMatch[1]) {
+            extractedTg = handleMatch[1];
+          }
+        }
       }
 
-      const resJson = await response.json();
-      if (resJson.success && resJson.data) {
-        const aiData = resJson.data;
-        const extractedUid = aiData.uid ? aiData.uid.trim() : '';
-        const extractedWa = aiData.whatsapp ? aiData.whatsapp.replace(/\D/g, '').trim() : '';
-        const extractedTg = aiData.telegramUsername ? aiData.telegramUsername.replace(/^@/, '').trim() : '';
-        const extractedName = aiData.name ? aiData.name.trim() : '';
-        
-        if (extractedUid) {
-          setFormData(prev => {
-            const updated = { ...prev, uid9Kucing: extractedUid };
-            if (extractedWa && !prev.applicantWhatsapp) {
-              updated.applicantWhatsapp = extractedWa;
-            }
-            if (extractedTg && !prev.applicantTelegramUsername) {
-              updated.applicantTelegramUsername = extractedTg;
-            }
-            if (extractedName && !prev.applicantName) {
-              updated.applicantName = extractedName;
-            }
-            return updated;
-          });
-          setScanProgress(100);
-          triggerHaptic('notification', 'success');
-          let msg = `Berhasil mendeteksi UID: ${extractedUid}`;
-          if (extractedWa || extractedTg) {
-            msg += ` dan melengkapi form otomatis (WA/Telegram)`;
+      // Populate form fields
+      if (extractedUid) {
+        setFormData(prev => {
+          const updated = { ...prev, uid9Kucing: extractedUid };
+          if (extractedWa && !prev.applicantWhatsapp) {
+            updated.applicantWhatsapp = extractedWa;
           }
-          showAlert('success', 'Gemini AI Berhasil 🎉', msg);
+          if (extractedTg && !prev.applicantTelegramUsername) {
+            updated.applicantTelegramUsername = extractedTg;
+          }
+          if (extractedName && !prev.applicantName) {
+            updated.applicantName = extractedName;
+          }
+          return updated;
+        });
+        setScanProgress(100);
+        triggerHaptic('notification', 'success');
+        
+        let msg = `Berhasil mendeteksi UID: ${extractedUid}`;
+        if (extractedWa || extractedTg) {
+          msg += ` dan melengkapi form otomatis (WA/Telegram)`;
+        }
+        
+        if (usedLocalOcr) {
+          showAlert('success', 'OCR Lokal Berhasil 🎉', msg + ' (Terdeteksi via sensor gambar lokal)');
         } else {
-          throw new Error(aiData.reasoning || 'UID tidak terdeteksi oleh Gemini AI dalam screenshot. Pastikan screenshot memperlihatkan profil / UID dengan jelas.');
+          showAlert('success', 'Gemini AI Berhasil 🎉', msg);
         }
       } else {
-        throw new Error(resJson.error || 'Gagal memproses screenshot dengan Gemini AI.');
+        throw new Error('UID tidak terdeteksi dalam screenshot. Pastikan screenshot memperlihatkan bagian profil atau nomor UID pelamar (5-15 digit) dengan jelas.');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
       const errMsg = err instanceof Error ? err.message : 'Gagal memproses screenshot';
       setScanError(errMsg);
@@ -3060,15 +3136,30 @@ Grub : ${grupDisplay}`;
                           setCompressionProgress(Math.round(progress * 100));
                         });
                         
-                        const blobUrl = URL.createObjectURL(compressedFile);
-                        setFormData((prev) => ({ ...prev, videoUrl: blobUrl }));
+                        const dataUrl = await new Promise<string>((resolve, reject) => {
+                          const reader = new FileReader();
+                          reader.onload = () => resolve(reader.result as string);
+                          reader.onerror = (err) => reject(err);
+                          reader.readAsDataURL(compressedFile);
+                        });
+
+                        setFormData((prev) => ({ ...prev, videoUrl: dataUrl }));
                         showAlert('success', 'Video Siap ✅', 'Video berhasil dikompresi dan dimuat.');
                       } catch (err) {
                         console.error('Compression failed:', err);
-                        // Fallback to original
-                        const blobUrl = URL.createObjectURL(file);
-                        setFormData((prev) => ({ ...prev, videoUrl: blobUrl }));
-                        showAlert('warning', 'Kompresi Gagal ⚠️', 'Gagal mengompresi video, menggunakan ukuran asli.');
+                        // Fallback to original file
+                        try {
+                          const dataUrl = await new Promise<string>((resolve, reject) => {
+                            const reader = new FileReader();
+                            reader.onload = () => resolve(reader.result as string);
+                            reader.onerror = (err) => reject(err);
+                            reader.readAsDataURL(file);
+                          });
+                          setFormData((prev) => ({ ...prev, videoUrl: dataUrl }));
+                          showAlert('warning', 'Kompresi Gagal ⚠️', 'Gagal mengompresi video, menggunakan ukuran asli.');
+                        } catch (readErr) {
+                          showAlert('error', 'Gagal Memuat Video ❌', 'Tidak dapat membaca file video yang dipilih.');
+                        }
                       } finally {
                         setIsCompressingVideo(false);
                       }
@@ -3338,6 +3429,29 @@ Grub : ${grupDisplay}`;
                         )}
                         <span className="text-[10px] text-slate-500 dark:text-slate-400">{scanProgress > 0 ? `Proses: ${scanProgress}%` : 'Menghubungkan ke Gemini AI...'}</span>
                       </div>
+                    ) : uidScreenshotPreview ? (
+                      <div className="relative w-full max-w-[220px] h-[140px] rounded-lg overflow-hidden border border-slate-200 dark:border-slate-800 bg-black/5 flex items-center justify-center group/img">
+                        <img 
+                          src={uidScreenshotPreview} 
+                          alt="Screenshot UID" 
+                          className="max-w-full max-h-full object-contain"
+                          referrerPolicy="no-referrer"
+                        />
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setUidScreenshotPreview(null);
+                          }}
+                          className="absolute top-1.5 right-1.5 z-10 w-6 h-6 rounded-full bg-rose-500/90 text-white flex items-center justify-center hover:bg-rose-600 transition-colors shadow-md font-bold text-sm"
+                          title="Hapus Screenshot"
+                        >
+                          &times;
+                        </button>
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 flex items-center justify-center transition-opacity duration-200 pointer-events-none">
+                          <span className="text-[10px] font-bold text-white bg-slate-900/80 px-2 py-1 rounded-md">Ganti Screenshot</span>
+                        </div>
+                      </div>
                     ) : (
                       <div className="flex flex-col items-center gap-1.5 text-center">
                         <div className="w-10 h-10 rounded-full bg-slate-50 dark:bg-slate-900/80 flex items-center justify-center border border-slate-200 dark:border-slate-800">
@@ -3352,6 +3466,16 @@ Grub : ${grupDisplay}`;
                       </div>
                     )}
                   </div>
+
+                  {isGeminiUnavailable && (
+                    <div className="text-[10px] text-amber-500 dark:text-amber-400 flex items-start gap-1.5 px-3 py-2 bg-amber-500/5 rounded-lg border border-amber-500/10">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-semibold">Membaca Otomatis Nonaktif</p>
+                        <p className="text-[9px] text-slate-500 dark:text-slate-400 mt-0.5">Sistem pendeteksi otomatis tidak aktif karena Gemini API Key belum terpasang. Silakan lihat screenshot di atas dan ketik UID secara manual.</p>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="relative pt-1">
                     <Input

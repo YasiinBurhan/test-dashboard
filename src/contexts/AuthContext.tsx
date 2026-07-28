@@ -1,8 +1,11 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { AuthState, TelegramUser, UserProfile } from '../types';
 import { getTelegramWebApp, isTelegramEnvironment } from '../telegram/webapp';
-import { verifyTelegramInitDataApi } from '../services/api';
+import { verifyTelegramInitDataApi, loginManualApi } from '../services/api';
 import { getUserProfile, subscribeToUserProfile, getAllUsers, createUserProfile, findUserProfileByIdOrUsername, updateUserLastSeen } from '../firebase/services/userService';
+import { signInAnonymously } from 'firebase/auth';
+import { auth, db } from '../firebase/config';
+import { doc, setDoc } from 'firebase/firestore';
 
 interface AuthContextType extends AuthState {
   refreshProfile: () => Promise<UserProfile | null>;
@@ -215,6 +218,58 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     initAuth();
   }, [initAuth]);
 
+  // Ensure anonymous Firebase Auth sign-in
+  useEffect(() => {
+    const handleFirebaseSignIn = async () => {
+      try {
+        if (!auth.currentUser) {
+          const cred = await signInAnonymously(auth);
+          console.log('[Firebase Auth] Anonymous login successful:', cred.user.uid);
+        }
+      } catch (err) {
+        console.warn('[Firebase Auth] Failed to sign in anonymously:', err);
+      }
+    };
+    handleFirebaseSignIn();
+  }, []);
+
+  // Update/Sync firebaseUid and admin role document
+  useEffect(() => {
+    const syncFirebaseUser = async () => {
+      if (state.isAuthenticated && state.userProfile && auth.currentUser) {
+        const firebaseUid = auth.currentUser.uid;
+        const telegramId = String(state.userProfile.telegramId);
+
+        // 1. Link firebaseUid if missing or different
+        if (state.userProfile.firebaseUid !== firebaseUid) {
+          try {
+            const userRef = doc(db, 'users', telegramId);
+            await setDoc(userRef, { firebaseUid }, { merge: true });
+            console.log(`[Firebase Sync] Linked Telegram ${telegramId} with Firebase UID ${firebaseUid}`);
+          } catch (err) {
+            console.warn('[Firebase Sync] Failed to update firebaseUid in profile:', err);
+          }
+        }
+
+        // 2. Write self-healing administrative lookup if role is Admin or Owner
+        if (state.userProfile.role === 'Admin' || state.userProfile.role === 'Owner') {
+          try {
+            const adminRef = doc(db, 'admins', firebaseUid);
+            await setDoc(adminRef, {
+              telegramId,
+              role: state.userProfile.role,
+              updatedAt: new Date().toISOString()
+            });
+            console.log(`[Firebase Sync] Admin lookup synchronized for ${telegramId}`);
+          } catch (err) {
+            console.warn('[Firebase Sync] Failed to sync admin lookup:', err);
+          }
+        }
+      }
+    };
+    syncFirebaseUser();
+  }, [state.isAuthenticated, state.userProfile?.role, state.userProfile?.firebaseUid]);
+
   // Real-time listener for user profile updates
   useEffect(() => {
     if (state.telegramUser?.id) {
@@ -293,18 +348,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     try {
+      const apiResult = await withTimeout(loginManualApi(cleanId, pinInput), 8000, { success: false, error: 'Timeout' });
+      if (!apiResult || !apiResult.success || !apiResult.data?.token) {
+        setState((prev) => ({ ...prev, isLoading: false }));
+        return { success: false, error: apiResult?.error || 'Gagal login. Periksa kembali ID dan PIN.' };
+      }
+
       const profile = await withTimeout(findUserProfileByIdOrUsername(cleanId), 8000, null);
 
       if (profile) {
-        // Verify PIN if the profile has a PIN set
-        if (profile.pin && profile.pin !== pinInput) {
-          setState((prev) => ({ ...prev, isLoading: false }));
-          return { success: false, error: 'Kode Akses (PIN) salah.' };
-        } else if (!profile.pin && pinInput) {
-           // Allow login but it means they haven't set up PIN yet in WebApp, ideally we can set it now or just let them in.
-           // Actually, let's just proceed.
-        }
-
         const tgUser: TelegramUser = {
           id: Number(profile.telegramId) || 12345678,
           first_name: profile.firstName || nameInput?.trim() || 'User',
@@ -321,7 +373,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           isLoading: false,
           telegramUser: tgUser,
           userProfile: profile,
-          token: 'manual_session_token',
+          token: apiResult.data.token,
           initData: '',
           error: null,
           isTelegramContext: true

@@ -38,8 +38,10 @@ import {
   ChevronRight,
   ChevronDown,
   Check,
-  Users
+  Users,
+  Coins
 } from 'lucide-react';
+import { triggerHaptic } from '../telegram/webapp';
 
 interface DashboardPageProps {
   setActiveTab: (tab: TabType) => void;
@@ -76,6 +78,18 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setActiveTab }) =>
   const [selectedWeekOffset, setSelectedWeekOffset] = useState<number>(0); // 0 = Minggu Ini, -7 = Minggu Lalu
   const [selectedRecruiterFilter, setSelectedRecruiterFilter] = useState<string>(''); // For filtering in Dashboard
   const [isRecruiterFilterDropdownOpen, setIsRecruiterFilterDropdownOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const filteredUsersForDropdown = useMemo(() => {
+    const recruiters = allUsers.filter(u => u.role === 'Recruiter');
+    if (!searchQuery) return recruiters;
+    const query = searchQuery.toLowerCase().trim();
+    return recruiters.filter(u => {
+      const fullName = `${u.firstName || ''} ${u.lastName || ''}`.toLowerCase();
+      const username = (u.username || '').toLowerCase();
+      return fullName.includes(query) || username.includes(query);
+    });
+  }, [allUsers, searchQuery]);
   const [timeLeft, setTimeLeft] = useState<string>('');
   const [activityPage, setActivityPage] = useState<number>(1);
   const recruiterFilterDropdownRef = useRef<HTMLDivElement>(null);
@@ -911,6 +925,87 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setActiveTab }) =>
         </GlassCard>
       )}
 
+      {/* Pusat Aksi Cepat (Tactile Mobile Ergonomics) */}
+      <div className="space-y-2.5">
+        <div className="flex items-center justify-between px-1">
+          <h3 className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+            <span>Akses Utama Rekrutmen</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse" />
+          </h3>
+          <span className="text-[9px] font-semibold text-slate-400 dark:text-slate-500">Tap untuk navigasi cepat</span>
+        </div>
+        
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+          {/* Action 1: Input Pelamar */}
+          <button
+            onClick={() => {
+              triggerHaptic('impact', 'light');
+              setActiveTab('data_harian');
+            }}
+            className="flex items-center gap-3 p-3.5 rounded-2xl border border-slate-100 dark:border-slate-800/80 bg-white/90 dark:bg-slate-900/40 hover:bg-slate-50 dark:hover:bg-slate-900/60 active:scale-[0.96] transition-all cursor-pointer shadow-md shadow-slate-100/40 dark:shadow-none text-left group"
+          >
+            <div className="p-2.5 rounded-xl bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20 group-hover:scale-105 transition-transform shrink-0">
+              <UserCheck className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <span className="text-xs font-black text-slate-800 dark:text-slate-200 block truncate leading-none">Data Pelamar</span>
+              <span className="text-[9px] font-medium text-slate-400 dark:text-slate-500 block mt-1 truncate">Kirim hasil interview</span>
+            </div>
+          </button>
+
+          {/* Action 2: Lapor Harian */}
+          <button
+            onClick={() => {
+              triggerHaptic('impact', 'light');
+              setActiveTab('laporan');
+            }}
+            className="flex items-center gap-3 p-3.5 rounded-2xl border border-slate-100 dark:border-slate-800/80 bg-white/90 dark:bg-slate-900/40 hover:bg-slate-50 dark:hover:bg-slate-900/60 active:scale-[0.96] transition-all cursor-pointer shadow-md shadow-slate-100/40 dark:shadow-none text-left group"
+          >
+            <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 group-hover:scale-105 transition-transform shrink-0">
+              <FileText className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <span className="text-xs font-black text-slate-800 dark:text-slate-200 block truncate leading-none">Lapor Harian</span>
+              <span className="text-[9px] font-medium text-slate-400 dark:text-slate-500 block mt-1 truncate">Rangkum data harian</span>
+            </div>
+          </button>
+
+          {/* Action 3: Posting Link */}
+          <button
+            onClick={() => {
+              triggerHaptic('impact', 'light');
+              setActiveTab('postingan');
+            }}
+            className="flex items-center gap-3 p-3.5 rounded-2xl border border-slate-100 dark:border-slate-800/80 bg-white/90 dark:bg-slate-900/40 hover:bg-slate-50 dark:hover:bg-slate-900/60 active:scale-[0.96] transition-all cursor-pointer shadow-md shadow-slate-100/40 dark:shadow-none text-left group"
+          >
+            <div className="p-2.5 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 group-hover:scale-105 transition-transform shrink-0">
+              <Share2 className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <span className="text-xs font-black text-slate-800 dark:text-slate-200 block truncate leading-none">Posting Link</span>
+              <span className="text-[9px] font-medium text-slate-400 dark:text-slate-500 block mt-1 truncate">Kirim bukti loker</span>
+            </div>
+          </button>
+
+          {/* Action 4: Gaji & Bonus */}
+          <button
+            onClick={() => {
+              triggerHaptic('impact', 'light');
+              setActiveTab('gaji');
+            }}
+            className="flex items-center gap-3 p-3.5 rounded-2xl border border-slate-100 dark:border-slate-800/80 bg-white/90 dark:bg-slate-900/40 hover:bg-slate-50 dark:hover:bg-slate-900/60 active:scale-[0.96] transition-all cursor-pointer shadow-md shadow-slate-100/40 dark:shadow-none text-left group"
+          >
+            <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 group-hover:scale-105 transition-transform shrink-0">
+              <Coins className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <span className="text-xs font-black text-slate-800 dark:text-slate-200 block truncate leading-none">Gaji & Bonus</span>
+              <span className="text-[9px] font-medium text-slate-400 dark:text-slate-500 block mt-1 truncate">Rincian & insentif</span>
+            </div>
+          </button>
+        </div>
+      </div>
+
       {/* Top Banner / Hero Information */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
         {/* Reset Counter Panel */}
@@ -1006,6 +1101,45 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setActiveTab }) =>
                 Top Channel: <span className="text-slate-900 dark:text-white">{topChannelOverall.name}</span> ({topChannelOverall.count})
               </span>
             )}
+          </div>
+
+          {/* Bonus Info Banner */}
+          <div className="px-3.5 py-3 bg-emerald-500/10 border-b border-emerald-500/20 flex flex-col gap-2">
+            <div className="flex items-center gap-2 mb-1">
+              <Award className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <span className="text-[11px] font-black text-emerald-800 dark:text-emerald-300 uppercase tracking-wider">Bonus Top Agen Mingguan</span>
+            </div>
+            
+            <div className="grid grid-cols-3 gap-2">
+              <div className="bg-emerald-50 dark:bg-emerald-500/5 rounded-lg border border-emerald-200 dark:border-emerald-500/20 p-2 text-center flex flex-col items-center justify-center shadow-sm">
+                <div className="flex items-center gap-1 mb-0.5">
+                  <Crown className="w-3.5 h-3.5 text-amber-500" />
+                  <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase">Juara 1</span>
+                </div>
+                <span className="text-sm font-black text-emerald-600 dark:text-emerald-400 tracking-tight">Rp 50K</span>
+              </div>
+              <div className="bg-emerald-50 dark:bg-emerald-500/5 rounded-lg border border-emerald-200 dark:border-emerald-500/20 p-2 text-center flex flex-col items-center justify-center shadow-sm">
+                <div className="flex items-center gap-1 mb-0.5">
+                  <Medal className="w-3 h-3 text-slate-400" />
+                  <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase">Juara 2</span>
+                </div>
+                <span className="text-sm font-black text-emerald-600 dark:text-emerald-400 tracking-tight">Rp 30K</span>
+              </div>
+              <div className="bg-emerald-50 dark:bg-emerald-500/5 rounded-lg border border-emerald-200 dark:border-emerald-500/20 p-2 text-center flex flex-col items-center justify-center shadow-sm">
+                <div className="flex items-center gap-1 mb-0.5">
+                  <Medal className="w-3 h-3 text-amber-700" />
+                  <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300 uppercase">Juara 3</span>
+                </div>
+                <span className="text-sm font-black text-emerald-600 dark:text-emerald-400 tracking-tight">Rp 20K</span>
+              </div>
+            </div>
+
+            <div className="mt-1 flex items-start gap-1.5 p-2 bg-emerald-50 dark:bg-emerald-500/5 rounded-lg border border-emerald-100 dark:border-emerald-500/10">
+               <Zap className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+               <p className="text-[10px] leading-relaxed font-medium text-emerald-800 dark:text-emerald-200">
+                 <strong className="font-bold">Ketentuan:</strong> Merekrut dari Senin s/d Minggu (<strong className="font-bold text-emerald-700 dark:text-emerald-300">min. 10 ACC</strong>). Bonus di-transfer setiap <strong className="font-bold underline decoration-emerald-500/40 underline-offset-2">Jumat</strong> di minggu berikutnya!
+               </p>
+            </div>
           </div>
 
           {isLoadingUsers || isLoadingReports ? (
@@ -1289,39 +1423,60 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setActiveTab }) =>
                       initial={{ opacity: 0, y: -10 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -10 }}
-                      className="absolute right-0 z-50 w-full sm:w-64 mt-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl overflow-hidden max-h-60 overflow-y-auto"
+                      className="absolute right-0 z-50 w-full sm:w-64 mt-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl overflow-hidden max-h-72 flex flex-col"
                     >
-                      <button
-                        type="button"
-                        onClick={() => { setSelectedRecruiterFilter(''); setIsRecruiterFilterDropdownOpen(false); }}
-                        className={`w-full text-left px-3 py-2 text-xs font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-2 ${!selectedRecruiterFilter ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400' : 'text-slate-700 dark:text-slate-300'}`}
-                      >
-                        <div className="w-5 h-5 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0">
-                          <Users className="w-3 h-3 text-slate-500" />
-                        </div>
-                        Semua Recruiter
-                        {!selectedRecruiterFilter && <Check className="w-3 h-3 ml-auto" />}
-                      </button>
-                      {allUsers.filter(u => u.role === 'Recruiter').map(r => (
+                      {/* Search Input Box */}
+                      <div className="p-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/20 shrink-0">
+                        <input
+                          type="text"
+                          placeholder="Cari nama atau username..."
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          onClick={(e) => e.stopPropagation()}
+                          className="w-full bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs px-2.5 py-2 rounded-lg border border-slate-200 dark:border-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500/20 placeholder:text-slate-400 dark:placeholder:text-slate-600"
+                        />
+                      </div>
+
+                      <div className="overflow-y-auto flex-1 divide-y divide-slate-100/60 dark:divide-slate-800/40">
                         <button
-                          key={r.telegramId}
                           type="button"
-                          onClick={() => { setSelectedRecruiterFilter(String(r.telegramId)); setIsRecruiterFilterDropdownOpen(false); }}
-                          className={`w-full text-left px-3 py-2 text-xs font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-2 ${selectedRecruiterFilter === String(r.telegramId) ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400' : 'text-slate-700 dark:text-slate-300'}`}
+                          onClick={() => { setSelectedRecruiterFilter(''); setSearchQuery(''); setIsRecruiterFilterDropdownOpen(false); }}
+                          className={`w-full text-left px-3 py-2.5 text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-2 ${!selectedRecruiterFilter ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-extrabold' : 'text-slate-700 dark:text-slate-300'}`}
                         >
-                          {r.photoUrl ? (
-                            <img src={r.photoUrl} alt={r.firstName} className="w-5 h-5 rounded-full object-cover shrink-0" />
-                          ) : (
-                            <div className="w-5 h-5 rounded-full bg-indigo-100 dark:bg-indigo-500/20 flex items-center justify-center text-[9px] shrink-0">
-                              {r.firstName?.charAt(0) || '?'}
-                            </div>
-                          )}
-                          <span className="truncate">
-                            {r.firstName} {r.lastName || ''}
-                          </span>
-                          {selectedRecruiterFilter === String(r.telegramId) && <Check className="w-3 h-3 ml-auto shrink-0" />}
+                          <div className="w-5 h-5 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0">
+                            <Users className="w-3 h-3 text-slate-500" />
+                          </div>
+                          Semua Recruiter
+                          {!selectedRecruiterFilter && <Check className="w-3.5 h-3.5 ml-auto text-indigo-500 shrink-0" />}
                         </button>
-                      ))}
+                        
+                        {filteredUsersForDropdown.length === 0 ? (
+                          <div className="p-4 text-center text-[10px] text-slate-400 dark:text-slate-600 font-medium">
+                            Tidak ada hasil ditemukan
+                          </div>
+                        ) : (
+                          filteredUsersForDropdown.map(r => (
+                            <button
+                              key={r.telegramId}
+                              type="button"
+                              onClick={() => { setSelectedRecruiterFilter(String(r.telegramId)); setSearchQuery(''); setIsRecruiterFilterDropdownOpen(false); }}
+                              className={`w-full text-left px-3 py-2.5 text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-2 ${selectedRecruiterFilter === String(r.telegramId) ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-extrabold' : 'text-slate-700 dark:text-slate-300'}`}
+                            >
+                              {r.photoUrl ? (
+                                <img src={r.photoUrl} alt={r.firstName} className="w-5 h-5 rounded-full object-cover shrink-0" />
+                              ) : (
+                                <div className="w-5 h-5 rounded-full bg-indigo-100 dark:bg-indigo-500/20 flex items-center justify-center text-[9px] shrink-0 text-indigo-600 dark:text-indigo-400 font-black">
+                                  {r.firstName?.charAt(0) || '?'}
+                                </div>
+                              )}
+                              <span className="truncate">
+                                {r.firstName} {r.lastName || ''}
+                              </span>
+                              {selectedRecruiterFilter === String(r.telegramId) && <Check className="w-3.5 h-3.5 ml-auto text-indigo-500 shrink-0" />}
+                            </button>
+                          ))
+                        )}
+                      </div>
                     </motion.div>
                   )}
                 </AnimatePresence>

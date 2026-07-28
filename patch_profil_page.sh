@@ -1,3 +1,0 @@
-sed -i 's/import React from '"'"'react'"'"';/import React, { useState } from '"'"'react'"'"';/' src/pages/ProfilPage.tsx
-sed -i 's/import { User, Mail, Phone, Key, Shield, Hash, LogOut, ExternalLink } from '"'"'lucide-react'"'"';/import { User, Mail, Phone, Key, Shield, Hash, LogOut, ExternalLink, Lock, EyeOff, Eye, Save } from '"'"'lucide-react'"'"';/' src/pages/ProfilPage.tsx
-sed -i 's/import { useAuth } from '"'"'..\/hooks\/useAuth'"'"';/import { useAuth } from '"'"'..\/hooks\/useAuth'"'"';\nimport { updateUserPin } from '"'"'..\/firebase\/services\/userService'"'"';/' src/pages/ProfilPage.tsx

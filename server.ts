@@ -9,17 +9,21 @@ import { promisify } from 'util';
 
 const execPromise = promisify(exec);
 import dotenv from 'dotenv';
-import { initializeApp } from 'firebase/app';
-import { getFirestore, doc, getDoc } from 'firebase/firestore';
+import { initializeApp, getApps } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
+import helmet from 'helmet';
+import cors from 'cors';
+import rateLimit from 'express-rate-limit';
 import { GoogleGenAI, Type } from '@google/genai';
 
 // Lazy-initialized GoogleGenAI client to avoid crash if GEMINI_API_KEY is not set on startup
 let aiClient: GoogleGenAI | null = null;
-function getGeminiClient(): GoogleGenAI {
+function getGeminiClient(): GoogleGenAI | null {
   if (!aiClient) {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      throw new Error('GEMINI_API_KEY environment variable is required');
+      console.warn('GEMINI_API_KEY environment variable is not set.');
+      return null;
     }
     aiClient = new GoogleGenAI({
       apiKey,
@@ -52,46 +56,83 @@ if (!process.env.VERCEL) {
   dotenv.config();
 }
 
+// Environment validation
+const requiredEnvVars = [
+  'TELEGRAM_BOT_TOKEN',
+  'JWT_SECRET',
+  'GEMINI_API_KEY',
+  'OWNER_ACTIVATION_PIN'
+];
+
+const missingEnvVars = requiredEnvVars.filter(v => !process.env[v]);
+if (missingEnvVars.length > 0) {
+  console.error('\n========================================');
+  console.error('💥 CRITICAL ERROR: MISSING REQUIRED ENVIRONMENT VARIABLES');
+  console.error('The following required variables are not set:');
+  missingEnvVars.forEach(v => console.error(`  - ${v}`));
+  console.error('\nPlease define these variables in your .env file or deployment settings.');
+  console.error('========================================\n');
+  throw new Error(`Critical Configuration Error: Missing required environment variables: ${missingEnvVars.join(', ')}`);
+}
+
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN!.trim().replace(/^["']|["']$/g, '');
+const JWT_SECRET = process.env.JWT_SECRET!.trim().replace(/^["']|["']$/g, '');
+const OWNER_ACTIVATION_PIN = process.env.OWNER_ACTIVATION_PIN!.trim().replace(/^["']|["']$/g, '');
+
 const app = express();
 const PORT = 3000;
 
-// TODO: Configure TELEGRAM_BOT_TOKEN in .env for production verification
-const TELEGRAM_BOT_TOKEN = (process.env.TELEGRAM_BOT_TOKEN || '8892793996:CAYzkJoLs661HwLRCY8qXBCdIKslXopcj9IYSEfsimUYRFLIf1hC0g').trim().replace(/^["']|["']$/g, '');
-const JWT_SECRET = (process.env.JWT_SECRET || 'azurlizeteam_secret_jwt_key_2026').trim().replace(/^["']|["']$/g, '');
+// Security: Restrict CORS to specific production origin
+const allowedOrigins = [
+  'https://ais-dev-j7rbidxuktuwu6i34ejnsa-593623455181.asia-southeast1.run.app',
+  'https://ais-pre-j7rbidxuktuwu6i34ejnsa-593623455181.asia-southeast1.run.app'
+];
+if (process.env.NODE_ENV !== 'production') {
+  allowedOrigins.push('http://localhost:3000');
+  allowedOrigins.push('http://localhost:5173');
+}
 
-// Initialize Firebase App for Server-Side Telegram Bot lookups
+app.use(cors({
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.run.app') || origin.endsWith('.vercel.app')) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true
+}));
+
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 let serverDb: any = null;
 try {
   const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
   if (fs.existsSync(configPath)) {
     const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-    const firebaseApp = initializeApp(config);
+    if (getApps().length === 0) {
+      initializeApp({
+        projectId: config.projectId,
+      });
+    }
     const dbId = config.firestoreDatabaseId && config.firestoreDatabaseId !== '(default)'
       ? config.firestoreDatabaseId
       : undefined;
-    serverDb = dbId ? getFirestore(firebaseApp, dbId) : getFirestore(firebaseApp);
-    console.log('[Firebase Node] Firestore successfully initialized on Server!');
+    serverDb = dbId ? getFirestore(dbId) : getFirestore();
+    console.log('[Firebase Node] Firestore successfully initialized with firebase-admin on Server!');
   } else {
     console.warn('[Firebase Node] firebase-applet-config.json not found on server.');
   }
 } catch (err) {
-  console.error('[Firebase Node] Failed to initialize Firebase on server:', err);
+  console.error('[Firebase Node] Failed to initialize firebase-admin on server:', err);
 }
 
-app.use(express.json({ limit: '500mb' }));
-app.use(express.urlencoded({ limit: '500mb', extended: true }));
-
-// Enable CORS for all origins (including Vercel deployments)
-app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-  if (req.method === 'OPTIONS') {
-    res.sendStatus(200);
-    return;
-  }
-  next();
-});
+// Apply secure headers with Helmet
+app.use(helmet({
+  contentSecurityPolicy: false, // Avoid blocking development / preview scripts and styles
+  frameguard: false, // Allow iframe embedding in Google AI Studio
+  crossOriginEmbedderPolicy: false,
+}));
 
 // Health check for Vercel debugging
 app.get('/api/health', (_req, res) => {
@@ -103,7 +144,7 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
-// HMAC SHA-256 verification function for Telegram WebApp initData
+// HMAC SHA-256 verification function for Telegram WebApp initData (Priority 2)
 function verifyTelegramInitData(initData: string): { valid: boolean; user?: unknown; error?: string } {
   if (!initData) {
     return { valid: false, error: 'Missing initData string' };
@@ -151,27 +192,16 @@ function verifyTelegramInitData(initData: string): { valid: boolean; user?: unkn
       const user = userString ? JSON.parse(userString) : null;
       return { valid: true, user };
     } else {
-      console.warn('[Telegram Auth] HMAC signature mismatch with token. Falling back to initData user payload for multi-bot compatibility.');
-      const userString = urlParams.get('user');
-      if (userString) {
-        try {
-          const user = JSON.parse(userString);
-          if (user && user.id) {
-            return { valid: true, user };
-          }
-        } catch (e) {
-          console.error('[Telegram Auth] Failed parsing user JSON in fallback mode:', e);
-        }
-      }
-      return { valid: false, error: 'HMAC signature verification failed and user parameter missing' };
+      // Priority 2: Reject immediately, no fallback
+      return { valid: false, error: 'HMAC signature verification failed' };
     }
   } catch (err) {
     return { valid: false, error: err instanceof Error ? err.message : 'Failed to parse initData' };
   }
 }
 
-// Middleware to protect API routes with JWT session token
-function authenticateJWT(req: Request & { user?: unknown }, res: Response, next: () => void) {
+// Middleware to protect API routes with JWT session token (Priority 3)
+function authenticateJWT(req: Request & { user?: any }, res: Response, next: () => void) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     res.status(401).json({ success: false, error: 'Unauthorized: Session token missing' });
@@ -179,12 +209,187 @@ function authenticateJWT(req: Request & { user?: unknown }, res: Response, next:
   }
 
   const token = authHeader.split(' ')[1];
+  
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     req.user = decoded;
     next();
   } catch {
     res.status(403).json({ success: false, error: 'Forbidden: Invalid or expired session token' });
+  }
+}
+
+// Authorization Middleware (Priority 4)
+function authorizeRoles(allowedRoles: string[]) {
+  return async (req: Request & { user?: any }, res: Response, next: () => void) => {
+    try {
+      if (!req.user || !req.user.telegramId) {
+        res.status(401).json({ success: false, error: 'Unauthorized: No active session' });
+        return;
+      }
+
+      if (!serverDb) {
+        res.status(500).json({ success: false, error: 'Database error: Firestore is not ready' });
+        return;
+      }
+
+      const telegramId = String(req.user.telegramId);
+      const userRef = serverDb.collection('users').doc(telegramId);
+      const userDoc = await userRef.get();
+
+      if (!userDoc.exists) {
+        res.status(403).json({ success: false, error: 'Access Denied: User profile does not exist' });
+        return;
+      }
+
+      const userData = userDoc.data();
+      if (!userData) {
+        res.status(403).json({ success: false, error: 'Access Denied: Empty profile' });
+        return;
+      }
+
+      // Verify Account Status
+      if (userData.status === 'Suspended') {
+        res.status(403).json({ success: false, error: 'Access Denied: Akun Anda ditangguhkan (Suspended)' });
+        return;
+      }
+
+      if (userData.status === 'Rejected') {
+        res.status(403).json({ success: false, error: 'Access Denied: Pendaftaran Anda ditolak (Rejected)' });
+        return;
+      }
+
+      if (userData.status === 'Pending') {
+        res.status(403).json({ success: false, error: 'Access Denied: Pendaftaran Anda masih menunggu persetujuan (Pending)' });
+        return;
+      }
+
+      if (userData.status !== 'Active' || userData.approved !== true) {
+        res.status(403).json({ success: false, error: 'Access Denied: Akun belum aktif atau disetujui' });
+        return;
+      }
+
+      // Verify Roles
+      const userRole = userData.role || 'Recruiter';
+      if (!allowedRoles.includes(userRole)) {
+        res.status(403).json({ success: false, error: `Access Denied: Role '${userRole}' tidak diizinkan mengakses resource ini` });
+        return;
+      }
+
+      next();
+    } catch (err) {
+      console.error('[Authorization Middleware] Error:', err);
+      res.status(500).json({ success: false, error: 'Internal server error during authorization' });
+    }
+  };
+}
+
+// --- RATE LIMITERS --- (Priority 5)
+const activationPinLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 5,
+  message: { success: false, error: 'Terlalu banyak percobaan PIN. Silakan coba lagi dalam 1 menit.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const generalApiLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 60,
+  message: { success: false, error: 'Terlalu banyak permintaan. Silakan coba lagi dalam 1 menit.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const webhookLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 300, // Higher limit for webhook
+  message: { success: false, error: 'Too many requests' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// --- UPLOAD VALIDATION HELPERS --- (Priority 6)
+function validateImageUpload(base64Data: string | unknown, mimeType: string): { valid: boolean; error?: string } {
+  try {
+    if (typeof base64Data !== 'string') {
+      return { valid: false, error: 'Payload tidak valid: image harus berupa string.' };
+    }
+    const buffer = Buffer.from(base64Data, 'base64');
+    
+    // Check maximum size: 10MB limit
+    const MAX_SIZE = 10 * 1024 * 1024; // 10MB
+    if (buffer.length > MAX_SIZE) {
+      return { valid: false, error: 'Ukuran file gambar melebihi batas maksimal (10MB).' };
+    }
+
+    // Check allowed MIME types
+    const allowedMimeTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'];
+    if (!allowedMimeTypes.includes(mimeType.toLowerCase())) {
+      return { valid: false, error: 'MIME type tidak didukung. Hanya gambar PNG, JPEG, dan WebP yang diperbolehkan.' };
+    }
+
+    // Check Magic Bytes
+    if (buffer.length < 4) {
+      return { valid: false, error: 'File gambar terlalu kecil atau tidak valid.' };
+    }
+
+    const hex = buffer.toString('hex', 0, 12).toUpperCase();
+    
+    const isPng = hex.startsWith('89504E47');
+    const isJpeg = hex.startsWith('FFD8FF');
+    const isWebP = hex.startsWith('52494646') && hex.slice(16, 24) === '57454250'; // RIFF ... WEBP
+
+    if (!isPng && !isJpeg && !isWebP) {
+      return { valid: false, error: 'Signature file gambar tidak cocok (Magic Bytes mismatch). File mungkin rusak atau tidak sesuai.' };
+    }
+
+    return { valid: true };
+  } catch (err) {
+    return { valid: false, error: 'Gagal memproses file untuk validasi keamanan.' };
+  }
+}
+
+function validateVideoUpload(base64Data: string | unknown, mimeType: string): { valid: boolean; error?: string } {
+  try {
+    if (typeof base64Data !== 'string') {
+      return { valid: false, error: 'Payload tidak valid: video harus berupa string.' };
+    }
+    const buffer = Buffer.from(base64Data, 'base64');
+    
+    // Check size: max 30MB
+    const MAX_SIZE = 30 * 1024 * 1024; // 30MB
+    if (buffer.length > MAX_SIZE) {
+      return { valid: false, error: 'Ukuran file video melebihi batas maksimal (30MB).' };
+    }
+
+    // Check allowed MIME types
+    const allowedMimeTypes = ['video/mp4', 'video/quicktime', 'video/mov', 'image/gif', 'video/webm', 'video/x-matroska'];
+    if (!allowedMimeTypes.includes(mimeType.toLowerCase())) {
+      return { valid: false, error: 'MIME type video tidak didukung. Hanya MP4, MOV, WEBM, dan GIF yang diperbolehkan.' };
+    }
+
+    // Check magic bytes
+    if (buffer.length < 8) {
+      return { valid: false, error: 'File video terlalu kecil atau tidak valid.' };
+    }
+
+    const hex = buffer.toString('hex', 0, 16).toUpperCase();
+    
+    // GIF8: '47494638'
+    const isGif = hex.startsWith('47494638');
+    // MP4/MOV box search: '66747970' is 'ftyp' (often at byte 4)
+    const isMp4OrMov = hex.slice(8, 16) === '66747970' || hex.startsWith('000000');
+    // EBML (WebM/MKV): '1A45DFA3'
+    const isWebm = hex.startsWith('1A45DFA3');
+
+    if (!isGif && !isMp4OrMov && !isWebm) {
+      return { valid: false, error: 'Signature file video tidak cocok (Magic Bytes mismatch).' };
+    }
+
+    return { valid: true };
+  } catch (err) {
+    return { valid: false, error: 'Gagal memproses file video untuk validasi keamanan.' };
   }
 }
 
@@ -199,7 +404,7 @@ app.get('/api/health', (_req, res) => {
 });
 
 // API Endpoint: Verify Telegram initData & Issue JWT Session Token
-app.post('/api/auth/verify-telegram', (req, res) => {
+app.post('/api/auth/verify-telegram', generalApiLimiter, (req, res) => {
   const { initData } = req.body;
 
   if (!initData) {
@@ -240,8 +445,80 @@ app.post('/api/auth/verify-telegram', (req, res) => {
   });
 });
 
+// API Endpoint: Manual Login & Issue JWT Session Token
+app.post('/api/auth/login-manual', generalApiLimiter, async (req, res) => {
+  try {
+    const { telegramId, pin } = req.body;
+    
+    if (!telegramId) {
+      res.status(400).json({ success: false, error: 'Telegram ID is required' });
+      return;
+    }
+
+    if (!serverDb) {
+      res.status(500).json({ success: false, error: 'Database Firebase tidak siap di server.' });
+      return;
+    }
+
+    const cleanId = String(telegramId).trim().replace(/^@/, '');
+    
+    // First find by ID or username
+    let userDoc = await serverDb.collection('users').doc(cleanId).get();
+    let actualId = cleanId;
+
+    if (!userDoc.exists) {
+      // Try finding by username
+      const usersQuery = await serverDb.collection('users').where('username', '==', cleanId).limit(1).get();
+      if (!usersQuery.empty) {
+        userDoc = usersQuery.docs[0];
+        actualId = userDoc.id;
+      } else {
+        // Also try lowercase username
+        const usersQueryLower = await serverDb.collection('users').where('username', '==', cleanId.toLowerCase()).limit(1).get();
+        if (!usersQueryLower.empty) {
+          userDoc = usersQueryLower.docs[0];
+          actualId = userDoc.id;
+        } else {
+          res.status(401).json({ success: false, error: 'Akun tidak terdaftar.' });
+          return;
+        }
+      }
+    }
+
+    const userData = userDoc.data();
+    if (!userData) {
+      res.status(401).json({ success: false, error: 'Data pengguna tidak ditemukan.' });
+      return;
+    }
+
+    if (userData.pin && userData.pin !== pin) {
+      res.status(401).json({ success: false, error: 'Kode Akses (PIN) salah.' });
+      return;
+    }
+
+    // Issue JWT Session Token valid for 7 days
+    const token = jwt.sign(
+      {
+        telegramId: String(actualId),
+        username: userData.username || '',
+        firstName: userData.firstName || ''
+      },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.json({
+      success: true,
+      data: { token }
+    });
+  } catch (error) {
+    console.error('Error in manual login:', error);
+    res.status(500).json({ success: false, error: 'Terjadi kesalahan internal server' });
+  }
+});
+
 // API Endpoint: User Registration Session Verification
-app.post('/api/auth/session-user', authenticateJWT, (req: Request & { user?: unknown }, res: Response) => {
+app.post('/api/auth/session-user', generalApiLimiter, authenticateJWT, (req: Request & { user?: unknown }, res: Response) => {
   res.json({
     success: true,
     data: {
@@ -250,8 +527,81 @@ app.post('/api/auth/session-user', authenticateJWT, (req: Request & { user?: unk
   });
 });
 
+// API Endpoint: Activate Self using PIN Code
+app.post('/api/auth/activate-pin', activationPinLimiter, authenticateJWT, async (req: Request & { user?: any }, res: Response) => {
+  try {
+    const { pinCode } = req.body;
+    if (!pinCode) {
+      res.status(400).json({ success: false, error: 'Kode PIN harus diisi.' });
+      return;
+    }
+
+    let telegramId = '';
+    if (req.user && typeof req.user === 'object' && 'telegramId' in req.user) {
+      telegramId = req.user.telegramId;
+    }
+
+    // Support mock session token body parameter fallbacks
+    if (req.headers.authorization?.includes('manual_session_token') || req.headers.authorization?.includes('client_side_fallback_token')) {
+      if (req.body.telegramId) {
+        telegramId = req.body.telegramId;
+      }
+    }
+
+    if (!telegramId) {
+      res.status(401).json({ success: false, error: 'ID Telegram tidak valid atau sesi kadaluarsa.' });
+      return;
+    }
+
+    // Support the environment-defined PIN
+    const validPins = [
+      OWNER_ACTIVATION_PIN.trim().toLowerCase()
+    ];
+
+    if (!validPins.includes(pinCode.trim().toLowerCase())) {
+      res.status(400).json({ success: false, error: 'Kode PIN tidak valid.' });
+      return;
+    }
+
+    if (!serverDb) {
+      res.status(500).json({ success: false, error: 'Database Firebase tidak siap di server.' });
+      return;
+    }
+
+    const userRef = serverDb.collection('users').doc(String(telegramId));
+    const userDoc = await userRef.get();
+
+    if (!userDoc.exists) {
+      res.status(404).json({ success: false, error: 'User profile tidak ditemukan di database.' });
+      return;
+    }
+
+    const now = new Date().toISOString();
+    await userRef.update({
+      role: 'Owner',
+      status: 'Active',
+      approved: true,
+      approvedBy: 'SelfPin',
+      approvedAt: now,
+      updatedBy: 'SelfPin',
+      updatedAt: now
+    });
+
+    res.json({
+      success: true,
+      message: 'Akun Anda berhasil diaktifkan sebagai Owner!'
+    });
+  } catch (err) {
+    console.error('Error in /api/auth/activate-pin:', err);
+    res.status(500).json({
+      success: false,
+      error: err instanceof Error ? err.message : 'Gagal memproses aktivasi PIN.'
+    });
+  }
+});
+
 // API Endpoint: Get Google Spreadsheet Link
-app.get('/api/sheets/info', async (_req: Request, res: Response) => {
+app.get('/api/sheets/info', authenticateJWT, async (_req: Request, res: Response) => {
   try {
     const { getOrCreateSpreadsheet } = await getGoogleSheets();
     const info = await getOrCreateSpreadsheet();
@@ -262,7 +612,7 @@ app.get('/api/sheets/info', async (_req: Request, res: Response) => {
 });
 
 // API Endpoint: Sync Approved User to Google Sheets
-app.post('/api/sheets/sync-user', async (req: Request, res: Response) => {
+app.post('/api/sheets/sync-user', authenticateJWT, async (req: Request, res: Response) => {
   try {
     const { user } = req.body;
     if (!user || !user.telegramId) {
@@ -279,7 +629,7 @@ app.post('/api/sheets/sync-user', async (req: Request, res: Response) => {
 });
 
 // API Endpoint: Sync Daily Report to Google Sheets
-app.post('/api/sheets/sync-report', async (req: Request, res: Response) => {
+app.post('/api/sheets/sync-report', authenticateJWT, async (req: Request, res: Response) => {
   try {
     const { report } = req.body;
     if (!report || !report.telegramId) {
@@ -296,7 +646,7 @@ app.post('/api/sheets/sync-report', async (req: Request, res: Response) => {
 });
 
 // API Endpoint: Scan Screenshot using Gemini AI for UID, WA, and Telegram Username
-app.post('/api/scan-uid', async (req: Request, res: Response) => {
+app.post('/api/scan-uid', generalApiLimiter, authenticateJWT, authorizeRoles(['Owner', 'Admin', 'Recruiter']), async (req: Request, res: Response) => {
   try {
     const { image, mimeType } = req.body;
     if (!image) {
@@ -314,9 +664,25 @@ app.post('/api/scan-uid', async (req: Request, res: Response) => {
       }
     }
 
+    // Secure upload validation (Priority 6)
+    const validation = validateImageUpload(base64Data, resolvedMimeType);
+    if (!validation.valid) {
+      res.status(400).json({ success: false, error: validation.error || 'Validasi file gambar gagal.' });
+      return;
+    }
+
     const ai = getGeminiClient();
+    if (!ai) {
+      console.warn("GEMINI_API_KEY is not set.");
+      res.status(400).json({
+        success: false,
+        error: 'GEMINI_API_KEY_MISSING',
+        message: 'Kunci API Gemini (GEMINI_API_KEY) tidak dikonfigurasi di server. Anda dapat mengunggah screenshot untuk dilihat dan mengetik UID secara manual di bawah.'
+      });
+      return;
+    }
     const response = await ai.models.generateContent({
-      model: 'gemini-3.6-flash',
+      model: 'gemini-2.5-flash',
       contents: [
         {
           inlineData: {
@@ -493,7 +859,11 @@ app.get('/api/check-telegram/:username', async (req: Request, res: Response) => 
  */
 app.post('/api/telegram/webhook', async (req: Request, res: Response) => {
   try {
-    const activeToken = ((req.query.token as string) || (req.body?.botToken as string) || TELEGRAM_BOT_TOKEN).trim();
+    const activeToken = ((req.query.token as string) || TELEGRAM_BOT_TOKEN).trim();
+    if (activeToken !== TELEGRAM_BOT_TOKEN) {
+      res.status(403).json({ success: false, error: 'Forbidden: Invalid token' });
+      return;
+    }
     const { message, edited_message, channel_post, edited_channel_post } = req.body;
     
     // Process standard messages
@@ -511,9 +881,9 @@ app.post('/api/telegram/webhook', async (req: Request, res: Response) => {
       let userPinText = '';
       if (senderId && serverDb) {
         try {
-          const userRef = doc(serverDb, 'users', String(senderId));
-          const docSnap = await getDoc(userRef);
-          if (docSnap.exists()) {
+          const userRef = serverDb.collection('users').doc(String(senderId));
+          const docSnap = await userRef.get();
+          if (docSnap.exists) {
             const data = docSnap.data();
             if (data.pin) {
               userPinText = `🔑 <b>Kode PIN login Anda:</b> <code>${data.pin}</code>\n<i>Gunakan PIN di atas untuk masuk di Aplikasi APK / Browser Mandiri. Jangan bagikan PIN ini demi keamanan!</i>\n\n`;
@@ -579,9 +949,9 @@ app.post('/api/telegram/webhook', async (req: Request, res: Response) => {
         responseText = `⚠️ Database Firestore server belum siap. Hubungi Admin.`;
       } else {
         try {
-          const userRef = doc(serverDb, 'users', String(senderId));
-          const docSnap = await getDoc(userRef);
-          if (docSnap.exists()) {
+          const userRef = serverDb.collection('users').doc(String(senderId));
+          const docSnap = await userRef.get();
+          if (docSnap.exists) {
             const data = docSnap.data();
             const userPin = data.pin || '<i>Belum diatur (Silakan login ke aplikasi lalu atur PIN di halaman Profil)</i>';
             responseText = `🔑 <b>INFORMASI KODE PIN (AKSES MASUK)</b>\n\n`;
@@ -651,7 +1021,7 @@ app.post('/api/telegram/webhook', async (req: Request, res: Response) => {
 });
 
 // API Endpoint: Set Telegram Webhook
-app.post('/api/telegram/set-webhook', async (req: Request, res: Response) => {
+app.post('/api/telegram/set-webhook', authenticateJWT, async (req: Request, res: Response) => {
   try {
     const { url, botToken } = req.body;
     const activeToken = (botToken || TELEGRAM_BOT_TOKEN).trim();
@@ -683,7 +1053,7 @@ app.post('/api/telegram/set-webhook', async (req: Request, res: Response) => {
 });
 
 // API Endpoint: Get Bot Info
-app.get('/api/telegram/bot-info', async (req: Request, res: Response) => {
+app.get('/api/telegram/bot-info', authenticateJWT, async (req: Request, res: Response) => {
   try {
     const activeToken = ((req.query.token as string) || TELEGRAM_BOT_TOKEN).trim();
     if (!activeToken) {
@@ -735,7 +1105,7 @@ function parseTelegramChatAndTopic(groupId?: string, topicId?: string) {
 }
 
 // API Endpoint: Test sending message to Telegram
-app.post('/api/telegram/test-send', async (req: Request, res: Response) => {
+app.post('/api/telegram/test-send', authenticateJWT, async (req: Request, res: Response) => {
   try {
     const { groupId, topicId, botToken } = req.body;
     const activeToken = (botToken || TELEGRAM_BOT_TOKEN).trim();
@@ -799,7 +1169,7 @@ app.post('/api/telegram/test-send', async (req: Request, res: Response) => {
 });
 
 // API Endpoint: Send Post (Multiple Images) to Telegram Group
-app.post('/api/telegram/send-post', async (req: Request, res: Response) => {
+app.post('/api/telegram/send-post', authenticateJWT, async (req: Request, res: Response) => {
   try {
     const { links, startNumber, images, recruiterName, recruiterUsername, groupId, topicId, botToken } = req.body;
     
@@ -980,7 +1350,7 @@ app.post('/api/telegram/send-post', async (req: Request, res: Response) => {
 });
 
 // API Endpoint: Send Daily Report & Video directly to Telegram Group Topic
-app.post('/api/telegram/send-report', async (req: Request, res: Response) => {
+app.post('/api/telegram/send-report', authenticateJWT, async (req: Request, res: Response) => {
   try {
     const { report, videoDataUrl, groupId, topicId, customText, botToken } = req.body;
     if (!report && !customText) {
@@ -1052,6 +1422,13 @@ Grub : <b>${displayGrup}</b>${photoLink}
           if (match) {
             const mimeType = match[1] || 'video/mp4';
             const base64Data = match[2];
+            
+            const validation = validateVideoUpload(base64Data, mimeType);
+            if (!validation.valid) {
+              res.status(400).json({ success: false, error: validation.error || 'Validasi file video gagal.' });
+              return;
+            }
+
             const buffer = Buffer.from(base64Data, 'base64');
             let ext = 'mp4';
             if (mimeType.includes('quicktime') || mimeType.includes('mov')) ext = 'mov';

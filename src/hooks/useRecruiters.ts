@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { UserProfile, UserRole, UserStatus } from '../types';
-import { getAllUsers, subscribeToAllUsers, updateUserStatus, updateUserRole } from '../firebase/services/userService';
+import { getAllUsers, subscribeToAllUsers, updateUserStatus, updateUserRole, deleteUserProfile } from '../firebase/services/userService';
 import { syncUserToSheetsApi } from '../services/api';
 import { useAuth } from './useAuth';
 
@@ -74,12 +74,29 @@ export function useRecruiters() {
     }
   };
 
+  const deleteUser = async (telegramId: string) => {
+    if (!userProfile || userProfile.role !== 'Owner') {
+      throw new Error('Hanya Owner yang dapat menghapus user');
+    }
+    setIsLoading(true);
+    try {
+      await deleteUserProfile(telegramId);
+      setUsers((prev) => prev.filter((u) => u.telegramId !== telegramId));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Gagal menghapus user.');
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return {
     users,
     isLoading,
     error,
     refetch: async () => {}, // No-op, handled by realtime subscription
     changeStatus,
-    changeRole
+    changeRole,
+    deleteUser
   };
 }

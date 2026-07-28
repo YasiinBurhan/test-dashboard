@@ -1,9 +1,0 @@
-
-        stats[key].count += 1;
-        const applicant = Number(r.applicant) || 0;
-        const quality = Number(r.quality) || 0;
-        const visit = Number(r.visit) || 0;
-
-        stats[key].applicantCount += applicant;
-        stats[key].qualityCount += quality;
-        stats[key].visitCount += visit;

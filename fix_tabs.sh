@@ -1,2 +1,0 @@
-sed -i "s/const \[selectedDay, setSelectedDay\] = useState<string>('Semua');/const currentDayName = getIndonesianDayName(getWIBDate()) || 'Senin';\n  const [selectedDay, setSelectedDay] = useState<string>(currentDayName);/" src/pages/PostinganPage.tsx
-sed -i "s/const \[selectedArchiveDay, setSelectedArchiveDay\] = useState<string>('Semua');/const [selectedArchiveDay, setSelectedArchiveDay] = useState<string>('Senin');/" src/pages/PostinganPage.tsx

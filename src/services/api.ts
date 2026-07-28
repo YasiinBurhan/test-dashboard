@@ -39,6 +39,32 @@ export async function verifyTelegramInitDataApi(initData: string): Promise<ApiRe
   }
 }
 
+export async function loginManualApi(telegramId: string, pin?: string): Promise<ApiResponse<{
+  token: string;
+}>> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/auth/login-manual`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ telegramId, pin })
+    });
+
+    const contentType = response.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      return { success: false, error: `Auth server error (${response.status}).` };
+    }
+    const data = await response.json();
+    return data;
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Network error connecting to backend API'
+    };
+  }
+}
+
 export async function verifySessionApi(token: string): Promise<ApiResponse> {
   try {
     const response = await fetch(`${API_BASE_URL}/api/auth/session-user`, {
@@ -60,6 +86,32 @@ export async function verifySessionApi(token: string): Promise<ApiResponse> {
     return {
       success: false,
       error: err instanceof Error ? err.message : 'Failed to verify backend session token'
+    };
+  }
+}
+
+export async function activateOwnerPinApi(pinCode: string, token: string, telegramId?: string): Promise<ApiResponse> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/auth/activate-pin`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ pinCode, telegramId })
+    });
+
+    const contentType = response.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      return { success: false, error: `PIN verification server error (${response.status}).` };
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Gagal menghubungi server untuk verifikasi PIN.'
     };
   }
 }

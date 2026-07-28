@@ -21,82 +21,13 @@ import { AppLayout } from './layouts/AppLayout';
 import { TabType } from './components/navigation/BottomNav';
 import { GlassCard } from './components/common/GlassCard';
 import { ShieldAlert, LogOut } from 'lucide-react';
-import { SafeArea } from 'capacitor-plugin-safe-area';
-import { StatusBar } from '@capacitor/status-bar';
-import { Capacitor } from '@capacitor/core';
-import { usePushNotifications } from './hooks/usePushNotifications';
+import { InAppNotificationBanner } from './components/common/InAppNotificationBanner';
 
 const ViewportUpdater: React.FC = () => {
   useEffect(() => {
-    // Specifically handle Capacitor APK Status Bar and Safe Area
-    const initCapacitor = async () => {
-      if (Capacitor.isNativePlatform()) {
-        try {
-          // Make sure status bar doesn't get covered by content by applying proper padding
-          await StatusBar.setOverlaysWebView({ overlay: true });
-          await StatusBar.show();
-          
-          // Helper to apply the inset
-          const applyTopInset = (val: number) => {
-            if (val > 0) {
-              document.documentElement.style.setProperty('--tg-safe-area-inset-top', `${val}px`);
-              document.documentElement.style.setProperty('--css-safe-area-inset-top', `${val}px`);
-              // dispatch event to force update
-              window.dispatchEvent(new CustomEvent('tg-safe-area-updated'));
-            }
-          };
-
-          // Get the exact safe area insets (to detect status bar distance)
-          const safeAreaData = await SafeArea.getSafeAreaInsets();
-          let topInset = safeAreaData.insets.top;
-          let bottomInset = safeAreaData.insets.bottom;
-
-          // Set immersive navigation bar if on Android
-          // if (Capacitor.getPlatform() === 'android') {
-          //   SafeArea.setImmersiveNavigationBar?.();
-          // }
-
-          // Fallback to getStatusBarHeight if topInset is 0
-          if (topInset === 0) {
-            const { statusBarHeight } = await SafeArea.getStatusBarHeight();
-            if (statusBarHeight > 0) {
-              // Convert to CSS pixels if it seems abnormally large (physical pixels)
-              // Typical status bar is ~24-50dp. If it's > 60, it might be physical pixels.
-              topInset = (statusBarHeight > 60 && window.devicePixelRatio > 1) 
-                ? statusBarHeight / window.devicePixelRatio 
-                : statusBarHeight;
-            }
-          }
-          
-          applyTopInset(topInset);
-
-          if (bottomInset > 0) {
-            document.documentElement.style.setProperty('--tg-safe-area-inset-bottom', `${bottomInset}px`);
-            document.documentElement.style.setProperty('--css-safe-area-inset-bottom', `${bottomInset}px`);
-          }
-
-          SafeArea.addListener('safeAreaChanged', (data) => {
-            const newTop = data.insets.top;
-            if (newTop > 0) {
-              applyTopInset(newTop);
-            }
-            if (data.insets.bottom > 0) {
-              document.documentElement.style.setProperty('--tg-safe-area-inset-bottom', `${data.insets.bottom}px`);
-              document.documentElement.style.setProperty('--css-safe-area-inset-bottom', `${data.insets.bottom}px`);
-            }
-          });
-        } catch (e) {
-          console.warn('Capacitor safe area plugin not available or error:', e);
-        }
-      }
-    };
-    
-    initCapacitor();
-
     const updateSafeAreas = (eventType = 'App Init') => {
       if (typeof window === 'undefined') return;
       const webApp = getTelegramWebApp();
-      const isNativeCapacitor = Capacitor.isNativePlatform();
       
       const prevTop = document.documentElement.style.getPropertyValue('--tg-safe-area-inset-top') || '0px';
       
@@ -108,7 +39,7 @@ const ViewportUpdater: React.FC = () => {
       let mode = 'Browser';
 
       // 1. Strict Priority: If running inside Telegram, we prioritize contentSafeAreaInset, then safeAreaInset.
-      if (webApp && !isNativeCapacitor) {
+      if (webApp) {
         mode = 'Telegram App';
         if (webApp.contentSafeAreaInset) {
           top = webApp.contentSafeAreaInset.top || 0;
@@ -121,7 +52,7 @@ const ViewportUpdater: React.FC = () => {
           left = webApp.safeAreaInset.left || 0;
           right = webApp.safeAreaInset.right || 0;
         }
-      } else if (!isNativeCapacitor) {
+      } else {
         // Outside Telegram (Browser/PWA), we fallback to other platform safe area methods
         const cssTopVal = document.documentElement.style.getPropertyValue('--css-safe-area-inset-top');
         const parsedCssTop = parseFloat(cssTopVal) || 0;
@@ -139,16 +70,13 @@ const ViewportUpdater: React.FC = () => {
         }
       }
 
-      // If Capacitor, it sets its own variables natively, so we only update viewport height
-      if (!isNativeCapacitor) {
-        const currentTop = `${top}px`;
+      const currentTop = `${top}px`;
 
-        // Set the standard CSS variables on the root document
-        document.documentElement.style.setProperty('--tg-safe-area-inset-top', currentTop);
-        document.documentElement.style.setProperty('--tg-safe-area-inset-bottom', `${bottom}px`);
-        document.documentElement.style.setProperty('--tg-safe-area-inset-left', `${left}px`);
-        document.documentElement.style.setProperty('--tg-safe-area-inset-right', `${right}px`);
-      }
+      // Set the standard CSS variables on the root document
+      document.documentElement.style.setProperty('--tg-safe-area-inset-top', currentTop);
+      document.documentElement.style.setProperty('--tg-safe-area-inset-bottom', `${bottom}px`);
+      document.documentElement.style.setProperty('--tg-safe-area-inset-left', `${left}px`);
+      document.documentElement.style.setProperty('--tg-safe-area-inset-right', `${right}px`);
       
       let vh = `${window.innerHeight}px`;
       if (webApp && webApp.viewportStableHeight > 0) {
@@ -215,9 +143,6 @@ const ViewportUpdater: React.FC = () => {
 const AppContent: React.FC = () => {
   const { isLoading, isAuthenticated, isTelegramContext, userProfile, logout } = useAuth();
   const [activeTab, setActiveTab] = useState<TabType>('beranda');
-
-  // Initialize push notifications
-  usePushNotifications(isAuthenticated);
 
   useEffect(() => {
     initTelegramApp();
@@ -314,10 +239,15 @@ const AppContent: React.FC = () => {
     }
   };
 
+  const userTelegramId = userProfile?.telegramId || '';
+
   return (
-    <AppLayout activeTab={activeTab} setActiveTab={setActiveTab}>
-      {renderTabContent()}
-    </AppLayout>
+    <>
+      <InAppNotificationBanner setActiveTab={setActiveTab} userTelegramId={userTelegramId} />
+      <AppLayout activeTab={activeTab} setActiveTab={setActiveTab}>
+        {renderTabContent()}
+      </AppLayout>
+    </>
   );
 };
 
