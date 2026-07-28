@@ -2815,7 +2815,7 @@ export const PostinganPage: React.FC = () => {
                               animate={{ height: 'auto', opacity: 1 }}
                               exit={{ height: 0, opacity: 0 }}
                               transition={{ duration: 0.2 }}
-                              className="border-t border-slate-900 bg-white dark:bg-slate-950/60 p-4 space-y-4"
+                              className="border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/60 p-4 space-y-4"
                             >
                               {/* Day Buttons Filter inside Archived Week */}
                               <div className="flex sm:grid sm:grid-cols-7 gap-1.5 overflow-x-auto pb-1.5 no-scrollbar -mx-2 px-2 sm:mx-0 sm:px-0">
@@ -2928,7 +2928,7 @@ export const PostinganPage: React.FC = () => {
                                             href={link} 
                                             target="_blank" 
                                             rel="noopener noreferrer"
-                                            className="flex items-center justify-between p-2 rounded-xl bg-white dark:bg-slate-950/80 hover:bg-slate-50 dark:bg-slate-900/60 border border-slate-900 transition-colors group"
+                                            className="flex items-center justify-between p-2 rounded-xl bg-white dark:bg-slate-950/80 hover:bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800/80 transition-colors group"
                                           >
                                             <div className="flex items-center gap-2 truncate">
                                               <span className="text-[10px] font-bold text-sky-600 dark:text-sky-400 shrink-0">
@@ -2965,7 +2965,7 @@ export const PostinganPage: React.FC = () => {
 
                               {/* Week Pagination Controls */}
                               {filteredWeekPosts.length > ITEMS_PER_PAGE && (
-                                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3 rounded-2xl bg-white dark:bg-slate-950/80 border border-slate-900 shadow-inner mt-2">
+                                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3 rounded-2xl bg-white dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 shadow-inner mt-2">
                                   <div className="text-[10px] font-bold text-slate-600 dark:text-slate-400 text-center sm:text-left">
                                     Menampilkan <span className="text-slate-900 dark:text-white font-black">{Math.min((archivePage - 1) * ITEMS_PER_PAGE + 1, filteredWeekPosts.length)} - {Math.min(archivePage * ITEMS_PER_PAGE, filteredWeekPosts.length)}</span> dari <span className="text-slate-900 dark:text-white font-black">{filteredWeekPosts.length}</span> postingan
                                   </div>
@@ -3073,7 +3073,7 @@ export const PostinganPage: React.FC = () => {
                 </div>
 
                 {/* Secondary Sub-Tabs Filter for Recruiter Status */}
-                <div className="flex p-1 bg-white dark:bg-slate-950/80 rounded-xl border border-slate-900/60 shadow-inner gap-1 my-2">
+                <div className="flex p-1 bg-white dark:bg-slate-950/80 rounded-xl border border-slate-200 dark:border-slate-800 shadow-inner gap-1 my-2">
                   <button
                     type="button"
                     onClick={() => { setStatusFilter('semua'); triggerHaptic('selection'); }}
@@ -3110,7 +3110,7 @@ export const PostinganPage: React.FC = () => {
                 </div>
                 
                 {filteredRecruiters.length === 0 ? (
-                  <div className="py-12 text-center bg-slate-50 dark:bg-slate-900/20 rounded-2xl border border-slate-900/50">
+                  <div className="py-12 text-center bg-slate-50 dark:bg-slate-900/20 rounded-2xl border border-slate-200 dark:border-slate-800/50">
                     <Users className="w-6 h-6 text-slate-700 mx-auto mb-1.5" />
                     <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400">Tidak ada recruiter untuk status ini.</p>
                   </div>
@@ -3177,7 +3177,7 @@ export const PostinganPage: React.FC = () => {
 
                 {/* Recruiter Status Pagination Controls */}
                 {filteredRecruiters.length > ITEMS_PER_PAGE && (
-                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3 rounded-2xl bg-white dark:bg-slate-950/80 border border-slate-900 shadow-inner mt-4">
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3 rounded-2xl bg-white dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 shadow-inner mt-4">
                     <div className="text-[10px] font-bold text-slate-600 dark:text-slate-400 text-center sm:text-left">
                       Menampilkan <span className="text-slate-900 dark:text-white font-black">{Math.min((statusPage - 1) * ITEMS_PER_PAGE + 1, filteredRecruiters.length)} - {Math.min(statusPage * ITEMS_PER_PAGE, filteredRecruiters.length)}</span> dari <span className="text-slate-900 dark:text-white font-black">{filteredRecruiters.length}</span> recruiter
                     </div>

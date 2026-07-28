@@ -483,7 +483,7 @@ const TelegramPreviewCard: React.FC<TelegramPreviewCardProps> = React.memo(({
         className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-start justify-between gap-3 shadow-xl"
       >
         <div className="flex items-start gap-3 flex-1">
-          <div className="w-10 h-10 rounded-full bg-white dark:bg-slate-950 border border-slate-900 flex items-center justify-center text-slate-700 dark:text-slate-300 shrink-0 shadow-inner">
+          <div className="w-10 h-10 rounded-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex items-center justify-center text-slate-700 dark:text-slate-300 shrink-0 shadow-inner">
             <Check className="w-5 h-5 text-sky-400" />
           </div>
           <div className="space-y-1 flex-1">
@@ -527,10 +527,10 @@ const TelegramPreviewCard: React.FC<TelegramPreviewCardProps> = React.memo(({
       <motion.div
         initial={{ opacity: 0, y: -4 }}
         animate={{ opacity: 1, y: 0 }}
-        className="p-3.5 rounded-2xl bg-gradient-to-r from-rose-950/90 via-red-950/80 to-slate-900 border border-rose-500/60 flex items-start justify-between gap-3 shadow-xl"
+        className="p-3.5 rounded-2xl bg-gradient-to-r from-rose-50 to-rose-100/50 dark:from-rose-950/40 dark:via-red-950/30 dark:to-slate-900 border border-rose-200 dark:border-rose-500/30 flex items-start justify-between gap-3 shadow-md"
       >
         <div className="flex items-start gap-3 flex-1">
-          <div className="w-10 h-10 rounded-full bg-rose-500/20 border border-rose-500/50 flex items-center justify-center text-rose-400 shrink-0 shadow-inner">
+          <div className="w-10 h-10 rounded-full bg-rose-100 dark:bg-rose-500/20 border border-rose-200 dark:border-rose-500/50 flex items-center justify-center text-rose-600 dark:text-rose-400 shrink-0 shadow-inner">
             <UserX className="w-5 h-5" />
           </div>
           <div className="space-y-1 flex-1">
@@ -538,17 +538,17 @@ const TelegramPreviewCard: React.FC<TelegramPreviewCardProps> = React.memo(({
               <span className="text-xs font-black text-slate-900 dark:text-white font-mono">{formattedTg}</span>
               <div className="flex items-center gap-1.5">
                 {isCheckingTg && (
-                  <span className="text-[9px] bg-sky-500/10 text-sky-300 px-2 py-0.5 rounded-full border border-sky-500/20 font-medium flex items-center gap-1">
+                  <span className="text-[9px] bg-sky-500/10 text-sky-600 dark:text-sky-300 px-2 py-0.5 rounded-full border border-sky-500/20 font-medium flex items-center gap-1">
                     <Loader2 className="w-2.5 h-2.5 animate-spin" /> Memeriksa...
                   </span>
                 )}
-                <span className="text-[9px] bg-rose-500/30 text-rose-200 px-2.5 py-0.5 rounded-full border border-rose-500/40 font-black flex items-center gap-1 uppercase tracking-wider">
-                  <XCircle className="w-2.5 h-2.5 text-rose-400" />
+                <span className="text-[9px] bg-rose-100 dark:bg-rose-500/30 text-rose-700 dark:text-rose-200 px-2.5 py-0.5 rounded-full border border-rose-200 dark:border-rose-500/40 font-black flex items-center gap-1 uppercase tracking-wider">
+                  <XCircle className="w-2.5 h-2.5 text-rose-500 dark:text-rose-400" />
                   Tidak Terdaftar
                 </span>
               </div>
             </div>
-            <p className="text-xs text-rose-200 font-bold">
+            <p className="text-xs text-rose-700 dark:text-rose-200 font-bold">
               ⚠️ Username tidak ditemukan di Telegram!
             </p>
             <p className="text-[10px] text-slate-700 dark:text-slate-300">
@@ -561,7 +561,7 @@ const TelegramPreviewCard: React.FC<TelegramPreviewCardProps> = React.memo(({
           href={tgUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="px-3 py-1.5 rounded-xl bg-rose-900/60 hover:bg-rose-800/80 border border-rose-500/40 text-rose-200 text-[11px] font-bold flex items-center gap-1 transition-all shrink-0"
+          className="px-3 py-1.5 rounded-xl bg-rose-100 hover:bg-rose-200 dark:bg-rose-900/60 dark:hover:bg-rose-800/80 border border-rose-200 dark:border-rose-500/40 text-rose-700 dark:text-rose-200 text-[11px] font-bold flex items-center gap-1 transition-all shrink-0"
         >
           <span>Cek Link</span>
           <ExternalLink className="w-3 h-3" />
@@ -575,7 +575,7 @@ const TelegramPreviewCard: React.FC<TelegramPreviewCardProps> = React.memo(({
     <motion.div
       initial={{ opacity: 0, y: -4 }}
       animate={{ opacity: 1, y: 0 }}
-      className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-950/90 via-sky-950/80 to-slate-900 border border-emerald-500/50 flex items-center justify-between gap-3 shadow-xl"
+      className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/40 dark:via-sky-950/30 dark:to-slate-900 border border-emerald-200 dark:border-emerald-500/30 flex items-center justify-between gap-3 shadow-md"
     >
       <div className="flex items-center gap-3 flex-1">
         {tgStatus.photoUrl && !formImgErr ? (
@@ -586,7 +586,7 @@ const TelegramPreviewCard: React.FC<TelegramPreviewCardProps> = React.memo(({
               className="w-12 h-12 rounded-full object-cover border-2 border-emerald-400 shadow-lg ring-2 ring-emerald-500/20"
               onError={onImgErr}
             />
-            <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-emerald-500 border-2 border-slate-900 flex items-center justify-center">
+            <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-emerald-500 border-2 border-white dark:border-slate-900 flex items-center justify-center">
               <Check className="w-2.5 h-2.5 text-slate-950 font-black" />
             </div>
           </div>
@@ -601,12 +601,12 @@ const TelegramPreviewCard: React.FC<TelegramPreviewCardProps> = React.memo(({
             <span className="text-xs font-black text-slate-900 dark:text-white font-mono">{formattedTg}</span>
             <div className="flex items-center gap-1.5">
               {isCheckingTg && (
-                <span className="text-[9px] bg-sky-500/10 text-sky-300 px-2 py-0.5 rounded-full border border-sky-500/20 font-medium flex items-center gap-1">
+                <span className="text-[9px] bg-sky-500/10 text-sky-600 dark:text-sky-300 px-2 py-0.5 rounded-full border border-sky-500/20 font-medium flex items-center gap-1">
                   <Loader2 className="w-2.5 h-2.5 animate-spin" /> Memeriksa...
                 </span>
               )}
-              <span className="text-[9px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-500/30 font-bold flex items-center gap-1">
-                <Check className="w-2.5 h-2.5 text-emerald-400" />
+              <span className="text-[9px] bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 px-2.5 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-500/30 font-bold flex items-center gap-1">
+                <Check className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" />
                 Terdaftar Aktif
               </span>
             </div>
@@ -615,7 +615,7 @@ const TelegramPreviewCard: React.FC<TelegramPreviewCardProps> = React.memo(({
             {applicantName || tgStatus.title || formattedTg}
           </p>
           <p className="text-[10px] text-slate-600 dark:text-slate-400 font-mono">
-            Link: <span className="text-sky-300">{tgUrl}</span>
+            Link: <span className="text-sky-600 dark:text-sky-300">{tgUrl}</span>
           </p>
         </div>
       </div>
@@ -624,7 +624,7 @@ const TelegramPreviewCard: React.FC<TelegramPreviewCardProps> = React.memo(({
         href={tgUrl}
         target="_blank"
         rel="noopener noreferrer"
-        className="px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black flex items-center gap-1.5 transition-all shadow-md shrink-0 hover:scale-[1.03]"
+        className="px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white dark:text-slate-950 text-xs font-black flex items-center gap-1.5 transition-all shadow-md shrink-0 hover:scale-[1.03]"
       >
         <span>Buka Chat</span>
         <ExternalLink className="w-3.5 h-3.5" />
@@ -929,7 +929,7 @@ const ReportListCard: React.FC<{
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
             transition={{ duration: 0.2 }}
-            className="px-3.5 pb-3.5 pt-1 space-y-2 border-t border-slate-900/80 bg-white dark:bg-slate-950/60"
+            className="px-3.5 pb-3.5 pt-1 space-y-2 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/60"
           >
             {isEditing ? (
               <div className="space-y-3 pt-1">
@@ -1035,7 +1035,7 @@ const ReportListCard: React.FC<{
                       )}
                     </div>
                   </div>
-                  <div className="flex flex-col gap-1 pt-1.5 border-t border-slate-900/40 mt-1 min-w-0">
+                  <div className="flex flex-col gap-1 pt-1.5 border-t border-slate-200 dark:border-slate-800/40 mt-1 min-w-0">
                     <span className="text-slate-500 dark:text-slate-400 font-semibold uppercase text-[9px] sm:text-[10px] md:text-xs tracking-wider">WhatsApp Pelamar</span>
                     <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
                       <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-emerald-500/10 border border-emerald-500/30 shrink-0 flex items-center justify-center">
@@ -1060,7 +1060,7 @@ const ReportListCard: React.FC<{
                     </div>
                   </div>
 
-                  <div className="flex flex-col gap-1 pt-1.5 border-t border-slate-900/40 mt-1 min-w-0">
+                  <div className="flex flex-col gap-1 pt-1.5 border-t border-slate-200 dark:border-slate-800/40 mt-1 min-w-0">
                     <span className="text-slate-500 dark:text-slate-400 font-semibold uppercase text-[9px] sm:text-[10px] md:text-xs tracking-wider">Recruiter</span>
                     <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
                       <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-full overflow-hidden bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shrink-0 flex items-center justify-center">
@@ -1086,7 +1086,7 @@ const ReportListCard: React.FC<{
 
                 {/* Foto / Bukti Pelamar Section */}
                 {rep.videoUrl && (
-                  <div className="pt-2 border-t border-slate-900/60 mt-1.5 space-y-1">
+                  <div className="pt-2 border-t border-slate-200 dark:border-slate-800/60 mt-1.5 space-y-1">
                     <div className="flex items-center justify-between">
                       <span className="text-slate-500 dark:text-slate-400 font-semibold uppercase text-[9px] sm:text-[10px] md:text-xs tracking-wider flex items-center gap-1">
                         <span>🎥 Video Bukti Pelamar</span>
@@ -2928,7 +2928,7 @@ Grub : ${grupDisplay}`;
         )}
 
         {/* Step Navigation Tabs */}
-        <div className="flex items-center p-1 bg-white dark:bg-slate-950/80 rounded-2xl border border-slate-900/60 shadow-inner gap-1.5">
+        <div className="flex items-center p-1 bg-white dark:bg-slate-950/80 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-inner gap-1.5">
           <button
             type="button"
             onClick={() => {
@@ -2984,7 +2984,7 @@ Grub : ${grupDisplay}`;
           {formStep === 'upload' && (
             <div className="space-y-4">
               {/* Metadata Bar (Tanggal, Recruiter, Status) */}
-              <div className="grid grid-cols-3 gap-2 text-[10px] sm:text-xs text-slate-600 dark:text-slate-400 bg-white dark:bg-slate-950/60 p-3 rounded-2xl border border-slate-900/80">
+              <div className="grid grid-cols-3 gap-2 text-[10px] sm:text-xs text-slate-600 dark:text-slate-400 bg-white dark:bg-slate-950/60 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
                 <div className="flex flex-col gap-0.5">
                   <span className="text-slate-500 dark:text-slate-400 font-bold uppercase text-[8px] tracking-wider">Tanggal</span>
                   <span className="text-sky-300 font-black">{formData.date}</span>
@@ -3003,7 +3003,7 @@ Grub : ${grupDisplay}`;
 
               {/* Upload Video Bukti FIRST */}
               <div className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 space-y-4">
-                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-900 pb-2.5">
+                <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800/40 pb-2.5">
                   <label className="text-xs font-black tracking-wider text-slate-800 dark:text-slate-200 uppercase flex items-center gap-1.5">
                     <span>🎥</span>
                     <span>Video Bukti Pelamar</span>
@@ -3177,7 +3177,7 @@ Grub : ${grupDisplay}`;
           {formStep === 'data' && (
             <div className="space-y-4">
               {/* Metadata Bar (Tanggal, Recruiter, Status) */}
-              <div className="grid grid-cols-3 gap-2 text-[10px] sm:text-xs text-slate-600 dark:text-slate-400 bg-white dark:bg-slate-950/60 p-3 rounded-2xl border border-slate-900/80">
+              <div className="grid grid-cols-3 gap-2 text-[10px] sm:text-xs text-slate-600 dark:text-slate-400 bg-white dark:bg-slate-950/60 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
                 <div className="flex flex-col gap-0.5">
                   <span className="text-slate-500 dark:text-slate-400 font-bold uppercase text-[8px] tracking-wider">Tanggal</span>
                   <span className="text-sky-300 font-black">{formData.date}</span>
@@ -3986,30 +3986,30 @@ Grub : ${grupDisplay}`;
             </div>
 
             {/* Text Data Second ("TRUS DATA") */}
-            <div className="space-y-3 bg-white dark:bg-slate-950/60 p-4.5 rounded-2xl border border-slate-900/80 text-xs sm:text-sm font-mono text-slate-700 dark:text-slate-300">
-              <div className="flex justify-between py-1 border-b border-slate-900/50">
+            <div className="space-y-3 bg-white dark:bg-slate-950/60 p-4.5 rounded-2xl border border-slate-200 dark:border-slate-800 text-xs sm:text-sm font-mono text-slate-700 dark:text-slate-300">
+              <div className="flex justify-between py-1 border-b border-slate-200 dark:border-slate-800/40">
                 <span className="text-slate-500 dark:text-slate-400 font-bold">UID :</span>
                 <span className="text-amber-400 font-bold">{formData.uid9Kucing}</span>
               </div>
-              <div className="flex justify-between py-1 border-b border-slate-900/50">
+              <div className="flex justify-between py-1 border-b border-slate-200 dark:border-slate-800/40">
                 <span className="text-slate-500 dark:text-slate-400 font-bold">WA :</span>
                 <span className="text-emerald-400 font-bold">{formData.applicantWhatsapp}</span>
               </div>
-              <div className="flex justify-between py-1 border-b border-slate-900/50">
+              <div className="flex justify-between py-1 border-b border-slate-200 dark:border-slate-800/40">
                 <span className="text-slate-500 dark:text-slate-400 font-bold">Nama :</span>
                 <span className="text-blue-400 font-bold">{formData.applicantName || tgStatus.title || 'Tidak Diketahui'}</span>
               </div>
-              <div className="flex justify-between py-1 border-b border-slate-900/50">
+              <div className="flex justify-between py-1 border-b border-slate-200 dark:border-slate-800/40">
                 <span className="text-slate-500 dark:text-slate-400 font-bold">Username Telegram :</span>
                 <span className="text-sky-400 font-bold">
                   {formData.applicantTelegramUsername ? `@${formData.applicantTelegramUsername.replace(/^@/, '')}` : '-'}
                 </span>
               </div>
-              <div className="flex justify-between py-1 border-b border-slate-900/50">
+              <div className="flex justify-between py-1 border-b border-slate-200 dark:border-slate-800/40">
                 <span className="text-slate-500 dark:text-slate-400 font-bold">Rekomendasi dari :</span>
                 <span className="text-purple-400 font-bold">@{(formData.recruiterUsername || autoRecruiterUsername).replace(/^@/, '')}</span>
               </div>
-              <div className="flex justify-between py-1 border-b border-slate-900/50">
+              <div className="flex justify-between py-1 border-b border-slate-200 dark:border-slate-800/40">
                 <span className="text-slate-500 dark:text-slate-400 font-bold">Info dari sosmed :</span>
                 <span className="text-pink-400 font-bold">{formData.channel || '-'}</span>
               </div>

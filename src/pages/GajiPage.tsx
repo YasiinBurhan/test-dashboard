@@ -23,8 +23,14 @@ import {
   TrendingDown,
   ChevronRight,
   ChevronDown,
-  Info
+  Info,
+  BookOpen,
+  ListOrdered,
+  ShieldAlert,
+  ChevronUp
 } from 'lucide-react';
+import { GlassCard } from '../components/common/GlassCard';
+import { triggerHaptic } from '../telegram/webapp';
 import { useAuth } from '../hooks/useAuth';
 import { subscribeToAllUsers } from '../firebase/services/userService';
 import { subscribeToAllReports } from '../firebase/services/reportService';
@@ -35,7 +41,7 @@ import {
   calculateRecruiterMetrics 
 } from '../firebase/services/salaryService';
 import { UserProfile, DailyReport, RecruiterSalary } from '../types';
-import { getWIBMondayOfDate, getWIBWeekRange } from '../utils/format';
+import { getWIBMonday, getWIBMondayOfDate, getWIBWeekRange } from '../utils/format';
 
 export const GajiPage: React.FC = () => {
   const { userProfile } = useAuth();
@@ -55,6 +61,17 @@ export const GajiPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'uninput' | 'draft' | 'paid'>('all');
   const [sortBy, setSortBy] = useState<'name' | 'gaji' | 'hari'>('name');
+
+  // Guide widget state
+  const [isGuideOpen, setIsGuideOpen] = useState(true);
+  const [activeGuideTab, setActiveGuideTab] = useState<'ketentuan' | 'alur' | 'jadwal'>('ketentuan');
+
+  // Period in examination check
+  const currentMondayStr = useMemo(() => getWIBMonday(0), []);
+  const isPeriodInPemeriksaan = useMemo(() => {
+    if (!selectedPeriod) return false;
+    return selectedPeriod < currentMondayStr;
+  }, [selectedPeriod, currentMondayStr]);
   
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -137,9 +154,18 @@ export const GajiPage: React.FC = () => {
 
     return users.map(user => {
       // Find saved salary slip for this period
-      const savedSalary = salaries.find(
+      const rawSavedSalary = salaries.find(
         s => s.telegramId === user.telegramId && s.periode === selectedPeriod
       );
+
+      const savedSalary = rawSavedSalary ? {
+        ...rawSavedSalary,
+        deklarasiV0: isPeriodInPemeriksaan ? (rawSavedSalary.deklarasiV0 || 0) : 0,
+        sebenarnyaV0: isPeriodInPemeriksaan ? (rawSavedSalary.sebenarnyaV0 || 0) : 0,
+        deklarasiT0: isPeriodInPemeriksaan ? (rawSavedSalary.deklarasiT0 || 0) : 0,
+        sebenarnyaT0: isPeriodInPemeriksaan ? (rawSavedSalary.sebenarnyaT0 || 0) : 0,
+        t3: isPeriodInPemeriksaan ? (rawSavedSalary.t3 || 0) : 0,
+      } : null;
 
       // Check daily reports for this period to verify if any report exists
       const userReports = reports.filter(r => {
@@ -233,11 +259,18 @@ export const GajiPage: React.FC = () => {
   // Handle open creation or editing modal
   const handleOpenSalaryModal = async (recruiter: UserProfile, slip: RecruiterSalary | null = null, viewMode: boolean = false) => {
     setSelectedRecruiter(recruiter);
-    setViewOnly(viewMode);
+    setViewOnly(!isAdminOrOwner ? true : viewMode);
     
     if (slip) {
       // Open existing slip
-      setFormData(slip);
+      setFormData({
+        ...slip,
+        deklarasiV0: isPeriodInPemeriksaan ? (slip.deklarasiV0 || 0) : 0,
+        sebenarnyaV0: isPeriodInPemeriksaan ? (slip.sebenarnyaV0 || 0) : 0,
+        deklarasiT0: isPeriodInPemeriksaan ? (slip.deklarasiT0 || 0) : 0,
+        sebenarnyaT0: isPeriodInPemeriksaan ? (slip.sebenarnyaT0 || 0) : 0,
+        t3: isPeriodInPemeriksaan ? (slip.t3 || 0) : 0,
+      });
       setIsModalOpen(true);
     } else {
       // Start auto-calculation for new slip
@@ -245,7 +278,6 @@ export const GajiPage: React.FC = () => {
       setIsModalOpen(true);
       try {
         const autoMetrics = await calculateRecruiterMetrics(recruiter.telegramId, selectedPeriod);
-        const { formattedRange } = getWIBWeekRange(selectedPeriod);
         
         setFormData({
           id: `${recruiter.telegramId}_${selectedPeriod}`,
@@ -255,7 +287,12 @@ export const GajiPage: React.FC = () => {
           telegramId: recruiter.telegramId,
           status: 'Draft',
           note: '',
-          ...autoMetrics
+          ...autoMetrics,
+          deklarasiV0: isPeriodInPemeriksaan ? (autoMetrics.deklarasiV0 || 0) : 0,
+          sebenarnyaV0: isPeriodInPemeriksaan ? (autoMetrics.sebenarnyaV0 || 0) : 0,
+          deklarasiT0: isPeriodInPemeriksaan ? (autoMetrics.deklarasiT0 || 0) : 0,
+          sebenarnyaT0: isPeriodInPemeriksaan ? (autoMetrics.sebenarnyaT0 || 0) : 0,
+          t3: isPeriodInPemeriksaan ? (autoMetrics.t3 || 0) : 0,
         });
       } catch (err) {
         console.error('Failed to pre-calculate salary:', err);
@@ -269,10 +306,46 @@ export const GajiPage: React.FC = () => {
   const recalculateTotal = (updatedFields: Partial<RecruiterSalary>) => {
     setFormData(prev => {
       const merged = { ...prev, ...updatedFields };
-      const gajiPokok = Number(merged.gajiPokok) || 0;
-      const komisi = Number(merged.komisi) || 0;
+      
+      let levelGaji = merged.levelGaji || 'Level 1';
+      let t3Count = Number(merged.t3) || 0;
+      let sebenarnyaV0Count = Number(merged.sebenarnyaV0) || 0;
+      let sebenarnyaT0Count = Number(merged.sebenarnyaT0) || 0;
+
+      const totalPromosi = t3Count + sebenarnyaV0Count;
+
+      // Auto calculate level based on t3 & sebenarnyaV0 if levelGaji wasn't explicitly changed
+      if (updatedFields.t3 !== undefined || updatedFields.sebenarnyaV0 !== undefined || updatedFields.levelGaji === undefined) {
+        levelGaji = totalPromosi >= 12 ? 'Level 3' : totalPromosi >= 7 ? 'Level 2' : totalPromosi >= 3 ? 'Level 1' : 'Level 0';
+      }
+
+      let defaultGajiPokok = Number(merged.gajiPokok) || 0;
+      let defaultKomisi = Number(merged.komisi) || 0;
+      let defaultBonusT3 = Number(merged.bonusT3) || 0;
+
+      // Calculate default components based on levelGaji
+      if (levelGaji === 'Level 3') {
+        defaultGajiPokok = 500000;
+        defaultKomisi = sebenarnyaT0Count * 2000;
+        defaultBonusT3 = totalPromosi * 9000;
+      } else if (levelGaji === 'Level 2') {
+        defaultGajiPokok = 400000;
+        defaultKomisi = sebenarnyaT0Count * 2000;
+        defaultBonusT3 = totalPromosi * 8000;
+      } else if (levelGaji === 'Level 1') {
+        defaultGajiPokok = 300000;
+        defaultKomisi = sebenarnyaT0Count * 2000;
+        defaultBonusT3 = totalPromosi * 7000;
+      } else { // Level 0
+        defaultGajiPokok = 0;
+        defaultKomisi = sebenarnyaT0Count * 5000;
+        defaultBonusT3 = totalPromosi * 10000;
+      }
+
+      const gajiPokok = updatedFields.gajiPokok !== undefined ? Number(updatedFields.gajiPokok) : defaultGajiPokok;
+      const komisi = updatedFields.komisi !== undefined ? Number(updatedFields.komisi) : defaultKomisi;
       const bonusT0 = Number(merged.bonusT0) || 0;
-      const bonusT3 = Number(merged.bonusT3) || 0;
+      const bonusT3 = updatedFields.bonusT3 !== undefined ? Number(updatedFields.bonusT3) : defaultBonusT3;
       const otherBonus = Number(merged.otherBonus) || 0;
       const deduksi = Number(merged.deduksi) || 0;
       
@@ -288,6 +361,10 @@ export const GajiPage: React.FC = () => {
 
       return {
         ...merged,
+        levelGaji,
+        gajiPokok,
+        komisi,
+        bonusT3,
         totalGaji,
         tingkatPenerimaan
       };
@@ -296,6 +373,7 @@ export const GajiPage: React.FC = () => {
 
   // Save/submit form to Firestore
   const handleSaveSalary = async () => {
+    if (!isAdminOrOwner) return;
     if (!formData.id || !formData.periode) return;
     
     setIsSaving(true);
@@ -341,11 +419,19 @@ export const GajiPage: React.FC = () => {
 
   // Quick action: recalculate default
   const triggerAutoRecalculate = async () => {
+    if (!isAdminOrOwner) return;
     if (!formData.telegramId || !formData.periode) return;
     setIsCalculating(true);
     try {
       const autoMetrics = await calculateRecruiterMetrics(formData.telegramId, formData.periode);
-      recalculateTotal(autoMetrics);
+      recalculateTotal({
+        ...autoMetrics,
+        deklarasiV0: isPeriodInPemeriksaan ? (autoMetrics.deklarasiV0 || 0) : 0,
+        sebenarnyaV0: isPeriodInPemeriksaan ? (autoMetrics.sebenarnyaV0 || 0) : 0,
+        deklarasiT0: isPeriodInPemeriksaan ? (autoMetrics.deklarasiT0 || 0) : 0,
+        sebenarnyaT0: isPeriodInPemeriksaan ? (autoMetrics.sebenarnyaT0 || 0) : 0,
+        t3: isPeriodInPemeriksaan ? (autoMetrics.t3 || 0) : 0,
+      });
     } catch (err) {
       console.error('Recalculation failed:', err);
     } finally {
@@ -355,6 +441,7 @@ export const GajiPage: React.FC = () => {
 
   // Delete slip
   const handleDeleteSlip = async (id: string) => {
+    if (!isAdminOrOwner) return;
     if (confirm('Apakah Anda yakin ingin menghapus slip gaji ini?')) {
       try {
         await deleteSalarySlip(id);
@@ -369,7 +456,7 @@ export const GajiPage: React.FC = () => {
     window.print();
   };
 
-  if (!isAdminOrOwner) {
+  if (!isAdminOrOwner && !isRecruiter) {
     return (
       <div className="flex flex-col items-center justify-center py-20 px-4 text-center">
         <div className="w-16 h-16 bg-slate-100 dark:bg-slate-900 rounded-full flex items-center justify-center mb-4">
@@ -377,8 +464,7 @@ export const GajiPage: React.FC = () => {
         </div>
         <h2 className="text-xl font-black text-slate-900 dark:text-white mb-2">Akses Dibatasi</h2>
         <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm">
-          Halaman sistem penggajian saat ini sedang dalam tahap perbaikan dan penyempurnaan tampilan. 
-          Hanya Admin dan Owner yang dapat mengakses halaman ini untuk sementara waktu.
+          Sistem Penggajian hanya dapat diakses oleh Admin, Owner, dan Recruiter aktif.
         </p>
       </div>
     );
@@ -416,6 +502,172 @@ export const GajiPage: React.FC = () => {
           </select>
         </div>
       </div>
+
+      {/* Panduan & Deskripsi Penggajian Recruiter Widget */}
+      <GlassCard className="p-4 bg-white/90 dark:bg-slate-950/90 border-slate-200 dark:border-slate-800 shadow-xl space-y-3 relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/5 rounded-full blur-xl pointer-events-none" />
+        
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center shrink-0 text-emerald-600 dark:text-emerald-400">
+              <BookOpen className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-xs font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-1.5">
+                Panduan & Cara Kerja Sistem Penggajian
+              </h3>
+              <p className="text-[10px] text-slate-600 dark:text-slate-400 font-medium">
+                Recruiter <strong className="text-emerald-600 dark:text-emerald-400 font-bold">TIDAK PERLU</strong> menginput data gaji — Perhitungan dikalkulasi otomatis oleh sistem
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => { setIsGuideOpen(!isGuideOpen); triggerHaptic('selection'); }}
+            className="p-1.5 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-300 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
+          >
+            {isGuideOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </button>
+        </div>
+
+        {isGuideOpen && (
+          <div className="space-y-3 pt-2 border-t border-slate-200 dark:border-slate-800/80">
+            {/* Sub-tabs inside Guide Widget */}
+            <div className="flex p-0.5 bg-slate-100 dark:bg-slate-900/90 rounded-xl border border-slate-200 dark:border-slate-800/80 gap-0.5">
+              <button
+                type="button"
+                onClick={() => { setActiveGuideTab('ketentuan'); triggerHaptic('selection'); }}
+                className={`flex-1 py-1.5 rounded-lg text-[9.5px] font-black uppercase transition-all flex items-center justify-center gap-1 ${
+                  activeGuideTab === 'ketentuan'
+                    ? 'bg-emerald-500 text-slate-950 shadow-sm'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <ShieldAlert className="w-3.5 h-3.5" />
+                1. Ketentuan Input
+              </button>
+              <button
+                type="button"
+                onClick={() => { setActiveGuideTab('alur'); triggerHaptic('selection'); }}
+                className={`flex-1 py-1.5 rounded-lg text-[9.5px] font-black uppercase transition-all flex items-center justify-center gap-1 ${
+                  activeGuideTab === 'alur'
+                    ? 'bg-sky-500 text-slate-950 shadow-sm'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <ListOrdered className="w-3.5 h-3.5" />
+                2. Alur Otomatis
+              </button>
+              <button
+                type="button"
+                onClick={() => { setActiveGuideTab('jadwal'); triggerHaptic('selection'); }}
+                className={`flex-1 py-1.5 rounded-lg text-[9.5px] font-black uppercase transition-all flex items-center justify-center gap-1 ${
+                  activeGuideTab === 'jadwal'
+                    ? 'bg-amber-500 text-slate-950 shadow-sm'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <Calendar className="w-3.5 h-3.5" />
+                3. Jadwal & Status
+              </button>
+            </div>
+
+            {/* Tab 1: Ketentuan Input */}
+            {activeGuideTab === 'ketentuan' && (
+              <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800/60 space-y-3 text-[11px] text-slate-700 dark:text-slate-300 leading-relaxed">
+                <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400 font-black">
+                  <Info className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <span>Informasi Beban Kerja & Input Data Gaji:</span>
+                </div>
+                <div className="space-y-2 text-[10px]">
+                  <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-slate-800 dark:text-slate-200">
+                    <p className="font-bold text-emerald-700 dark:text-emerald-400 mb-1 flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      Recruiter Tidak Perlu Menginput Apapun di Halaman Ini
+                    </p>
+                    <p className="text-slate-600 dark:text-slate-400 font-medium">
+                      Sebagai Recruiter, Anda <strong className="text-slate-900 dark:text-white">tidak perlu menginput angka gaji atau nominal apapun</strong> secara manual. Semua rincian komponen gaji Anda dihitung dan ditarik secara otomatis oleh sistem.
+                    </p>
+                  </div>
+                  <ul className="space-y-2 text-slate-600 dark:text-slate-400 font-medium">
+                    <li className="flex items-start gap-2 p-2 rounded-xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+                      <span className="w-2 h-2 rounded-full bg-sky-500 shrink-0 mt-1.5" />
+                      <span><strong className="text-slate-900 dark:text-white">Input Laporan Harian:</strong> Anda hanya perlu fokus melaporkan rekrutan di menu <strong className="text-slate-900 dark:text-white">Data Harian</strong> dan mengirim link lowongan di menu <strong className="text-slate-900 dark:text-white">Postingan</strong>.</span>
+                    </li>
+                    <li className="flex items-start gap-2 p-2 rounded-xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+                      <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0 mt-1.5" />
+                      <span><strong className="text-slate-900 dark:text-white">Pengelolaan Admin & Owner:</strong> Admin dan Owner bertugas meninjau, memverifikasi, merekap, dan menerbitkan slip gaji serta memproses pembayaran.</span>
+                    </li>
+                    <li className="flex items-start gap-2 p-2 rounded-xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0 mt-1.5" />
+                      <span><strong className="text-slate-900 dark:text-white">Transparansi Rincian:</strong> Anda dapat melihat rincian gaji pokok, komisi rekrutan, denda keterlambatan, hingga bonus omset secara transparan kapan saja di halaman ini.</span>
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            )}
+
+            {/* Tab 2: Alur Otomatis */}
+            {activeGuideTab === 'alur' && (
+              <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800/60 space-y-3 text-[11px] text-slate-700 dark:text-slate-300">
+                <div className="flex items-center gap-2 text-sky-700 dark:text-sky-400 font-black">
+                  <ListOrdered className="w-4 h-4 text-sky-600 dark:text-sky-400 shrink-0" />
+                  <span>Sumber Data Perhitungan Otomatis Slip Gaji:</span>
+                </div>
+                <ol className="space-y-2.5 text-[10px] text-slate-600 dark:text-slate-400">
+                  <li className="flex items-start gap-2.5 p-2.5 rounded-xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+                    <span className="w-5 h-5 rounded-full bg-sky-100 dark:bg-sky-950 text-sky-700 dark:text-sky-400 font-black flex items-center justify-center shrink-0 text-[10px] border border-sky-200 dark:border-sky-900/40">1</span>
+                    <div>
+                      <strong className="text-slate-900 dark:text-white block mb-0.5">Syarat Verifikasi Data Harian (Tab Pemeriksaan):</strong>
+                      Data rekrutan V0, T0, dan T3 <strong className="text-slate-900 dark:text-white">baru terhitung di slip gaji</strong> setelah melewati minggu berjalan dan diproses di <strong className="text-sky-600 dark:text-sky-400 font-bold">Tab Pemeriksaan</strong> pada menu Data Harian. Selama belum masuk pemeriksaan, nilai Deklarasi V0 & V0 Verified sengaja dikosongkan (0).
+                    </div>
+                  </li>
+                  <li className="flex items-start gap-2.5 p-2.5 rounded-xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+                    <span className="w-5 h-5 rounded-full bg-sky-100 dark:bg-sky-950 text-sky-700 dark:text-sky-400 font-black flex items-center justify-center shrink-0 text-[10px] border border-sky-200 dark:border-sky-900/40">2</span>
+                    <div>
+                      <strong className="text-slate-900 dark:text-white block mb-0.5">Penghitungan Denda Keterlambatan Laporan:</strong>
+                      Sistem memeriksa riwayat pengiriman laporan harian. Pengiriman laporan setelah <strong className="text-rose-600 dark:text-rose-400 font-bold">pukul 10:00 WIB</strong> akan dikenakan denda keterlambatan secara otomatis.
+                    </div>
+                  </li>
+                  <li className="flex items-start gap-2.5 p-2.5 rounded-xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+                    <span className="w-5 h-5 rounded-full bg-sky-100 dark:bg-sky-950 text-sky-700 dark:text-sky-400 font-black flex items-center justify-center shrink-0 text-[10px] border border-sky-200 dark:border-sky-900/40">3</span>
+                    <div>
+                      <strong className="text-slate-900 dark:text-white block mb-0.5">Level Gaji & Komisi:</strong>
+                      Level gaji ditentukan otomatis dari jumlah keanggotaan/rekrutan yang dipromosikan (T3 & V0 Verified) sesuai struktur jenjang komisi perusahaan.
+                    </div>
+                  </li>
+                </ol>
+              </div>
+            )}
+
+            {/* Tab 3: Jadwal & Status */}
+            {activeGuideTab === 'jadwal' && (
+              <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800/60 space-y-3 text-[11px] text-slate-700 dark:text-slate-300">
+                <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 font-black">
+                  <Calendar className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                  <span>Siklus Periode Kerja & Status Pembayaran:</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10px]">
+                  <div className="p-3 rounded-xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-1">
+                    <span className="text-[9px] font-extrabold uppercase text-slate-500">Periode Rekap</span>
+                    <p className="font-black text-slate-900 dark:text-white text-xs">Senin s/d Minggu</p>
+                    <p className="text-slate-500 text-[9.5px]">Rekapitulasi aktivitas kerja dihitung selama 7 hari dalam 1 minggu periode berjalan.</p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-1">
+                    <span className="text-[9px] font-extrabold uppercase text-emerald-600 dark:text-emerald-400">Hari Gajian</span>
+                    <p className="font-black text-emerald-600 dark:text-emerald-400 text-xs">Jumat Minggu Depan</p>
+                    <p className="text-slate-500 text-[9.5px]">Pembayaran ditransfer oleh Admin/Owner setiap hari Jumat minggu berikutnya.</p>
+                  </div>
+                </div>
+                <div className="p-2.5 rounded-xl bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-[9.5px] text-slate-600 dark:text-slate-400 flex flex-wrap gap-2 items-center justify-between font-medium">
+                  <span>📝 Status <strong className="text-slate-900 dark:text-white">Draft</strong>: Slip sedang direkap Admin</span>
+                  <span>✅ Status <strong className="text-emerald-600 dark:text-emerald-400 font-bold">Paid</strong>: Gaji telah ditransfer</span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </GlassCard>
 
       {/* DASHBOARD SUMMARY CARDS */}
       {isAdminOrOwner && (
@@ -493,7 +745,7 @@ export const GajiPage: React.FC = () => {
                 <div className="p-4 rounded-3xl bg-white dark:bg-slate-950/60 border border-slate-200 dark:border-slate-900/60">
                   <p className="text-[9px] font-extrabold uppercase tracking-wider text-slate-500">Target ACC T0 / V0</p>
                   <p className="text-lg font-black text-slate-900 dark:text-white mt-1">
-                    {currentSlip ? `${currentSlip.sebenarnyaT0} / ${currentSlip.sebenarnyaV0}` : '-'}
+                    {currentSlip ? `${isPeriodInPemeriksaan ? (currentSlip.sebenarnyaT0 || 0) : 0} / ${isPeriodInPemeriksaan ? (currentSlip.sebenarnyaV0 || 0) : 0}` : '-'}
                   </p>
                 </div>
                 <div className="p-4 rounded-3xl bg-white dark:bg-slate-950/60 border border-slate-200 dark:border-slate-900/60">
@@ -1192,126 +1444,152 @@ export const GajiPage: React.FC = () => {
                           </h5>
                         </div>
 
-                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                          <div>
-                            <label className="block text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Hari Kerja Efektif</label>
-                            <div className="relative">
-                              <input
-                                type="number"
-                                value={formData.hariEfektif || 0}
-                                disabled={viewOnly}
-                                onChange={(e) => recalculateTotal({ hariEfektif: Math.max(0, Number(e.target.value)) })}
-                                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl pl-3 pr-9 py-2 text-xs font-black text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                              />
-                              <span className="text-[8.5px] font-extrabold text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 uppercase">Hari</span>
-                            </div>
-                          </div>
-
-                          <div>
-                            <label className="block text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Total Postingan</label>
-                            <div className="relative">
-                              <input
-                                type="number"
-                                value={formData.totalPostingan || 0}
-                                disabled={viewOnly}
-                                onChange={(e) => recalculateTotal({ totalPostingan: Math.max(0, Number(e.target.value)) })}
-                                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl pl-3 pr-9 py-2 text-xs font-black text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                              />
-                              <span className="text-[8.5px] font-extrabold text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 uppercase">Post</span>
-                            </div>
-                          </div>
-
-                          <div>
-                            <label className="block text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Level Gaji</label>
-                            <input
-                              type="text"
-                              value={formData.levelGaji || ''}
-                              disabled={viewOnly}
-                              onChange={(e) => setFormData({ ...formData, levelGaji: e.target.value })}
-                              className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs font-black text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Deklarasi T0</label>
-                            <input
-                              type="number"
-                              value={formData.deklarasiT0 || 0}
-                              disabled={viewOnly}
-                              onChange={(e) => recalculateTotal({ deklarasiT0: Math.max(0, Number(e.target.value)) })}
-                              className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs font-black text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Sebenarnya T0 (Verified)</label>
-                            <input
-                              type="number"
-                              value={formData.sebenarnyaT0 || 0}
-                              disabled={viewOnly}
-                              onChange={(e) => recalculateTotal({ sebenarnyaT0: Math.max(0, Number(e.target.value)) })}
-                              className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs font-black text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">T3 (Promoted)</label>
-                            <input
-                              type="number"
-                              value={formData.t3 || 0}
-                              disabled={viewOnly}
-                              onChange={(e) => recalculateTotal({ t3: Math.max(0, Number(e.target.value)) })}
-                              className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs font-black text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Deklarasi V0</label>
-                            <input
-                              type="number"
-                              value={formData.deklarasiV0 || 0}
-                              disabled={viewOnly}
-                              onChange={(e) => recalculateTotal({ deklarasiV0: Math.max(0, Number(e.target.value)) })}
-                              className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs font-black text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Sebenarnya V0 (Verified)</label>
-                            <input
-                              type="number"
-                              value={formData.sebenarnyaV0 || 0}
-                              disabled={viewOnly}
-                              onChange={(e) => recalculateTotal({ sebenarnyaV0: Math.max(0, Number(e.target.value)) })}
-                              className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs font-black text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                            />
-                          </div>
-
-                          <div className="flex gap-2">
-                            <div className="flex-1">
-                              <label className="block text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Tingkat Terima</label>
+                        <div className="space-y-4">
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Hari Kerja Efektif</label>
                               <div className="relative">
                                 <input
                                   type="number"
-                                  value={formData.tingkatPenerimaan || 0}
-                                  disabled
-                                  className="w-full bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-800 rounded-xl pl-3 pr-7 py-2 text-xs font-black text-slate-700 dark:text-slate-300"
+                                  value={formData.hariEfektif || 0}
+                                  disabled={true}
+                                  className="w-full bg-slate-100 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-xl pl-3 pr-9 py-2 text-xs font-black text-slate-500 dark:text-slate-400 cursor-not-allowed"
                                 />
-                                <Percent className="w-3 h-3 absolute right-2 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <span className="text-[8.5px] font-extrabold text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 uppercase">Hari</span>
                               </div>
+                              <p className="text-[8px] font-bold text-amber-600 dark:text-amber-400 mt-1">
+                                * Dihitung otomatis berdasarkan jumlah data rekrutan yang di-ACC (Verified) dan target postingan harian yang tercapai.
+                              </p>
                             </div>
-                            <div className="flex-1">
-                              <label className="block text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Rasio Up (%)</label>
+
+                            <div>
+                              <label className="block text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Total Postingan</label>
                               <div className="relative">
                                 <input
                                   type="number"
-                                  value={formData.rasioPeningkatan || 0}
-                                  disabled={viewOnly}
-                                  onChange={(e) => setFormData({ ...formData, rasioPeningkatan: Math.max(0, Number(e.target.value)) })}
-                                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl pl-3 pr-7 py-2 text-xs font-black text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                                  value={formData.totalPostingan || 0}
+                                  disabled={true}
+                                  className="w-full bg-slate-100 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-xl pl-3 pr-9 py-2 text-xs font-black text-slate-500 dark:text-slate-400 cursor-not-allowed"
                                 />
-                                <Percent className="w-3 h-3 absolute right-2 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <span className="text-[8.5px] font-extrabold text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 uppercase">Post</span>
                               </div>
+                              <p className="text-[8px] font-bold text-amber-600 dark:text-amber-400 mt-1">
+                                * Diakumulasikan otomatis dari seluruh postingan laporan harian (Senin - Minggu).
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Deklarasi T0</label>
+                              <input
+                                type="number"
+                                value={formData.deklarasiT0 || 0}
+                                disabled={true}
+                                className="w-full bg-slate-100 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs font-black text-slate-500 dark:text-slate-400 cursor-not-allowed"
+                              />
+                              <p className="text-[8px] font-bold text-amber-600 dark:text-amber-400 mt-1">
+                                * Diambil otomatis dari total data rekrutan (Grup T0) di Tab Pemeriksaan pada menu Data Harian.
+                              </p>
+                            </div>
+
+                            <div>
+                              <label className="block text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">T0 Verified</label>
+                              <input
+                                type="number"
+                                value={formData.sebenarnyaT0 || 0}
+                                disabled={true}
+                                className="w-full bg-slate-100 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs font-black text-slate-500 dark:text-slate-400 cursor-not-allowed"
+                              />
+                              <p className="text-[8px] font-bold text-amber-600 dark:text-amber-400 mt-1">
+                                * Diambil otomatis dari total data rekrutan (Grup T0) berstatus ACC di Tab Pemeriksaan pada menu Data Harian.
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Deklarasi V0</label>
+                              <input
+                                type="number"
+                                value={formData.deklarasiV0 || 0}
+                                disabled={true}
+                                className="w-full bg-slate-100 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs font-black text-slate-500 dark:text-slate-400 cursor-not-allowed"
+                              />
+                              <p className="text-[8px] font-bold text-amber-600 dark:text-amber-400 mt-1">
+                                * Diambil otomatis dari total data rekrutan (Grup V0) di Tab Pemeriksaan pada menu Data Harian.
+                              </p>
+                            </div>
+
+                            <div>
+                              <label className="block text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">V0 Verified</label>
+                              <input
+                                type="number"
+                                value={formData.sebenarnyaV0 || 0}
+                                disabled={true}
+                                className="w-full bg-slate-100 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs font-black text-slate-500 dark:text-slate-400 cursor-not-allowed"
+                              />
+                              <p className="text-[8px] font-bold text-amber-600 dark:text-amber-400 mt-1">
+                                * Diambil otomatis dari total data rekrutan (Grup V0) berstatus ACC di Tab Pemeriksaan pada menu Data Harian.
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">T3 (Promoted)</label>
+                              <input
+                                type="number"
+                                value={formData.t3 || 0}
+                                disabled={true}
+                                className="w-full bg-slate-100 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs font-black text-slate-500 dark:text-slate-400 cursor-not-allowed"
+                              />
+                              <p className="text-[8px] font-bold text-amber-600 dark:text-amber-400 mt-1">
+                                * Diambil otomatis dari total data rekrutan (Grup T3) berstatus ACC di Tab Pemeriksaan pada menu Data Harian.
+                              </p>
+                            </div>
+
+                            <div className="flex gap-2">
+                              <div className="flex-1">
+                                <label className="block text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Tingkat Terima</label>
+                                <div className="relative">
+                                  <input
+                                    type="number"
+                                    value={formData.tingkatPenerimaan || 0}
+                                    disabled
+                                    className="w-full bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-800 rounded-xl pl-3 pr-7 py-2 text-xs font-black text-slate-700 dark:text-slate-300"
+                                  />
+                                  <Percent className="w-3 h-3 absolute right-2 top-1/2 -translate-y-1/2 text-slate-400" />
+                                </div>
+                              </div>
+                              <div className="flex-1">
+                                <label className="block text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Rasio Up (%)</label>
+                                <div className="relative">
+                                  <input
+                                    type="number"
+                                    value={formData.rasioPeningkatan || 0}
+                                    disabled={viewOnly}
+                                    onChange={(e) => setFormData({ ...formData, rasioPeningkatan: Math.max(0, Number(e.target.value)) })}
+                                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl pl-3 pr-7 py-2 text-xs font-black text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                                  />
+                                  <Percent className="w-3 h-3 absolute right-2 top-1/2 -translate-y-1/2 text-slate-400" />
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="border-t border-slate-100 dark:border-slate-800/80 pt-4">
+                            <div className="max-w-md">
+                              <label className="block text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Level Gaji</label>
+                              <input
+                                type="text"
+                                value={formData.levelGaji || 'Level 1'}
+                                disabled={true}
+                                className="w-full bg-slate-100 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs font-black text-slate-500 dark:text-slate-400 cursor-not-allowed"
+                              />
+                              <p className="text-[8px] font-bold text-amber-600 dark:text-amber-400 mt-1">
+                                * Ditentukan otomatis berdasarkan jumlah keanggotaan dipromosikan (T3 & Sebenarnya V0).
+                              </p>
                             </div>
                           </div>
                         </div>

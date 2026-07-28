@@ -153,7 +153,11 @@ export const PengumumanPage: React.FC = () => {
               >
                 {/* Title & Pinned Badge */}
                 <div className="flex items-start justify-between gap-2">
-                  <h3 className="text-base font-extrabold text-slate-950 dark:text-white tracking-tight leading-snug">
+                  <h3 className={`text-base tracking-tight leading-snug ${
+                    ann.author === 'Owner'
+                      ? 'font-black text-rose-600 dark:text-rose-400'
+                      : 'font-extrabold text-slate-950 dark:text-white'
+                  }`}>
                     {ann.title}
                   </h3>
                   {ann.pinned && (
@@ -164,7 +168,11 @@ export const PengumumanPage: React.FC = () => {
                 </div>
 
                 {/* Main Content */}
-                <div className="text-xs text-slate-800 dark:text-slate-200 whitespace-pre-line leading-relaxed border-t border-slate-100 dark:border-slate-800/80 pt-3">
+                <div className={`text-xs whitespace-pre-line leading-relaxed border-t border-slate-100 dark:border-slate-800/80 pt-3 ${
+                  ann.author === 'Owner'
+                    ? 'text-rose-600 dark:text-rose-400 font-bold'
+                    : 'text-slate-800 dark:text-slate-200'
+                }`}>
                   {ann.content}
                 </div>
 

@@ -856,10 +856,18 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setActiveTab }) =>
 
                   {/* Title & Body */}
                   <div className="space-y-1">
-                    <h4 className="text-sm font-extrabold text-slate-900 dark:text-white leading-snug tracking-tight">
+                    <h4 className={`text-sm leading-snug tracking-tight ${
+                      ann.author === 'Owner'
+                        ? 'font-black text-rose-600 dark:text-rose-400'
+                        : 'font-extrabold text-slate-900 dark:text-white'
+                    }`}>
                       {ann.title}
                     </h4>
-                    <p className="text-xs text-slate-700 dark:text-slate-300 line-clamp-3 leading-relaxed whitespace-pre-line font-medium">
+                    <p className={`text-xs line-clamp-3 leading-relaxed whitespace-pre-line ${
+                      ann.author === 'Owner'
+                        ? 'text-rose-600 dark:text-rose-400 font-bold'
+                        : 'text-slate-700 dark:text-slate-300 font-medium'
+                    }`}>
                       {ann.content}
                     </p>
                   </div>

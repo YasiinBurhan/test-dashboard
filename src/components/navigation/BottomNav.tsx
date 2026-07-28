@@ -106,6 +106,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab })
   };
 
   const isAdminOrOwner = userProfile?.role === 'Admin' || userProfile?.role === 'Owner';
+  const isRecruiter = userProfile?.role === 'Recruiter';
 
   // Primary 5 fixed tabs (including Gaji)
   const primaryTabs = [
@@ -115,7 +116,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab })
     { id: 'laporan' as TabType, label: 'Laporan', icon: FileText }
   ];
 
-  if (isAdminOrOwner) {
+  if (isAdminOrOwner || isRecruiter) {
     primaryTabs.push({ id: 'gaji' as TabType, label: 'Gaji', icon: Coins });
   }
 

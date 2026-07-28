@@ -913,7 +913,7 @@ export const OwnerPage: React.FC = () => {
                 placeholder="Judul Pengumuman"
                 value={annTitle}
                 onChange={(e) => setAnnTitle(e.target.value)}
-                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700/80 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 dark:text-white outline-none focus:border-amber-500"
+                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700/80 rounded-xl px-3.5 py-2.5 text-xs text-rose-600 dark:text-rose-400 font-bold outline-none focus:border-amber-500 placeholder-slate-400 dark:placeholder-slate-500"
                 required
               />
 
@@ -922,7 +922,7 @@ export const OwnerPage: React.FC = () => {
                 placeholder="Isi Pengumuman..."
                 value={annContent}
                 onChange={(e) => setAnnContent(e.target.value)}
-                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700/80 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 dark:text-white outline-none focus:border-amber-500"
+                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700/80 rounded-xl px-3.5 py-2.5 text-xs text-rose-600 dark:text-rose-400 font-bold outline-none focus:border-amber-500 placeholder-slate-400 dark:placeholder-slate-500"
                 required
               />
 
@@ -949,7 +949,7 @@ export const OwnerPage: React.FC = () => {
             {announcements.map((a) => (
               <GlassCard key={a.id} className="p-4 space-y-2 border-slate-200 dark:border-slate-800">
                 <div className="flex items-center justify-between">
-                  <h5 className="text-sm font-bold text-slate-900 dark:text-white">{a.title}</h5>
+                  <h5 className="text-sm font-bold text-rose-600 dark:text-rose-400">{a.title}</h5>
                   <button
                     onClick={() => handleDeleteAnnouncement(a.id)}
                     className="text-rose-400 hover:text-rose-300 p-1 cursor-pointer"
@@ -957,7 +957,7 @@ export const OwnerPage: React.FC = () => {
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
-                <p className="text-xs text-slate-700 dark:text-slate-300 whitespace-pre-line">{a.content}</p>
+                <p className="text-xs text-rose-600 dark:text-rose-400 font-bold whitespace-pre-line">{a.content}</p>
               </GlassCard>
             ))}
           </div>
