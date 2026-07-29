@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Coins, 
@@ -81,6 +82,23 @@ export const GajiPage: React.FC = () => {
   const [isCalculating, setIsCalculating] = useState(false);
   const [viewOnly, setViewOnly] = useState(false);
 
+  // ESC Key listener & Body Scroll Lock for modal accessibility
+  useEffect(() => {
+    if (isModalOpen) {
+      document.body.style.overflow = 'hidden';
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') setIsModalOpen(false);
+      };
+      window.addEventListener('keydown', handleKeyDown);
+      return () => {
+        document.body.style.overflow = '';
+        window.removeEventListener('keydown', handleKeyDown);
+      };
+    } else {
+      document.body.style.overflow = '';
+    }
+  }, [isModalOpen]);
+
   // Generate WIB week period options (last 8 weeks)
   const periodOptions = useMemo(() => {
     const options = [];
@@ -160,11 +178,11 @@ export const GajiPage: React.FC = () => {
 
       const savedSalary = rawSavedSalary ? {
         ...rawSavedSalary,
-        deklarasiV0: isPeriodInPemeriksaan ? (rawSavedSalary.deklarasiV0 || 0) : 0,
-        sebenarnyaV0: isPeriodInPemeriksaan ? (rawSavedSalary.sebenarnyaV0 || 0) : 0,
-        deklarasiT0: isPeriodInPemeriksaan ? (rawSavedSalary.deklarasiT0 || 0) : 0,
-        sebenarnyaT0: isPeriodInPemeriksaan ? (rawSavedSalary.sebenarnyaT0 || 0) : 0,
-        t3: isPeriodInPemeriksaan ? (rawSavedSalary.t3 || 0) : 0,
+        deklarasiV0: rawSavedSalary.deklarasiV0 || 0,
+        sebenarnyaV0: rawSavedSalary.sebenarnyaV0 || 0,
+        deklarasiT0: rawSavedSalary.deklarasiT0 || 0,
+        sebenarnyaT0: rawSavedSalary.sebenarnyaT0 || 0,
+        t3: rawSavedSalary.t3 || 0,
       } : null;
 
       // Check daily reports for this period to verify if any report exists
@@ -265,11 +283,11 @@ export const GajiPage: React.FC = () => {
       // Open existing slip
       setFormData({
         ...slip,
-        deklarasiV0: isPeriodInPemeriksaan ? (slip.deklarasiV0 || 0) : 0,
-        sebenarnyaV0: isPeriodInPemeriksaan ? (slip.sebenarnyaV0 || 0) : 0,
-        deklarasiT0: isPeriodInPemeriksaan ? (slip.deklarasiT0 || 0) : 0,
-        sebenarnyaT0: isPeriodInPemeriksaan ? (slip.sebenarnyaT0 || 0) : 0,
-        t3: isPeriodInPemeriksaan ? (slip.t3 || 0) : 0,
+        deklarasiV0: slip.deklarasiV0 || 0,
+        sebenarnyaV0: slip.sebenarnyaV0 || 0,
+        deklarasiT0: slip.deklarasiT0 || 0,
+        sebenarnyaT0: slip.sebenarnyaT0 || 0,
+        t3: slip.t3 || 0,
       });
       setIsModalOpen(true);
     } else {
@@ -288,11 +306,11 @@ export const GajiPage: React.FC = () => {
           status: 'Draft',
           note: '',
           ...autoMetrics,
-          deklarasiV0: isPeriodInPemeriksaan ? (autoMetrics.deklarasiV0 || 0) : 0,
-          sebenarnyaV0: isPeriodInPemeriksaan ? (autoMetrics.sebenarnyaV0 || 0) : 0,
-          deklarasiT0: isPeriodInPemeriksaan ? (autoMetrics.deklarasiT0 || 0) : 0,
-          sebenarnyaT0: isPeriodInPemeriksaan ? (autoMetrics.sebenarnyaT0 || 0) : 0,
-          t3: isPeriodInPemeriksaan ? (autoMetrics.t3 || 0) : 0,
+          deklarasiV0: autoMetrics.deklarasiV0 || 0,
+          sebenarnyaV0: autoMetrics.sebenarnyaV0 || 0,
+          deklarasiT0: autoMetrics.deklarasiT0 || 0,
+          sebenarnyaT0: autoMetrics.sebenarnyaT0 || 0,
+          t3: autoMetrics.t3 || 0,
         });
       } catch (err) {
         console.error('Failed to pre-calculate salary:', err);
@@ -426,11 +444,11 @@ export const GajiPage: React.FC = () => {
       const autoMetrics = await calculateRecruiterMetrics(formData.telegramId, formData.periode);
       recalculateTotal({
         ...autoMetrics,
-        deklarasiV0: isPeriodInPemeriksaan ? (autoMetrics.deklarasiV0 || 0) : 0,
-        sebenarnyaV0: isPeriodInPemeriksaan ? (autoMetrics.sebenarnyaV0 || 0) : 0,
-        deklarasiT0: isPeriodInPemeriksaan ? (autoMetrics.deklarasiT0 || 0) : 0,
-        sebenarnyaT0: isPeriodInPemeriksaan ? (autoMetrics.sebenarnyaT0 || 0) : 0,
-        t3: isPeriodInPemeriksaan ? (autoMetrics.t3 || 0) : 0,
+        deklarasiV0: autoMetrics.deklarasiV0 || 0,
+        sebenarnyaV0: autoMetrics.sebenarnyaV0 || 0,
+        deklarasiT0: autoMetrics.deklarasiT0 || 0,
+        sebenarnyaT0: autoMetrics.sebenarnyaT0 || 0,
+        t3: autoMetrics.t3 || 0,
       });
     } catch (err) {
       console.error('Recalculation failed:', err);
@@ -745,7 +763,7 @@ export const GajiPage: React.FC = () => {
                 <div className="p-4 rounded-3xl bg-white dark:bg-slate-950/60 border border-slate-200 dark:border-slate-900/60">
                   <p className="text-[9px] font-extrabold uppercase tracking-wider text-slate-500">Target ACC T0 / V0</p>
                   <p className="text-lg font-black text-slate-900 dark:text-white mt-1">
-                    {currentSlip ? `${isPeriodInPemeriksaan ? (currentSlip.sebenarnyaT0 || 0) : 0} / ${isPeriodInPemeriksaan ? (currentSlip.sebenarnyaV0 || 0) : 0}` : '-'}
+                    {currentSlip ? `${currentSlip.sebenarnyaT0 || 0} / ${currentSlip.sebenarnyaV0 || 0}` : '-'}
                   </p>
                 </div>
                 <div className="p-4 rounded-3xl bg-white dark:bg-slate-950/60 border border-slate-200 dark:border-slate-900/60">
@@ -1163,44 +1181,58 @@ export const GajiPage: React.FC = () => {
       )}
 
       {/* DETAILED DIALOG/MODAL FOR FORM & PRINT PREVIEW */}
-      <AnimatePresence>
-        {isModalOpen && (
-          <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0, y: 20, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 20, scale: 0.98 }}
-              transition={{ type: 'spring', damping: 28, stiffness: 300 }}
-              className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 rounded-3xl w-full max-w-2xl overflow-hidden shadow-2xl relative"
+      {createPortal(
+        <AnimatePresence>
+          {isModalOpen && (
+            <div 
+              className="fixed inset-0 z-[100] bg-slate-950/85 backdrop-blur-md flex flex-col items-center justify-start sm:justify-center pt-[calc(var(--tg-safe-area-inset-top,env(safe-area-inset-top,0px))+28px)] pb-[calc(var(--tg-safe-area-inset-bottom,env(safe-area-inset-bottom,0px))+20px)] px-3 sm:px-4 overflow-y-auto"
+              onClick={() => setIsModalOpen(false)}
             >
-              {/* Header */}
-              <div className="p-5 border-b border-slate-150 dark:border-slate-800/80 flex justify-between items-center bg-slate-50 dark:bg-slate-950/40">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-500">
+              <motion.div
+                initial={{ opacity: 0, y: 20, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 20, scale: 0.98 }}
+                transition={{ type: 'spring', damping: 28, stiffness: 300 }}
+                onClick={(e) => e.stopPropagation()}
+                className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 rounded-2xl sm:rounded-3xl w-full max-w-2xl max-h-[calc(100vh-var(--tg-safe-area-inset-top,env(safe-area-inset-top,0px))-60px)] sm:max-h-[85vh] flex flex-col overflow-hidden shadow-2xl relative my-auto"
+              >
+                {/* Header */}
+                <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-950 shrink-0 sticky top-0 z-30 shadow-xs">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-500 shrink-0">
                     <Coins className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-black uppercase tracking-wider text-slate-800 dark:text-slate-100">
-                      {viewOnly ? 'Detail Slip Gaji Resmi' : formData.createdAt ? 'Edit Slip Gaji' : 'Input Slip Gaji Baru'}
-                    </h3>
-                    <p className="text-[10px] font-extrabold text-slate-500 dark:text-slate-400 uppercase tracking-widest mt-0.5">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm sm:text-base font-black tracking-tight text-slate-900 dark:text-white">
+                        {viewOnly ? 'Detail Slip Gaji Resmi' : formData.createdAt ? 'Edit Slip Gaji' : 'Input Slip Gaji Baru'}
+                      </h3>
+                      {selectedRecruiter && (
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-black uppercase tracking-wider border border-emerald-500/20">
+                          {[selectedRecruiter.firstName, selectedRecruiter.lastName].filter(Boolean).join(' ') || selectedRecruiter.username || 'Recruiter'}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 mt-0.5">
                       Periode: {getWIBWeekRange(formData.periode || '').formattedRange}
                     </p>
                   </div>
                 </div>
                 <button 
+                  type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="p-2 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 rounded-xl cursor-pointer transition-colors"
+                  aria-label="Tutup"
+                  className="p-2.5 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 rounded-xl cursor-pointer transition-colors active:scale-95 touch-manipulation"
                 >
-                  <X className="w-4 h-4" />
+                  <X className="w-5 h-5" />
                 </button>
               </div>
 
               {/* Loader during auto-calculations */}
               {isCalculating ? (
-                <div className="py-24 flex flex-col items-center justify-center space-y-4">
+                <div className="py-20 flex-1 flex flex-col items-center justify-center space-y-4">
                   <RefreshCw className="w-10 h-10 text-emerald-500 animate-spin" />
-                  <div className="text-center">
+                  <div className="text-center px-4">
                     <p className="text-xs font-black text-slate-800 dark:text-slate-200">Menghitung Data Finansial...</p>
                     <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 max-w-xs mx-auto">
                       Mengakumulasikan postingan harian, denda keterlambatan, dan target konversi...
@@ -1208,7 +1240,7 @@ export const GajiPage: React.FC = () => {
                   </div>
                 </div>
               ) : (
-                <div className="p-6 max-h-[75vh] overflow-y-auto space-y-6">
+                <div className="p-4 sm:p-6 flex-1 overflow-y-auto space-y-5 sm:space-y-6 touch-auto">
                   
                   {/* PREVIEW MODE (Premium Printable Payslip) */}
                   {viewOnly ? (
@@ -1778,20 +1810,22 @@ export const GajiPage: React.FC = () => {
               )}
 
               {/* Footer Actions */}
-              <div className="p-5 border-t border-slate-150 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/40 flex flex-col sm:flex-row justify-between gap-3">
+              <div className="p-4 sm:p-5 border-t border-slate-150 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/40 flex flex-col-reverse sm:flex-row justify-between gap-2.5 sm:gap-3 shrink-0 sticky bottom-0 z-20">
                 {/* Print button on view-only */}
                 {viewOnly ? (
                   <>
                     <button
+                      type="button"
                       onClick={printSlip}
-                      className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-950 rounded-2xl text-xs font-black flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-sm"
+                      className="w-full sm:w-auto px-5 py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-950 rounded-2xl text-xs font-black flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-sm active:scale-95 touch-manipulation"
                     >
                       <Printer className="w-4 h-4" /> Cetak / Unduh Slip Gaji
                     </button>
 
                     <button
+                      type="button"
                       onClick={() => setIsModalOpen(false)}
-                      className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-2xl text-xs font-black transition-colors cursor-pointer"
+                      className="w-full sm:w-auto px-5 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-2xl text-xs font-black transition-colors cursor-pointer active:scale-95 touch-manipulation"
                     >
                       Tutup Slip
                     </button>
@@ -1803,16 +1837,16 @@ export const GajiPage: React.FC = () => {
                       type="button"
                       onClick={triggerAutoRecalculate}
                       disabled={isCalculating}
-                      className="px-4 py-2.5 bg-sky-500/10 hover:bg-sky-500/20 text-sky-600 dark:text-sky-400 rounded-2xl text-xs font-black border border-sky-500/25 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60 transition-colors"
+                      className="w-full sm:w-auto px-4 py-2.5 bg-sky-500/10 hover:bg-sky-500/20 text-sky-600 dark:text-sky-400 rounded-2xl text-xs font-black border border-sky-500/25 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60 transition-colors active:scale-95 touch-manipulation"
                     >
                       <RefreshCw className="w-3.5 h-3.5" /> Ambil Data Auto
                     </button>
 
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 w-full sm:w-auto">
                       <button
                         type="button"
                         onClick={() => setIsModalOpen(false)}
-                        className="px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-2xl text-xs font-bold transition-colors cursor-pointer"
+                        className="flex-1 sm:flex-none px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-2xl text-xs font-bold transition-colors cursor-pointer active:scale-95 touch-manipulation"
                       >
                         Batal
                       </button>
@@ -1821,7 +1855,7 @@ export const GajiPage: React.FC = () => {
                         type="button"
                         onClick={handleSaveSalary}
                         disabled={isSaving || isCalculating}
-                        className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl text-xs font-black transition-colors flex items-center justify-center gap-1.5 shadow-md shadow-emerald-500/25 cursor-pointer disabled:opacity-60"
+                        className="flex-1 sm:flex-none px-5 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl text-xs font-black transition-colors flex items-center justify-center gap-1.5 shadow-md shadow-emerald-500/25 cursor-pointer disabled:opacity-60 active:scale-95 touch-manipulation"
                       >
                         {isSaving ? (
                           <>
@@ -1838,7 +1872,9 @@ export const GajiPage: React.FC = () => {
             </motion.div>
           </div>
         )}
-      </AnimatePresence>
+        </AnimatePresence>,
+        document.body
+      )}
     </div>
   );
 };

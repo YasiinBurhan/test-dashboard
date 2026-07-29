@@ -108,7 +108,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab })
   const isAdminOrOwner = userProfile?.role === 'Admin' || userProfile?.role === 'Owner';
   const isRecruiter = userProfile?.role === 'Recruiter';
 
-  // Primary 5 fixed tabs (including Gaji)
+  // Primary fixed tabs next to Beranda
   const primaryTabs = [
     { id: 'beranda' as TabType, label: 'Beranda', icon: LayoutGrid },
     { id: 'postingan' as TabType, label: 'Postingan', icon: ClipboardPen },
@@ -116,12 +116,18 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab })
     { id: 'laporan' as TabType, label: 'Laporan', icon: FileText }
   ];
 
-  if (isAdminOrOwner || isRecruiter) {
-    primaryTabs.push({ id: 'gaji' as TabType, label: 'Gaji', icon: Coins });
-  }
-
   // Secondary menu items inside drawer
-  const secondaryMenuItems = [
+  const secondaryMenuItems = [];
+
+  secondaryMenuItems.push({
+    id: 'gaji' as TabType,
+    label: 'Gaji & Bonus',
+    desc: 'Pantau komisi & perhitungan gaji',
+    icon: Coins,
+    color: 'from-emerald-500/20 to-teal-600/10 text-emerald-400 border-emerald-500/30'
+  });
+
+  secondaryMenuItems.push(
     {
       id: 'profil' as TabType,
       label: 'Profil Saya',
@@ -136,7 +142,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab })
       icon: Megaphone,
       color: 'from-amber-500/20 to-orange-600/10 text-amber-400 border-amber-500/30'
     }
-  ];
+  );
 
   if (userProfile?.role === 'Admin' || userProfile?.role === 'Owner') {
     secondaryMenuItems.unshift({

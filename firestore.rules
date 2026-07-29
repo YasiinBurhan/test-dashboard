@@ -2,121 +2,55 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // --- GLOBAL HELPERS ---
-    
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    // Admin/Owner check using the admins collection
-    function isAdmin() {
-      return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
-    }
-
-    // Check if the current request is for the caller's own user profile
-    function isOwnerOfProfile(userId) {
-      return isSignedIn() && resource != null && resource.data.firebaseUid == request.auth.uid;
-    }
-
-    // Check if the caller owns the user profile associated with a given telegramId
-    function isOwnerOfTelegramId(telegramId) {
-      return isSignedIn() && 
-        exists(/databases/$(database)/documents/users/$(telegramId)) && 
-        get(/databases/$(database)/documents/users/$(telegramId)).data.firebaseUid == request.auth.uid;
-    }
-
-    // Check if a specific field is unchanged during update
-    function isFieldUnchanged(field) {
-      return !(field in request.resource.data) || (resource.data[field] == request.resource.data[field]);
-    }
-
-    // --- COLLECTIONS ---
-
-    // 1. COLLECTION: ADMINS (Self-healing administrative list)
-    match /admins/{adminId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin() || (
-        isSignedIn() && 
-        request.auth.uid == adminId && 
-        exists(/databases/$(database)/documents/users/$(request.resource.data.telegramId)) &&
-        get(/databases/$(database)/documents/users/$(request.resource.data.telegramId)).data.firebaseUid == request.auth.uid &&
-        get(/databases/$(database)/documents/users/$(request.resource.data.telegramId)).data.role in ['Admin', 'Owner']
-      );
-    }
-
-    // 2. COLLECTION: USERS (Data Profil User & Recruiter)
+    // 1. COLLECTION: USERS (Data Profil User & Recruiter)
     match /users/{userId} {
-      allow read: if isOwnerOfProfile(userId) || isAdmin();
-      
-      // Allow creation of own profile on registration
-      allow create: if isSignedIn() && request.resource.data.firebaseUid == request.auth.uid;
-      
-      // Prevent normal users from upgrading their own role, status, or salary fields
-      allow update: if (isOwnerOfProfile(userId) &&
-        isFieldUnchanged('role') &&
-        isFieldUnchanged('status') &&
-        isFieldUnchanged('approved') &&
-        isFieldUnchanged('salary') &&
-        isFieldUnchanged('permissions') &&
-        isFieldUnchanged('firebaseUid')
-      ) || isAdmin();
-
-      allow delete: if isAdmin();
+      allow read, write: if true;
     }
 
-    // 3. COLLECTION: POSTS (Data Batch Posting Job)
+    // 2. COLLECTION: POSTS (Data Batch Posting Job)
     match /posts/{postId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow read, write: if true;
     }
 
-    // 4. COLLECTION: LAPORAN HARIAN (Data Laporan Harian Metric Recruiter)
+    // 3. COLLECTION: LAPORAN HARIAN (Data Laporan Harian Metric Recruiter)
     match /laporan_harian/{reportId} {
-      allow read: if (resource != null && isOwnerOfTelegramId(resource.data.telegramId)) || isAdmin();
-      allow create: if isSignedIn() && isOwnerOfTelegramId(request.resource.data.telegramId);
-      allow update: if (resource != null && isOwnerOfTelegramId(resource.data.telegramId)) || isAdmin();
-      allow delete: if isAdmin();
+      allow read, write: if true;
     }
 
-    // 5. COLLECTION: DATA HARIAN (Data Pelamar Individual)
+    // 3b. COLLECTION: DATA HARIAN (Data Pelamar Individual)
     match /data_harian/{reportId} {
-      allow read: if (resource != null && isOwnerOfTelegramId(resource.data.telegramId)) || isAdmin();
-      allow create: if isSignedIn() && isOwnerOfTelegramId(request.resource.data.telegramId);
-      allow update: if (resource != null && isOwnerOfTelegramId(resource.data.telegramId)) || isAdmin();
-      allow delete: if isAdmin();
+      allow read, write: if true;
     }
 
-    // 6. COLLECTION: DAILY_REPORTS (Alias fallback for reports)
+    // Fallback alias for daily_reports if used
     match /daily_reports/{reportId} {
-      allow read: if (resource != null && isOwnerOfTelegramId(resource.data.telegramId)) || isAdmin();
-      allow create: if isSignedIn() && isOwnerOfTelegramId(request.resource.data.telegramId);
-      allow update: if (resource != null && isOwnerOfTelegramId(resource.data.telegramId)) || isAdmin();
-      allow delete: if isAdmin();
+      allow read, write: if true;
     }
 
-    // 7. COLLECTION: ANNOUNCEMENTS (Pengumuman & Notifikasi)
+    // 4. COLLECTION: ANNOUNCEMENTS (Pengumuman & Notifikasi)
     match /announcements/{announcementId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow read, write: if true;
     }
 
-    // 8. COLLECTION: SETTINGS (Pengaturan Aplikasi & System Locks)
+    // 5. COLLECTION: SETTINGS (Pengaturan Aplikasi & System Locks)
     match /settings/{settingId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow read, write: if true;
     }
 
-    // 9. COLLECTION: SALARIES (Slip Gaji Recruiter)
+    // 5b. COLLECTION: SALARIES (Slip Gaji Recruiter)
     match /salaries/{salaryId} {
-      allow read: if (resource != null && isOwnerOfTelegramId(resource.data.telegramId)) || isAdmin();
-      allow write: if isAdmin();
+      allow read, write: if true;
     }
 
-    // 10. COLLECTION: NOTIFICATIONS (Notifikasi Real-time)
+    // 6. COLLECTION: NOTIFICATIONS (Notifikasi Real-time)
     match /notifications/{notificationId} {
-      allow read, update: if (resource != null && isOwnerOfTelegramId(resource.data.telegramId)) || isAdmin();
-      allow create: if isSignedIn();
-      allow delete: if isAdmin();
+      allow read, write: if true;
+    }
+
+    // Default fallback rule
+    match /{document=**} {
+      allow read, write: if true;
     }
   }
 }
+

@@ -147,11 +147,14 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     initTelegramApp();
 
-    // Check for low-end device
+    // Check for low-end device or mobile optimization
     if (typeof navigator !== 'undefined') {
       const memory = (navigator as any).deviceMemory;
       const cores = navigator.hardwareConcurrency;
-      if ((memory && memory < 4) || (cores && cores < 4)) {
+      const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+      const isReducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+      if ((memory && memory <= 4) || (cores && cores <= 4) || (isMobile && (memory <= 4 || cores <= 4)) || isReducedMotion) {
         document.body.classList.add('low-end');
       }
     }

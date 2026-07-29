@@ -47,12 +47,18 @@ import {
   CheckSquare,
   FileText,
   ChevronUp,
-  Info
+  Info,
+  RotateCw,
+  Search,
+  Copy
 } from 'lucide-react';
 
 const getApiBaseUrl = () => {
   if (import.meta.env.VITE_BACKEND_URL) {
     return import.meta.env.VITE_BACKEND_URL;
+  }
+  if (typeof window !== 'undefined') {
+    return window.location.origin;
   }
   return 'https://test-dashboard-lake-pi.vercel.app';
 };
@@ -127,6 +133,15 @@ const CHANNELS = [
   { id: 'Lainnya', label: 'Lainnya', color: 'text-slate-600 dark:text-slate-400 border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/20', active: 'bg-slate-700 text-slate-900 dark:text-white border-slate-600' },
 ];
 
+const BROWSER_PRESETS = [
+  { id: 'Facebook', label: 'Facebook', url: 'https://m.facebook.com' },
+  { id: 'Instagram', label: 'Instagram', url: 'https://www.instagram.com' },
+  { id: 'TikTok', label: 'TikTok', url: 'https://www.tiktok.com' },
+  { id: 'X (Twitter)', label: 'X (Twitter)', url: 'https://mobile.twitter.com' },
+  { id: 'Threads', label: 'Threads', url: 'https://www.threads.net' },
+  { id: 'Google', label: 'Google Search', url: 'https://www.google.com/search?q=lowongan+kerja' }
+];
+
 export const PostinganPage: React.FC = () => {
   const { userProfile, telegramUser } = useAuth();
   const { reports } = useReports();
@@ -179,6 +194,85 @@ export const PostinganPage: React.FC = () => {
   const [selectedDay, setSelectedDay] = useState<string>(currentDayName);
   const [selectedArchiveDay, setSelectedArchiveDay] = useState<string>('Senin');
   const [openPlatformDropdownIdx, setOpenPlatformDropdownIdx] = useState<number | null>(null);
+
+  // Sosmed Browser Assistant States & Helpers
+  const [isBrowserOpen, setIsBrowserOpen] = useState(false);
+  const [browserUrl, setBrowserUrl] = useState('https://m.facebook.com');
+  const [browserInput, setBrowserInput] = useState('https://m.facebook.com');
+  const [browserHistory, setBrowserHistory] = useState<string[]>(['https://m.facebook.com']);
+  const [browserHistoryIdx, setBrowserHistoryIdx] = useState(0);
+
+  const navigateBrowser = (url: string) => {
+    let targetUrl = url.trim();
+    if (!targetUrl) return;
+    if (!/^https?:\/\//i.test(targetUrl)) {
+      targetUrl = 'https://' + targetUrl;
+    }
+    setBrowserUrl(targetUrl);
+    setBrowserInput(targetUrl);
+    
+    // Add to history
+    const nextHistory = browserHistory.slice(0, browserHistoryIdx + 1);
+    nextHistory.push(targetUrl);
+    setBrowserHistory(nextHistory);
+    setBrowserHistoryIdx(nextHistory.length - 1);
+  };
+
+  const browserBack = () => {
+    if (browserHistoryIdx > 0) {
+      const prevIdx = browserHistoryIdx - 1;
+      setBrowserHistoryIdx(prevIdx);
+      setBrowserUrl(browserHistory[prevIdx]);
+      setBrowserInput(browserHistory[prevIdx]);
+      triggerHaptic('selection');
+    }
+  };
+
+  const browserForward = () => {
+    if (browserHistoryIdx < browserHistory.length - 1) {
+      const nextIdx = browserHistoryIdx + 1;
+      setBrowserHistoryIdx(nextIdx);
+      setBrowserUrl(browserHistory[nextIdx]);
+      setBrowserInput(browserHistory[nextIdx]);
+      triggerHaptic('selection');
+    }
+  };
+
+  const browserReload = () => {
+    const current = browserUrl;
+    setBrowserUrl('');
+    setTimeout(() => {
+      setBrowserUrl(current);
+    }, 100);
+    triggerHaptic('selection');
+  };
+
+  const copyUrlToFirstEmptyInput = () => {
+    const firstEmptyIdx = links.findIndex(l => !l.url || l.url.trim() === '');
+    if (firstEmptyIdx !== -1) {
+      updateLink(firstEmptyIdx, browserUrl);
+      showAlert('success', 'URL Berhasil Disalin', `Tautan telah disalin otomatis ke baris #${firstEmptyIdx + 1}`);
+      triggerHaptic('notification', 'success');
+    } else if (links.length < 10) {
+      const newLinks = [...links];
+      let platform: SocialPlatform = 'Lainnya';
+      const lowUrl = browserUrl.toLowerCase();
+      if (lowUrl.includes('facebook.com') || lowUrl.includes('fb.com')) platform = 'Facebook';
+      else if (lowUrl.includes('x.com') || lowUrl.includes('twitter.com')) platform = 'X (Twitter)';
+      else if (lowUrl.includes('instagram.com')) platform = 'Instagram';
+      else if (lowUrl.includes('tiktok.com')) platform = 'TikTok';
+      else if (lowUrl.includes('threads.net')) platform = 'Threads';
+      else if (lowUrl.includes('whatsapp.com') || lowUrl.includes('wa.me')) platform = 'WhatsApp';
+      else if (lowUrl.includes('t.me') || lowUrl.includes('telegram.org')) platform = 'Telegram';
+
+      newLinks.push({ url: browserUrl, platform });
+      setLinks(newLinks);
+      showAlert('success', 'URL Ditambahkan', `Tautan telah ditambahkan ke baris baru #${newLinks.length}`);
+      triggerHaptic('notification', 'success');
+    } else {
+      showAlert('warning', 'Formulir Penuh', 'Formulir link sudah terisi penuh (10 link). Silakan hapus salah satu link untuk memasukkan yang baru.');
+    }
+  };
 
   const userMap = useMemo(() => {
     const map = new Map<string, UserProfile>();
@@ -1353,6 +1447,18 @@ export const PostinganPage: React.FC = () => {
               Batch Postingan
             </h1>
           </div>
+          <button
+            type="button"
+            onClick={() => { setIsBrowserOpen(!isBrowserOpen); triggerHaptic('selection'); }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase border transition-all ${
+              isBrowserOpen
+                ? 'bg-sky-500/10 border-sky-500/35 text-sky-600 dark:text-sky-400 shadow-sm'
+                : 'bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700 shadow-sm'
+            }`}
+          >
+            <Globe className="w-3.5 h-3.5" />
+            {isBrowserOpen ? 'Tutup Browser' : 'Asisten Browser'}
+          </button>
         </div>
 
         {/* Main Navigation Tabs */}
@@ -1397,7 +1503,10 @@ export const PostinganPage: React.FC = () => {
           )}
         </div>
 
-        {activeView === 'buat' && (
+        <div className={`grid grid-cols-1 ${isBrowserOpen ? 'lg:grid-cols-12' : ''} gap-4 items-start`}>
+          {/* Left Column: Form & History Content */}
+          <div className={isBrowserOpen ? 'lg:col-span-5 space-y-4' : 'space-y-4'}>
+            {activeView === 'buat' && (
           <motion.div
             initial={{ opacity: 0, x: -10 }}
             animate={{ opacity: 1, x: 0 }}
@@ -3254,6 +3363,223 @@ export const PostinganPage: React.FC = () => {
             )}
           </motion.div>
         )}
+          </div>
+
+          {/* Right Column: Beautiful Sosmed Browser Panel */}
+          {isBrowserOpen && (
+            <div className="lg:col-span-7 xl:col-span-7 lg:sticky lg:top-[124px] space-y-4 animate-in fade-in slide-in-from-right-4 duration-300">
+              <GlassCard className="p-4 bg-white/95 dark:bg-slate-950/95 border-slate-200 dark:border-slate-800 shadow-2xl relative overflow-hidden flex flex-col h-[700px]">
+                {/* Header Row */}
+                <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-600 dark:text-sky-400">
+                      <Globe className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-1.5">
+                        Asisten Browser Sosmed
+                      </h3>
+                      <p className="text-[9px] text-slate-500 dark:text-slate-400 font-bold">
+                        Buka & salin link postingan lowongan kerja Anda
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => { copyUrlToFirstEmptyInput(); triggerHaptic('selection'); }}
+                      className="px-2.5 py-1 rounded-lg bg-sky-500 hover:bg-sky-600 text-slate-950 font-black text-[9px] uppercase tracking-wider flex items-center gap-1 shadow-sm transition-all active:scale-[0.98]"
+                      title="Salin URL saat ini ke formulir postingan"
+                    >
+                      <Plus className="w-3 h-3" />
+                      Salin ke Form
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setIsBrowserOpen(false); triggerHaptic('selection'); }}
+                      className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
+                      title="Tutup Browser"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Address Bar Row */}
+                <div className="flex items-center gap-1.5 py-2.5 border-b border-slate-100 dark:border-slate-900">
+                  {/* Nav Controls */}
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={browserBack}
+                      disabled={browserHistoryIdx === 0}
+                      className={`p-1.5 rounded-lg border transition-all ${
+                        browserHistoryIdx === 0
+                          ? 'bg-slate-50 dark:bg-slate-950/40 text-slate-300 dark:text-slate-800 border-slate-100 dark:border-slate-900 cursor-not-allowed'
+                          : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:border-slate-300 hover:text-slate-950 dark:hover:text-white'
+                      }`}
+                      title="Kembali"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={browserForward}
+                      disabled={browserHistoryIdx >= browserHistory.length - 1}
+                      className={`p-1.5 rounded-lg border transition-all ${
+                        browserHistoryIdx >= browserHistory.length - 1
+                          ? 'bg-slate-50 dark:bg-slate-950/40 text-slate-300 dark:text-slate-800 border-slate-100 dark:border-slate-900 cursor-not-allowed'
+                          : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:border-slate-300 hover:text-slate-950 dark:hover:text-white'
+                      }`}
+                      title="Maju"
+                    >
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={browserReload}
+                      className="p-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:border-slate-300 hover:text-slate-950 dark:hover:text-white transition-all"
+                      title="Muat Ulang"
+                    >
+                      <RotateCw className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  {/* URL Input */}
+                  <form 
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      navigateBrowser(browserInput);
+                    }}
+                    className="flex-1 flex items-center bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 px-3 py-1"
+                  >
+                    <Globe className="w-3.5 h-3.5 text-slate-400 mr-2 shrink-0" />
+                    <input
+                      type="text"
+                      value={browserInput}
+                      onChange={(e) => setBrowserInput(e.target.value)}
+                      placeholder="Masukkan URL website sosmed..."
+                      className="w-full bg-transparent text-[11px] font-medium outline-none text-slate-800 dark:text-slate-100 py-1"
+                    />
+                    {browserInput && (
+                      <button
+                        type="button"
+                        onClick={() => setBrowserInput('')}
+                        className="p-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                  </form>
+
+                  {/* Nav Button */}
+                  <button
+                    type="button"
+                    onClick={() => navigateBrowser(browserInput)}
+                    className="p-1.5 bg-sky-500 hover:bg-sky-600 text-slate-950 rounded-lg transition-all"
+                    title="Buka Website"
+                  >
+                    <ArrowRight className="w-3.5 h-3.5 font-bold" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(browserUrl);
+                      showAlert('success', 'URL Disalin', 'URL browser berhasil disalin ke clipboard');
+                      triggerHaptic('notification', 'success');
+                    }}
+                    className="p-1.5 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white rounded-lg transition-all"
+                    title="Salin Tautan"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                {/* Platform Presets Row */}
+                <div className="flex items-center gap-1.5 py-2 overflow-x-auto no-scrollbar scroll-smooth">
+                  <span className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider shrink-0 mr-1">Presets:</span>
+                  {BROWSER_PRESETS.map((preset) => (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => {
+                        navigateBrowser(preset.url);
+                        triggerHaptic('selection');
+                      }}
+                      className={`shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[9.5px] font-black uppercase transition-all ${
+                        browserUrl === preset.url
+                          ? 'bg-sky-500/10 border-sky-500/35 text-sky-600 dark:text-sky-400'
+                          : 'bg-slate-50 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
+                      }`}
+                    >
+                      <ChannelPlatformIcon id={preset.id} className="w-3 h-3 shrink-0" />
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Main Browser Window Block */}
+                <div className="flex-1 relative bg-slate-100 dark:bg-slate-950 rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-900 shadow-inner flex flex-col min-h-0 mt-1">
+                  {/* Warning about frame protection on major platforms */}
+                  <div className="bg-amber-500/10 border-b border-amber-500/20 px-3 py-1.5 flex items-start gap-2 text-[9px] text-amber-700 dark:text-amber-400 font-bold shrink-0">
+                    <Info className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
+                    <div className="leading-relaxed">
+                      Beberapa situs (Facebook, Instagram, dll.) mungkin membatasi tayangan langsung dalam bingkai demi keamanan. Jika layar tampak kosong, silakan klik{' '}
+                      <a 
+                        href={browserUrl} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-sky-600 dark:text-sky-400 hover:underline inline-flex items-center gap-0.5 font-bold"
+                      >
+                        Buka di Tab Baru <ExternalLink className="w-2.5 h-2.5" />
+                      </a>
+                      {' '}untuk membuka & menyalin tautan lowongan Anda.
+                    </div>
+                  </div>
+
+                  {/* Browser Frame */}
+                  <div className="flex-1 relative min-h-0 w-full bg-white">
+                    {browserUrl ? (
+                      <iframe
+                        src={browserUrl}
+                        className="w-full h-full border-none"
+                        referrerPolicy="no-referrer"
+                        sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+                        title="Sosmed Browser View"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center text-slate-400 dark:text-slate-600 space-y-2 bg-slate-50 dark:bg-slate-950">
+                        <RotateCw className="w-8 h-8 animate-spin" />
+                        <span className="text-[10px] font-black uppercase tracking-wider">Memuat Halaman...</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Footer Copy Helper Controls */}
+                <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-900/80 pt-3 mt-3 shrink-0 text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                  <span className="flex items-center gap-1">
+                    <CheckSquare className="w-3.5 h-3.5 text-emerald-500" />
+                    <span>Tautan akan disalin ke kolom formulir kosong pertama.</span>
+                  </span>
+                  
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => window.open(browserUrl, '_blank')}
+                      className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-colors flex items-center gap-1"
+                    >
+                      <span>Buka Tab Baru</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+              </GlassCard>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Modern Alert Modal Overlay */}

@@ -150,3 +150,46 @@
 body.low-end .bg-mesh-gradient {
   background-image: none !important;
 }
+
+/* Low-end mobile device performance optimizations for smooth page transitions */
+body.low-end {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+body.low-end .glass-glow {
+  box-shadow: none !important;
+}
+
+/* Smooth, subtle pulse animation for icons and indicators (prevents fast flickering) */
+@keyframes gentlePulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.75;
+    transform: scale(0.98);
+  }
+}
+
+.animate-pulse {
+  animation: gentlePulse 3.5s cubic-bezier(0.4, 0, 0.6, 1) infinite !important;
+}
+
+body.low-end .animate-pulse {
+  animation: gentlePulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite !important;
+}
+
+@keyframes fadeInSmooth {
+  from {
+    opacity: 0.92;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeInSmooth 0.12s cubic-bezier(0, 0, 0.2, 1) forwards;
+}

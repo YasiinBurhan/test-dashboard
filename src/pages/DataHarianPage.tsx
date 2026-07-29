@@ -35,6 +35,7 @@ import {
   Clock, 
   Timer,
   Sparkles, 
+  Search,
   FileText, 
   UserCheck, 
   Phone, 
@@ -74,12 +75,17 @@ import {
   Target,
   ListOrdered,
   History,
-  Trash2
+  Trash2,
+  BarChart3,
+  TrendingUp
 } from 'lucide-react';
 
 const getApiBaseUrl = () => {
   if (import.meta.env.VITE_BACKEND_URL) {
     return import.meta.env.VITE_BACKEND_URL;
+  }
+  if (typeof window !== 'undefined') {
+    return window.location.origin;
   }
   return 'https://test-dashboard-lake-pi.vercel.app';
 };
@@ -1219,18 +1225,21 @@ const ReportListCard: React.FC<{
 export const DataHarianPage: React.FC = () => {
   const { userProfile, telegramUser } = useAuth();
   const { reports, submitReport, updateStatus, updatePermission, updateDetails, isLoading } = useReports();
-  const [activeTab, setActiveTab] = useState<'formulir' | 'minggu_ini' | 'pemeriksaan'>('minggu_ini');
+  const [activeTab, setActiveTab] = useState<'formulir' | 'data_pelamar' | 'metrik_rekruter'>('data_pelamar');
+  const [activeSubTab, setActiveSubTab] = useState<'minggu_ini' | 'minggu_lalu' | 'arsip'>('minggu_ini');
 
   useEffect(() => {
     if (userProfile) {
       const isAdm = userProfile.role === 'Admin' || userProfile.role === 'Owner';
-      if (!isAdm && activeTab === 'minggu_ini') {
+      if (!isAdm && activeTab === 'data_pelamar') {
         setActiveTab('formulir');
       }
     }
-  }, [userProfile?.role]);
+  }, [userProfile?.role, activeTab]);
   const [pemeriksaanSubTab, setPemeriksaanSubTab] = useState<'pemeriksaan' | 'arsip'>('pemeriksaan');
   const [pemeriksaanFilter, setPemeriksaanFilter] = useState<'pending' | 'bekerja' | 'tidak_bekerja'>('pending');
+  const [pemeriksaanSearch, setPemeriksaanSearch] = useState('');
+  const [archiveSearch, setArchiveSearch] = useState('');
   const [activeDayTab, setActiveDayTab] = useState<'Semua' | 'Senin' | 'Selasa' | 'Rabu' | 'Kamis' | 'Jumat' | 'Sabtu' | 'Minggu'>('Semua');
   const [selectedRecruiter, setSelectedRecruiter] = useState<string>('Semua');
   const [selectedOnBehalfRecruiter, setSelectedOnBehalfRecruiter] = useState<string>('');
@@ -1241,6 +1250,8 @@ export const DataHarianPage: React.FC = () => {
   const [isChannelDropdownOpen, setIsChannelDropdownOpen] = useState<boolean>(false);
   const [activeGuideTab, setActiveGuideTab] = useState<'langkah' | 'target' | 'ketentuan'>('langkah');
   const [isGuideOpen, setIsGuideOpen] = useState<boolean>(false);
+  const [metrikPeriod, setMetrikPeriod] = useState<'semua' | 'minggu_ini' | 'minggu_lalu'>('semua');
+  const [selectedMetrikRecruiter, setSelectedMetrikRecruiter] = useState<string>('Saya');
   const ITEMS_PER_PAGE = 10;
 
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
@@ -1371,7 +1382,7 @@ export const DataHarianPage: React.FC = () => {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [activeTab, activeDayTab, selectedRecruiter, pemeriksaanSubTab]);
+  }, [activeTab, activeSubTab, activeDayTab, selectedRecruiter, pemeriksaanFilter, pemeriksaanSearch]);
 
   const isAdminOrOwner = userProfile?.role === 'Admin' || userProfile?.role === 'Owner';
   const telegramId = userProfile?.telegramId || String(telegramUser?.id || '');
@@ -1643,7 +1654,7 @@ export const DataHarianPage: React.FC = () => {
   }, [reportsPemeriksaan, currentMondayStr]);
 
   const filteredReportsPemeriksaan = useMemo(() => {
-    return reportsPemeriksaan.filter(r => {
+    let filtered = reportsPemeriksaan.filter(r => {
       const isCheckedThisWeek = !!(r.updatedAt && r.updatedAt >= currentMondayStr);
       const effectiveStatus = isCheckedThisWeek ? (r.result || 'Pending') : 'Pending';
 
@@ -1652,7 +1663,21 @@ export const DataHarianPage: React.FC = () => {
       if (pemeriksaanFilter === 'tidak_bekerja') return effectiveStatus === 'REJECT';
       return false;
     });
-  }, [reportsPemeriksaan, pemeriksaanFilter, currentMondayStr]);
+
+    if (pemeriksaanSearch.trim()) {
+      const searchLower = pemeriksaanSearch.toLowerCase().trim();
+      filtered = filtered.filter(r => {
+        const nameMatch = (r.applicantName || '').toLowerCase().includes(searchLower);
+        const tgMatch = (r.applicantTelegramUsername || '').toLowerCase().includes(searchLower);
+        const waMatch = (r.applicantWhatsapp || '').toLowerCase().includes(searchLower);
+        const uidMatch = (r.uid9Kucing || '').toLowerCase().includes(searchLower);
+        const recMatch = (r.recruiterUsername || r.username || '').toLowerCase().includes(searchLower);
+        return nameMatch || tgMatch || waMatch || uidMatch || recMatch;
+      });
+    }
+
+    return filtered;
+  }, [reportsPemeriksaan, pemeriksaanFilter, pemeriksaanSearch, currentMondayStr]);
 
   const reportsArsip = useMemo(() => {
     return userReports.filter(r => {
@@ -1681,9 +1706,25 @@ export const DataHarianPage: React.FC = () => {
     });
   }, [userReports, lastMondayStr, currentMondayStr]);
 
+  const filteredReportsArsip = useMemo(() => {
+    let filtered = reportsArsip;
+    if (archiveSearch.trim()) {
+      const searchLower = archiveSearch.toLowerCase().trim();
+      filtered = filtered.filter(r => {
+        const nameMatch = (r.applicantName || '').toLowerCase().includes(searchLower);
+        const tgMatch = (r.applicantTelegramUsername || '').toLowerCase().includes(searchLower);
+        const waMatch = (r.applicantWhatsapp || '').toLowerCase().includes(searchLower);
+        const uidMatch = (r.uid9Kucing || '').toLowerCase().includes(searchLower);
+        const recMatch = (r.recruiterUsername || r.username || '').toLowerCase().includes(searchLower);
+        return nameMatch || tgMatch || waMatch || uidMatch || recMatch;
+      });
+    }
+    return filtered;
+  }, [reportsArsip, archiveSearch]);
+
   const archivedWeeks = useMemo(() => {
     const groups: Record<string, DailyReport[]> = {};
-    reportsArsip.forEach(rep => {
+    filteredReportsArsip.forEach(rep => {
       const weekKey = rep.date ? getWIBMondayOfDate(rep.date) : '';
       if (weekKey) {
         if (!groups[weekKey]) {
@@ -1720,7 +1761,204 @@ export const DataHarianPage: React.FC = () => {
         }))
       };
     });
-  }, [reportsArsip]);
+  }, [filteredReportsArsip]);
+
+  const metrikData = useMemo(() => {
+    const filteredReports = reports.filter((r) => {
+      if (!r.applicantWhatsapp && !r.uid9Kucing) return false;
+      if (metrikPeriod === 'minggu_ini') {
+        return r.date >= currentMondayStr;
+      } else if (metrikPeriod === 'minggu_lalu') {
+        return r.date >= lastMondayStr && r.date < currentMondayStr;
+      }
+      return true;
+    });
+
+    const recruiterStatsMap = new Map<string, {
+      key: string;
+      telegramId?: string;
+      username: string;
+      name: string;
+      total: number;
+      acc: number;
+      reject: number;
+      pending: number;
+      dailySubmissions: Record<string, number>;
+    }>();
+
+    recruitersList.forEach(rec => {
+      recruiterStatsMap.set(rec.key, {
+        key: rec.key,
+        telegramId: rec.telegramId,
+        username: rec.username,
+        name: rec.name,
+        total: 0,
+        acc: 0,
+        reject: 0,
+        pending: 0,
+        dailySubmissions: {}
+      });
+    });
+
+    filteredReports.forEach(r => {
+      let foundKey: string | undefined = undefined;
+      const rTgId = r.telegramId ? String(r.telegramId) : undefined;
+      const rCleanUname = (r.recruiterUsername || r.username || '').replace(/@/g, '').trim().toLowerCase();
+
+      for (const rec of recruitersList) {
+        if (rec.telegramId && rTgId && rec.telegramId === rTgId) {
+          foundKey = rec.key;
+          break;
+        }
+        if (rec.cleanUsername && rCleanUname && rec.cleanUsername === rCleanUname) {
+          foundKey = rec.key;
+          break;
+        }
+      }
+
+      if (!foundKey) {
+        foundKey = rTgId || rCleanUname || 'unknown';
+      }
+
+      let stats = recruiterStatsMap.get(foundKey);
+      if (!stats) {
+        const formattedUname = (r.recruiterUsername || r.username) ? formatUsername(r.recruiterUsername || r.username || '') : 'Recruiter';
+        stats = {
+          key: foundKey,
+          telegramId: rTgId,
+          username: formattedUname,
+          name: r.name || r.username || 'Recruiter',
+          total: 0,
+          acc: 0,
+          reject: 0,
+          pending: 0,
+          dailySubmissions: {}
+        };
+        recruiterStatsMap.set(foundKey, stats);
+      }
+
+      stats.total += 1;
+      if (r.result === 'ACC') {
+        stats.acc += 1;
+      } else if (r.result === 'REJECT') {
+        stats.reject += 1;
+      } else {
+        stats.pending += 1;
+      }
+
+      if (r.date) {
+        const dayName = getIndonesianDayName(r.date);
+        stats.dailySubmissions[dayName] = (stats.dailySubmissions[dayName] || 0) + 1;
+      }
+    });
+
+    const recruiterStatsList = Array.from(recruiterStatsMap.values())
+      .filter(s => s.key !== 'unknown' && s.total > 0)
+      .sort((a, b) => {
+        if (b.acc !== a.acc) return b.acc - a.acc;
+        return b.total - a.total;
+      });
+
+    let totalAll = 0;
+    let accAll = 0;
+    let rejectAll = 0;
+    let pendingAll = 0;
+
+    filteredReports.forEach(r => {
+      totalAll += 1;
+      if (r.result === 'ACC') {
+        accAll += 1;
+      } else if (r.result === 'REJECT') {
+        rejectAll += 1;
+      } else {
+        pendingAll += 1;
+      }
+    });
+
+    return {
+      list: recruiterStatsList,
+      overall: {
+        total: totalAll,
+        acc: accAll,
+        reject: rejectAll,
+        pending: pendingAll,
+        successRate: totalAll > 0 ? Math.round((accAll / totalAll) * 100) : 0
+      }
+    };
+  }, [reports, metrikPeriod, recruitersList, currentMondayStr, lastMondayStr]);
+
+  const selectedStats = useMemo(() => {
+    let targetKey = selectedMetrikRecruiter;
+    
+    let foundKey: string | undefined = undefined;
+    let recName = '';
+    let recUsername = '';
+    let recTgId: string | undefined = undefined;
+
+    if (targetKey === 'Saya' || !isAdminOrOwner) {
+      // Current user's info
+      recName = userProfile?.firstName ? (userProfile.lastName ? `${userProfile.firstName} ${userProfile.lastName}` : userProfile.firstName) : (userProfile?.username || 'Saya');
+      recUsername = userProfile?.username ? `@${userProfile.username.replace(/^@/, '')}` : 'Recruiter';
+      recTgId = telegramId;
+      
+      // Find in recruitersList to get key if possible
+      const sCleanUname = (userProfile?.username || telegramUser?.username || '').replace(/@/g, '').trim().toLowerCase();
+      const matchedRec = recruitersList.find(r => {
+        if (r.telegramId && telegramId && String(r.telegramId) === telegramId) return true;
+        if (r.cleanUsername && sCleanUname && r.cleanUsername === sCleanUname) return true;
+        return false;
+      });
+      foundKey = matchedRec?.key;
+    } else {
+      // Selected recruiter from recruitersList
+      const matchedRec = recruitersList.find(r => r.key === targetKey);
+      if (matchedRec) {
+        foundKey = matchedRec.key;
+        recName = matchedRec.name;
+        recUsername = matchedRec.username ? `@${matchedRec.username.replace(/^@/, '')}` : 'Recruiter';
+        recTgId = matchedRec.telegramId ? String(matchedRec.telegramId) : undefined;
+      }
+    }
+
+    // Now find the stats in metrikData.list
+    let statsObj = metrikData.list.find(s => {
+      if (foundKey && s.key === foundKey) return true;
+      if (recTgId && s.telegramId && String(s.telegramId) === recTgId) return true;
+      const sClean = s.username.replace(/@/g, '').trim().toLowerCase();
+      const targetClean = recUsername.replace(/@/g, '').trim().toLowerCase();
+      if (sClean && targetClean && sClean === targetClean) return true;
+      return false;
+    });
+
+    if (!statsObj) {
+      // Default 0 stats
+      statsObj = {
+        key: foundKey || targetKey,
+        telegramId: recTgId,
+        username: recUsername,
+        name: recName,
+        total: 0,
+        acc: 0,
+        reject: 0,
+        pending: 0,
+        dailySubmissions: {}
+      };
+    }
+
+    // Find rank
+    const rankIdx = metrikData.list.findIndex(s => s.key === statsObj?.key);
+    const rank = rankIdx !== -1 ? rankIdx + 1 : undefined;
+
+    return {
+      stats: statsObj,
+      rank,
+      name: recName,
+      username: recUsername,
+      tgId: recTgId,
+      photoUrl: recTgId ? userPhotoMap.get(recTgId)?.photoUrl : undefined
+    };
+  }, [metrikData.list, isAdminOrOwner, selectedMetrikRecruiter, userProfile, telegramUser, telegramId, recruitersList, userPhotoMap]);
+
 
   const paginatedReportsMingguIni = useMemo(() => {
     return filteredReportsMingguIni.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
@@ -2626,33 +2864,80 @@ Grub : ${grupDisplay}`;
           <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           <span>Formulir</span>
         </button>
+        {isAdminOrOwner && (
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('data_pelamar');
+              triggerHaptic('selection');
+            }}
+            className={`shrink-0 flex-1 min-w-[120px] py-2 px-3 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
+              activeTab === 'data_pelamar' ? 'bg-amber-500 text-slate-950 shadow-lg shadow-amber-500/20 scale-[1.02]' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-300/50 dark:hover:bg-white/5'
+            }`}
+          >
+            <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            <span>Data Pelamar</span>
+          </button>
+        )}
         <button
           type="button"
           onClick={() => {
-            setActiveTab('minggu_ini');
+            setActiveTab('metrik_rekruter');
             triggerHaptic('selection');
           }}
           className={`shrink-0 flex-1 min-w-[120px] py-2 px-3 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
-            activeTab === 'minggu_ini' ? 'bg-amber-500 text-slate-950 shadow-lg shadow-amber-500/20 scale-[1.02]' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-300/50 dark:hover:bg-white/5'
+            activeTab === 'metrik_rekruter' ? 'bg-indigo-500 text-slate-950 shadow-lg shadow-indigo-500/20 scale-[1.02]' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-300/50 dark:hover:bg-white/5'
           }`}
         >
-          <CalendarClock className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-          <span>Minggu Ini</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setActiveTab('pemeriksaan');
-            triggerHaptic('selection');
-          }}
-          className={`shrink-0 flex-1 min-w-[150px] py-2 px-3 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
-            activeTab === 'pemeriksaan' ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/20 scale-[1.02]' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-300/50 dark:hover:bg-white/5'
-          }`}
-        >
-          <CheckCircle2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-          <span>Pemeriksaan & Arsip</span>
+          <BarChart3 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+          <span>Status</span>
         </button>
       </div>
+
+      {/* Sub Tabs */}
+      {activeTab === 'data_pelamar' && (
+        <div className="flex bg-slate-100 dark:bg-slate-950/40 p-1 rounded-2xl border border-slate-200 dark:border-slate-900 shadow-inner shrink-0 gap-1 overflow-x-auto no-scrollbar scroll-smooth">
+          <button
+            type="button"
+            onClick={() => {
+              setActiveSubTab('minggu_ini');
+              triggerHaptic('selection');
+            }}
+            className={`shrink-0 flex-1 min-w-[100px] py-2 px-3 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
+              activeSubTab === 'minggu_ini' ? 'bg-amber-500 text-slate-950 shadow-md scale-[1.01]' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <CalendarClock className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            <span>Minggu Ini</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setActiveSubTab('minggu_lalu');
+              triggerHaptic('selection');
+            }}
+            className={`shrink-0 flex-1 min-w-[100px] py-2 px-3 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
+              activeSubTab === 'minggu_lalu' ? 'bg-emerald-500 text-slate-950 shadow-md scale-[1.01]' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <CheckCircle2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            <span>Minggu Lalu</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setActiveSubTab('arsip');
+              triggerHaptic('selection');
+            }}
+            className={`shrink-0 flex-1 min-w-[100px] py-2 px-3 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
+              activeSubTab === 'arsip' ? 'bg-purple-500 text-slate-950 shadow-md scale-[1.01]' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <Archive className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            <span>Arsip</span>
+          </button>
+        </div>
+      )}
 
       {/* Recruiter Filter for Admin/Owner */}
       {isAdminOrOwner && activeTab !== 'formulir' && (
@@ -3633,7 +3918,7 @@ Grub : ${grupDisplay}`;
         </div>
       )}
 
-      {activeTab === 'minggu_ini' && (() => {
+      {activeTab === 'data_pelamar' && activeSubTab === 'minggu_ini' && (() => {
         const dayTabs = [
           { name: 'Semua', label: 'Semua', displayDate: '', isToday: false },
           ...weekDays.map(d => ({
@@ -3724,187 +4009,261 @@ Grub : ${grupDisplay}`;
         );
       })()}
 
-      {activeTab === 'pemeriksaan' && (
+      {activeTab === 'data_pelamar' && (activeSubTab === 'minggu_lalu' || activeSubTab === 'arsip') && (
         <div className="space-y-4">
-          {/* Sub-tab Segmented Control (Pemeriksaan & Arsip) */}
-          <div className="flex p-1 bg-white dark:bg-slate-950/90 rounded-2xl border border-slate-200 dark:border-slate-800/90 shadow-md">
-            <button
-              type="button"
-              onClick={() => { setPemeriksaanSubTab('pemeriksaan'); triggerHaptic('selection'); }}
-              className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase transition-all flex items-center justify-center gap-1.5 ${
-                pemeriksaanSubTab === 'pemeriksaan'
-                  ? 'bg-emerald-500 text-slate-950 shadow-md scale-[1.01]'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-white'
-              }`}
-            >
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              Pemeriksaan ({filteredReportsPemeriksaan.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => { setPemeriksaanSubTab('arsip'); triggerHaptic('selection'); }}
-              className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase transition-all flex items-center justify-center gap-1.5 ${
-                pemeriksaanSubTab === 'arsip'
-                  ? 'bg-purple-500 text-slate-950 shadow-md scale-[1.01]'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-white'
-              }`}
-            >
-              <Archive className="w-3.5 h-3.5" />
-              Arsip Minggu Lalu ({archivedWeeks.length})
-            </button>
-          </div>
-
-          {pemeriksaanSubTab === 'pemeriksaan' ? (
+          {activeSubTab === 'minggu_lalu' ? (
             <div className="space-y-4">
-              {/* Admin Announcement/Broadcast Section */}
+              {/* Broadcast notification if Admin */}
               {isAdminOrOwner && (
-                <div className="space-y-4">
-                  {/* Admin Announcement/Broadcast Section */}
-                  <motion.div 
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="relative overflow-hidden"
-                  >
-                    <GlassCard className="p-4 border-amber-500/30 bg-amber-500/5 relative overflow-hidden group">
-                      <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
-                        <Bell className="w-16 h-16 text-amber-500 rotate-12" />
-                      </div>
-                      
-                      <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-4">
-                        <div className="flex items-start gap-3">
-                          <div className="p-2.5 rounded-2xl bg-amber-500/20 text-amber-500 border border-amber-500/30 shadow-lg shadow-amber-500/5">
-                            <Send className="w-5 h-5" />
-                          </div>
-                          <div>
-                            <h4 className="text-xs sm:text-sm font-black text-amber-400 uppercase tracking-wider">Broadcast Selesai Periksa</h4>
-                            <p className="text-[10px] sm:text-xs text-slate-600 dark:text-slate-400 font-medium max-w-md mt-0.5">
-                              Kirim notifikasi ke seluruh Recruiter bahwa pemeriksaan data rekrutan minggu lalu telah selesai dilakukan.
-                            </p>
-                          </div>
-                        </div>
-                        
-                        <button
-                          type="button"
-                          disabled={isPushingNotif}
-                          onClick={handlePushAuditNotification}
-                          className="w-full md:w-auto px-5 py-2.5 bg-gradient-to-br from-amber-400 to-amber-600 hover:from-amber-300 hover:to-amber-500 disabled:opacity-50 text-slate-950 font-black rounded-2xl text-xs flex items-center justify-center gap-2 cursor-pointer shadow-xl shadow-amber-500/20 transition-all active:scale-95 group/btn"
-                        >
-                          {isPushingNotif ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <Send className="w-4 h-4 group-hover/btn:translate-x-0.5 group-hover/btn:-translate-y-0.5 transition-transform" />
-                          )}
-                          <span>Kirim Broadcast Notifikasi</span>
-                        </button>
-                      </div>
-                    </GlassCard>
-                  </motion.div>
-
-                  {/* Pemeriksaan Report List Section */}
-                  <GlassCard className="p-4 space-y-4 border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/80">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3 gap-3">
-                      <div className="flex items-center gap-2">
-                        <div className="p-2 rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-lg shadow-emerald-500/5">
-                          <CheckCircle2 className="w-5 h-5" />
+                <motion.div 
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="relative overflow-hidden"
+                >
+                  <GlassCard className="p-4 border-amber-500/30 bg-amber-500/5 relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
+                      <Bell className="w-16 h-16 text-amber-500 rotate-12" />
+                    </div>
+                    
+                    <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      <div className="flex items-start gap-3">
+                        <div className="p-2.5 rounded-2xl bg-amber-500/20 text-amber-500 border border-amber-500/30 shadow-lg shadow-amber-500/5">
+                          <Send className="w-5 h-5" />
                         </div>
                         <div>
-                          <h2 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-widest leading-none">
-                            Daftar Pemeriksaan
-                          </h2>
-                          <p className="text-[10px] text-slate-600 dark:text-slate-400 font-bold mt-1">
-                            Periksa dan konfirmasi rekrutan minggu lalu
+                          <h4 className="text-xs sm:text-sm font-black text-amber-400 uppercase tracking-wider">Broadcast Selesai Periksa</h4>
+                          <p className="text-[10px] sm:text-xs text-slate-600 dark:text-slate-400 font-medium max-w-md mt-0.5">
+                            Kirim notifikasi ke seluruh Recruiter bahwa pemeriksaan data rekrutan minggu lalu telah selesai dilakukan.
                           </p>
                         </div>
                       </div>
                       
-                      {/* Compact Segmented Switch to Avoid Multi-tab Overload */}
-                      <div className="flex p-0.5 bg-white dark:bg-slate-950/80 rounded-xl border border-slate-200 dark:border-slate-800/80 self-start sm:self-center overflow-x-auto no-scrollbar max-w-full">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setPemeriksaanFilter('pending');
-                            setCurrentPage(1);
-                            triggerHaptic('selection');
-                          }}
-                          className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all whitespace-nowrap shrink-0 ${
-                            pemeriksaanFilter === 'pending'
-                              ? 'bg-amber-500 text-slate-950 shadow-md font-black'
-                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-white hover:bg-white/5'
-                          }`}
-                        >
-                          Pending ({countPemeriksaanPending})
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setPemeriksaanFilter('bekerja');
-                            setCurrentPage(1);
-                            triggerHaptic('selection');
-                          }}
-                          className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all whitespace-nowrap shrink-0 ${
-                            pemeriksaanFilter === 'bekerja'
-                              ? 'bg-emerald-500 text-slate-950 shadow-md font-black'
-                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-white hover:bg-white/5'
-                          }`}
-                        >
-                          Bekerja ({countPemeriksaanBekerja})
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setPemeriksaanFilter('tidak_bekerja');
-                            setCurrentPage(1);
-                            triggerHaptic('selection');
-                          }}
-                          className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all whitespace-nowrap shrink-0 ${
-                            pemeriksaanFilter === 'tidak_bekerja'
-                              ? 'bg-rose-500 text-slate-950 shadow-md font-black'
-                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-white hover:bg-white/5'
-                          }`}
-                        >
-                          Tidak Bekerja ({countPemeriksaanTidakBekerja})
-                        </button>
+                      <button
+                        type="button"
+                        disabled={isPushingNotif}
+                        onClick={handlePushAuditNotification}
+                        className="w-full md:w-auto px-5 py-2.5 bg-gradient-to-br from-amber-400 to-amber-600 hover:from-amber-300 hover:to-amber-500 disabled:opacity-50 text-slate-950 font-black rounded-2xl text-xs flex items-center justify-center gap-2 cursor-pointer shadow-xl shadow-amber-500/20 transition-all active:scale-95 group/btn"
+                      >
+                        {isPushingNotif ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Send className="w-4 h-4 group-hover/btn:translate-x-0.5 group-hover/btn:-translate-y-0.5 transition-transform" />
+                        )}
+                        <span>Kirim Broadcast Notifikasi</span>
+                      </button>
+                    </div>
+                  </GlassCard>
+                </motion.div>
+              )}
+
+              {/* Informative Header / Alert Card for Recruiters */}
+              {!isAdminOrOwner && (
+                <motion.div
+                  initial={{ opacity: 0, y: -5 }}
+                  animate={{ opacity: 1, y: 0 }}
+                >
+                  <GlassCard className="p-4 border-sky-500/20 bg-sky-500/5 relative overflow-hidden">
+                    <div className="flex items-start gap-3">
+                      <div className="p-2 rounded-xl bg-sky-500/10 text-sky-400 border border-sky-500/25">
+                        <Clock className="w-4 h-4 animate-pulse" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs sm:text-sm font-black text-sky-400 uppercase tracking-wider">Status Pemeriksaan Rekrutan</h4>
+                        <p className="text-[10px] sm:text-xs text-slate-600 dark:text-slate-400 font-medium mt-1 leading-relaxed">
+                          Pemeriksaan rekrutan Anda untuk <strong className="text-sky-300">minggu lalu</strong> sedang berjalan. Di bawah ini, Anda dapat memantau keputusan akhir (ACC/REJECT) dari Admin secara langsung dan transparan.
+                        </p>
                       </div>
                     </div>
-
-                    {filteredReportsPemeriksaan.length === 0 ? (
-                      <div className="text-center py-8 text-xs text-slate-500 dark:text-slate-400 font-medium">
-                        Tidak ada data pemeriksaan dengan status ini.
-                      </div>
-                    ) : (
-                      <>
-                        <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
-                          {paginatedReportsPemeriksaan.map((rep, idx) => (
-                            <ReportListCard 
-                              key={rep.reportId || idx} 
-                              rep={rep} 
-                              isAdminOrOwner={isAdminOrOwner} 
-                              onUpdateStatus={updateStatus} 
-                              onUpdatePermission={updatePermission} 
-                              onUpdateDetails={updateDetails} 
-                              userPhotoMap={userPhotoMap} 
-                              isPemeriksaan={true}
-                            />
-                          ))}
-                        </div>
-                        {renderPagination(filteredReportsPemeriksaan.length)}
-                      </>
-                    )}
                   </GlassCard>
+                </motion.div>
+              )}
+
+              {/* Comprehensive Statistics Dashboard for last week */}
+              <div className="grid grid-cols-3 gap-2 sm:gap-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPemeriksaanFilter('pending');
+                    triggerHaptic('selection');
+                  }}
+                  className={`p-3 rounded-2xl border text-left transition-all relative overflow-hidden flex flex-col justify-between h-20 active:scale-95 ${
+                    pemeriksaanFilter === 'pending'
+                      ? 'bg-amber-500/10 border-amber-500/50 shadow-md ring-1 ring-amber-500/30'
+                      : 'bg-white dark:bg-slate-950/40 border-slate-200 dark:border-slate-800 hover:border-amber-500/30'
+                  }`}
+                >
+                  <div className="flex items-center justify-between w-full">
+                    <span className="text-[9px] sm:text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                      Pending
+                    </span>
+                    <Clock className={`w-3.5 h-3.5 ${pemeriksaanFilter === 'pending' ? 'text-amber-400' : 'text-slate-400'}`} />
+                  </div>
+                  <div>
+                    <span className="text-lg sm:text-2xl font-black text-slate-900 dark:text-white leading-none">
+                      {countPemeriksaanPending}
+                    </span>
+                    <span className="text-[8px] sm:text-[9px] text-slate-400 block font-medium mt-0.5">
+                      Belum diperiksa
+                    </span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPemeriksaanFilter('bekerja');
+                    triggerHaptic('selection');
+                  }}
+                  className={`p-3 rounded-2xl border text-left transition-all relative overflow-hidden flex flex-col justify-between h-20 active:scale-95 ${
+                    pemeriksaanFilter === 'bekerja'
+                      ? 'bg-emerald-500/10 border-emerald-500/50 shadow-md ring-1 ring-emerald-500/30'
+                      : 'bg-white dark:bg-slate-950/40 border-slate-200 dark:border-slate-800 hover:border-emerald-500/30'
+                  }`}
+                >
+                  <div className="flex items-center justify-between w-full">
+                    <span className="text-[9px] sm:text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                      Bekerja
+                    </span>
+                    <CheckCircle2 className={`w-3.5 h-3.5 ${pemeriksaanFilter === 'bekerja' ? 'text-emerald-400' : 'text-slate-400'}`} />
+                  </div>
+                  <div>
+                    <span className="text-lg sm:text-2xl font-black text-slate-900 dark:text-white leading-none">
+                      {countPemeriksaanBekerja}
+                    </span>
+                    <span className="text-[8px] sm:text-[9px] text-slate-400 block font-medium mt-0.5">
+                      Telah disetujui
+                    </span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPemeriksaanFilter('tidak_bekerja');
+                    triggerHaptic('selection');
+                  }}
+                  className={`p-3 rounded-2xl border text-left transition-all relative overflow-hidden flex flex-col justify-between h-20 active:scale-95 ${
+                    pemeriksaanFilter === 'tidak_bekerja'
+                      ? 'bg-rose-500/10 border-rose-500/50 shadow-md ring-1 ring-rose-500/30'
+                      : 'bg-white dark:bg-slate-950/40 border-slate-200 dark:border-slate-800 hover:border-rose-500/30'
+                  }`}
+                >
+                  <div className="flex items-center justify-between w-full">
+                    <span className="text-[9px] sm:text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                      Ditolak
+                    </span>
+                    <XCircle className={`w-3.5 h-3.5 ${pemeriksaanFilter === 'tidak_bekerja' ? 'text-rose-400' : 'text-slate-400'}`} />
+                  </div>
+                  <div>
+                    <span className="text-lg sm:text-2xl font-black text-slate-900 dark:text-white leading-none">
+                      {countPemeriksaanTidakBekerja}
+                    </span>
+                    <span className="text-[8px] sm:text-[9px] text-slate-400 block font-medium mt-0.5">
+                      Tidak bekerja
+                    </span>
+                  </div>
+                </button>
+              </div>
+
+              {/* Progress Bar of Pemeriksaan */}
+              {reportsPemeriksaan.length > 0 && (
+                <div className="p-3 bg-white dark:bg-slate-950/40 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2">
+                  <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-wider">
+                    <span className="text-slate-500 dark:text-slate-400">Progres Verifikasi</span>
+                    <span className="text-slate-900 dark:text-white font-black">
+                      {countPemeriksaanBekerja + countPemeriksaanTidakBekerja} / {reportsPemeriksaan.length} Pelamar ({Math.round(((countPemeriksaanBekerja + countPemeriksaanTidakBekerja) / reportsPemeriksaan.length) * 100)}%)
+                    </span>
+                  </div>
+                  <div className="w-full h-2 bg-slate-100 dark:bg-slate-900 rounded-full overflow-hidden border border-slate-200/50 dark:border-slate-800/50">
+                    <div 
+                      className="h-full bg-gradient-to-r from-emerald-500 to-sky-500 transition-all duration-500 rounded-full"
+                      style={{ width: `${((countPemeriksaanBekerja + countPemeriksaanTidakBekerja) / reportsPemeriksaan.length) * 100}%` }}
+                    />
+                  </div>
                 </div>
               )}
 
-              {!isAdminOrOwner && (
-                 <div className="py-12 text-center text-slate-500 dark:text-slate-400 italic text-xs">
-                    Data pemeriksaan sedang diproses oleh Admin.
-                 </div>
-              )}
+              {/* Main List & Filters Section */}
+              <GlassCard className="p-4 space-y-4 border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/80">
+                <div className="space-y-3">
+                  {/* Title & Actions */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                        <CheckCircle2 className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h2 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider leading-none">
+                          {isAdminOrOwner ? 'Daftar Pemeriksaan' : 'Daftar Laporan Anda'}
+                        </h2>
+                        <p className="text-[9px] text-slate-600 dark:text-slate-400 font-bold mt-1">
+                          {isAdminOrOwner ? 'Verifikasi pelamar rekrutan minggu lalu' : 'Pantau status pelamar rekrutan minggu lalu'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Search Engine Field */}
+                  <div className="relative">
+                    <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                      <Search className="w-3.5 h-3.5 text-slate-400" />
+                    </div>
+                    <input
+                      type="text"
+                      value={pemeriksaanSearch}
+                      onChange={(e) => setPemeriksaanSearch(e.target.value)}
+                      placeholder="Cari nama, Telegram, WhatsApp, atau UID..."
+                      className="w-full pl-9 pr-8 py-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-[11px] focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all shadow-sm dark:text-white"
+                    />
+                    {pemeriksaanSearch && (
+                      <button
+                        onClick={() => setPemeriksaanSearch('')}
+                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {filteredReportsPemeriksaan.length === 0 ? (
+                  <div className="text-center py-10 text-xs text-slate-500 dark:text-slate-400 font-medium space-y-1.5">
+                    <p>Tidak ada data pemeriksaan dengan kriteria ini.</p>
+                    {pemeriksaanSearch && (
+                      <button 
+                        onClick={() => setPemeriksaanSearch('')}
+                        className="text-amber-500 font-black text-[10px] uppercase tracking-wider hover:underline"
+                      >
+                        Hapus Filter Pencarian
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
+                      {paginatedReportsPemeriksaan.map((rep, idx) => (
+                        <ReportListCard 
+                          key={rep.reportId || idx} 
+                          rep={rep} 
+                          isAdminOrOwner={isAdminOrOwner} 
+                          onUpdateStatus={updateStatus} 
+                          onUpdatePermission={updatePermission} 
+                          onUpdateDetails={updateDetails} 
+                          userPhotoMap={userPhotoMap} 
+                          isPemeriksaan={true}
+                        />
+                      ))}
+                    </div>
+                    {renderPagination(filteredReportsPemeriksaan.length)}
+                  </>
+                )}
+              </GlassCard>
             </div>
           ) : (
-            <GlassCard className="p-3.5 sm:p-4 md:p-5 space-y-3.5 border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/80">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 dark:border-slate-800/80 pb-3 gap-2">
+            <GlassCard className="p-3.5 sm:p-4 md:p-5 space-y-4 border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/80">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 dark:border-slate-800/80 pb-3.5 gap-3">
                 <div className="flex items-center gap-2.5">
-                  <div className="p-2 rounded-xl bg-purple-500/15 text-purple-400 border border-purple-500/20 shrink-0">
+                  <div className="p-2.5 rounded-2xl bg-purple-500/15 text-purple-400 border border-purple-500/20 shrink-0">
                     <Archive className="w-4 h-4 sm:w-5 sm:h-5" />
                   </div>
                   <div>
@@ -3912,24 +4271,61 @@ Grub : ${grupDisplay}`;
                       Arsip Data Mingguan
                     </h3>
                     <p className="text-[10px] sm:text-xs text-purple-300/80 font-medium">
-                      Pilih minggu untuk membuka daftar pelamar
+                      Pilih minggu untuk membuka daftar pelamar yang ditolak/selesai
                     </p>
                   </div>
                 </div>
-                <span className="text-[10px] sm:text-xs bg-purple-500/10 text-purple-300 border border-purple-500/20 px-2.5 py-1 rounded-full font-bold w-fit shrink-0">
-                  {reportsArsip.length} Data • {archivedWeeks.length} Minggu
-                </span>
+                <div className="flex items-center gap-2 self-start sm:self-center">
+                  <span className="text-[10px] sm:text-xs bg-purple-500/10 text-purple-300 border border-purple-500/20 px-3 py-1 rounded-full font-bold shadow-sm whitespace-nowrap">
+                    {reportsArsip.length} Data • {archivedWeeks.length} Minggu
+                  </span>
+                </div>
+              </div>
+
+              {/* Search Engine for Archives */}
+              <div className="relative">
+                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                  <Search className="w-3.5 h-3.5 text-slate-400" />
+                </div>
+                <input
+                  type="text"
+                  value={archiveSearch}
+                  onChange={(e) => setArchiveSearch(e.target.value)}
+                  placeholder="Cari nama, Telegram, WhatsApp, atau UID di arsip..."
+                  className="w-full pl-9 pr-8 py-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-[11px] focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all shadow-sm dark:text-white"
+                />
+                {archiveSearch && (
+                  <button
+                    onClick={() => setArchiveSearch('')}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
 
               {archivedWeeks.length === 0 ? (
-                <div className="text-center py-10 text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-medium">Tidak ada data di arsip.</div>
+                <div className="text-center py-12 text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-medium space-y-2">
+                  <p>Tidak ada data arsip dengan kriteria pencarian ini.</p>
+                  {archiveSearch && (
+                    <button 
+                      onClick={() => setArchiveSearch('')}
+                      className="text-purple-500 font-black text-[10px] uppercase tracking-wider hover:underline"
+                    >
+                      Hapus Filter Pencarian
+                    </button>
+                  )}
+                </div>
               ) : (
                 <div className="space-y-3">
                   {archivedWeeks.map((week) => {
                     const isWeekExpanded = expandedArchiveWeekKey === week.weekKey;
-                    const totalPages = Math.max(1, Math.ceil(week.reports.length / ITEMS_PER_PAGE));
-                    const startIndex = (archiveWeekPage - 1) * ITEMS_PER_PAGE;
-                    const paginatedWeekReports = week.reports.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+                    
+                    // Stats for this specific week
+                    const totalReports = week.reports.length;
+                    const accCount = week.reports.filter((r: any) => r.result === 'ACC').length;
+                    const rejectCount = week.reports.filter((r: any) => r.result === 'REJECT').length;
+                    const pendingCount = week.reports.filter((r: any) => !r.result || r.result === 'Pending').length;
 
                     return (
                       <div key={week.weekKey} className="border border-slate-200 dark:border-slate-800/90 bg-white dark:bg-slate-950/70 rounded-2xl overflow-hidden transition-all duration-200 shadow-md hover:border-purple-500/30">
@@ -3959,6 +4355,7 @@ Grub : ${grupDisplay}`;
                             }`}>
                               <Archive className="w-4 h-4 sm:w-5 sm:h-5" />
                             </div>
+                            
                             <div className="flex flex-col gap-1 min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
                                 <span className="text-xs sm:text-sm font-black text-slate-900 dark:text-white tracking-tight">
@@ -3969,10 +4366,26 @@ Grub : ${grupDisplay}`;
                                   {week.rangeText}
                                 </span>
                               </div>
-                              <div className="flex items-center gap-2 text-[10px] sm:text-xs text-slate-600 dark:text-slate-400 font-medium">
-                                <span>{week.reports.length} Data Pelamar</span>
-                                <span className="text-slate-600">•</span>
-                                <span className="text-slate-600 dark:text-slate-400">Periode Selesai</span>
+                              
+                              {/* Micro metrics underneath */}
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-[10px] sm:text-xs text-slate-600 dark:text-slate-400 font-medium">
+                                  {totalReports} Pelamar
+                                </span>
+                                <span className="text-slate-400 dark:text-slate-600 text-[10px] sm:text-xs">•</span>
+                                <div className="flex items-center gap-1 flex-wrap">
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                    ACC: {accCount}
+                                  </span>
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                                    REJ: {rejectCount}
+                                  </span>
+                                  {pendingCount > 0 && (
+                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                                      PEN: {pendingCount}
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                             </div>
                           </div>
@@ -3995,21 +4408,53 @@ Grub : ${grupDisplay}`;
 
                         {/* Expanded Content */}
                         {isWeekExpanded && (
-                          <div className="p-3 sm:p-4 md:p-5 border-t border-slate-200 dark:border-slate-800/80 bg-slate-50 dark:bg-slate-900/30 space-y-3">
-                            <div className="space-y-3">
+                          <div className="p-3 sm:p-4 md:p-5 border-t border-slate-200 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-900/30 space-y-4">
+                            {/* Summary Metrics for this week */}
+                            <div className="grid grid-cols-3 gap-2">
+                              <div className="p-2 sm:p-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 text-center">
+                                <span className="text-[8px] sm:text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase block tracking-wider">Total</span>
+                                <span className="text-base sm:text-xl font-black text-slate-900 dark:text-white mt-1 block leading-none">{totalReports}</span>
+                              </div>
+                              <div className="p-2 sm:p-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 text-center">
+                                <span className="text-[8px] sm:text-[9px] font-bold text-emerald-500 dark:text-emerald-400 uppercase block tracking-wider">ACC (Lulus)</span>
+                                <span className="text-base sm:text-xl font-black text-emerald-400 mt-1 block leading-none">{accCount}</span>
+                              </div>
+                              <div className="p-2 sm:p-3 rounded-2xl border border-rose-500/20 bg-rose-500/5 text-center">
+                                <span className="text-[8px] sm:text-[9px] font-bold text-rose-500 dark:text-rose-400 uppercase block tracking-wider">Ditolak</span>
+                                <span className="text-base sm:text-xl font-black text-rose-400 mt-1 block leading-none">{rejectCount}</span>
+                              </div>
+                            </div>
+
+                            {/* Weekly success bar */}
+                            {totalReports > 0 && (
+                              <div className="p-3 bg-white dark:bg-slate-950/40 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2">
+                                <div className="flex justify-between items-center text-[9px] sm:text-[10px] font-black uppercase tracking-wider">
+                                  <span className="text-slate-500 dark:text-slate-400">Rasio Hasil Seleksi</span>
+                                  <span className="text-purple-400">{Math.round((accCount / totalReports) * 100)}% Lulus</span>
+                                </div>
+                                <div className="w-full h-2 bg-slate-100 dark:bg-slate-900 rounded-full overflow-hidden flex">
+                                  <div className="h-full bg-emerald-500 transition-all duration-500" style={{ width: `${(accCount / totalReports) * 100}%` }} />
+                                  <div className="h-full bg-rose-500 transition-all duration-500" style={{ width: `${(rejectCount / totalReports) * 100}%` }} />
+                                  <div className="h-full bg-amber-500 transition-all duration-500" style={{ width: `${(pendingCount / totalReports) * 100}%` }} />
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Day list grouped */}
+                            <div className="space-y-2.5">
                               {week.dayGroups.map((day, dIdx) => {
                                 const isDayExpanded = expandedArchiveDayKey === `${week.weekKey}-${day.date}`;
                                 const dayName = getIndonesianDayName(day.date);
                                 
                                 return (
-                                  <div key={dIdx} className="rounded-xl border border-slate-200 dark:border-slate-800/60 bg-white dark:bg-slate-950/40 overflow-hidden">
+                                  <div key={dIdx} className="rounded-2xl border border-slate-200 dark:border-slate-800/60 bg-white dark:bg-slate-950/40 overflow-hidden shadow-sm">
                                     <button
                                       type="button"
                                       onClick={() => {
                                         setExpandedArchiveDayKey(isDayExpanded ? null : `${week.weekKey}-${day.date}`);
                                         triggerHaptic('selection');
                                       }}
-                                      className={`w-full px-3 py-2 flex items-center justify-between text-left transition-colors ${
+                                      className={`w-full px-3 py-2.5 flex items-center justify-between text-left transition-colors ${
                                         isDayExpanded ? 'bg-purple-500/10' : 'hover:bg-slate-50 dark:bg-slate-900/50'
                                       }`}
                                     >
@@ -4017,15 +4462,15 @@ Grub : ${grupDisplay}`;
                                         <span className="text-[10px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-wider">
                                           {dayName}, {formatDateDisplay(day.date)}
                                         </span>
-                                        <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-300 dark:border-slate-700">
-                                          {day.reports.length}
+                                        <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-300 dark:border-slate-700">
+                                          {day.reports.length} Pelamar
                                         </span>
                                       </div>
-                                      <ChevronDown className={`w-3.5 h-3.5 text-slate-600 transition-transform ${isDayExpanded ? 'rotate-180' : ''}`} />
+                                      <ChevronDown className={`w-3.5 h-3.5 text-slate-600 transition-transform duration-200 ${isDayExpanded ? 'rotate-180 text-purple-400' : ''}`} />
                                     </button>
                                     
                                     {isDayExpanded && (
-                                      <div className="p-2 space-y-2 border-t border-slate-200 dark:border-slate-800/40 bg-slate-50 dark:bg-slate-900/20">
+                                      <div className="p-2 space-y-2 border-t border-slate-200 dark:border-slate-800/40 bg-slate-50/50 dark:bg-slate-900/20">
                                         {day.reports.map((rep, rIdx) => (
                                           <ReportListCard 
                                             key={rep.reportId || rIdx} 
@@ -4053,6 +4498,391 @@ Grub : ${grupDisplay}`;
               )}
             </GlassCard>
           )}
+        </div>
+      )}
+
+      {activeTab === 'metrik_rekruter' && (
+        <div className="max-w-4xl mx-auto space-y-4">
+          {/* Header Title */}
+          <GlassCard className="p-4 border-indigo-500/20 bg-indigo-500/5 relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none">
+              <BarChart3 className="w-20 h-20 text-indigo-500 rotate-12" />
+            </div>
+            
+            <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <div className="p-2.5 rounded-2xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 shadow-lg shadow-indigo-500/5">
+                  <BarChart3 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="text-xs sm:text-sm font-black text-indigo-400 uppercase tracking-wider">Status Rekruter</h4>
+                  <p className="text-[10px] sm:text-xs text-slate-600 dark:text-slate-400 font-medium max-w-md mt-0.5">
+                    Analisis data, performa, dan statistik kelulusan dari pelamar yang direkrut.
+                  </p>
+                </div>
+              </div>
+
+              {/* Segmented Period Selection Pills */}
+              <div className="flex p-0.5 bg-white dark:bg-slate-950/85 rounded-xl border border-slate-200 dark:border-slate-800/80 self-start md:self-center overflow-x-auto no-scrollbar">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMetrikPeriod('semua');
+                    triggerHaptic('selection');
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-[9px] sm:text-[10px] font-black uppercase transition-all whitespace-nowrap shrink-0 ${
+                    metrikPeriod === 'semua'
+                      ? 'bg-indigo-500 text-slate-950 shadow-sm font-black'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-white hover:bg-white/5'
+                  }`}
+                >
+                  Semua
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMetrikPeriod('minggu_ini');
+                    triggerHaptic('selection');
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-[9px] sm:text-[10px] font-black uppercase transition-all whitespace-nowrap shrink-0 ${
+                    metrikPeriod === 'minggu_ini'
+                      ? 'bg-indigo-500 text-slate-950 shadow-sm font-black'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-white hover:bg-white/5'
+                  }`}
+                >
+                  Minggu Ini
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMetrikPeriod('minggu_lalu');
+                    triggerHaptic('selection');
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-[9px] sm:text-[10px] font-black uppercase transition-all whitespace-nowrap shrink-0 ${
+                    metrikPeriod === 'minggu_lalu'
+                      ? 'bg-indigo-500 text-slate-950 shadow-sm font-black'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-white hover:bg-white/5'
+                  }`}
+                >
+                  Minggu Lalu
+                </button>
+              </div>
+            </div>
+          </GlassCard>
+
+          {/* Quick Overall Summary Dashboard */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="p-3 bg-white dark:bg-slate-950/40 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-col justify-between h-20 shadow-sm relative overflow-hidden group hover:border-indigo-500/20 transition-all">
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">Total Pelamar</span>
+                <Users className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-400 transition-colors" />
+              </div>
+              <div>
+                <span className="text-lg sm:text-2xl font-black text-slate-900 dark:text-white leading-none">
+                  {metrikData.overall.total}
+                </span>
+                <span className="text-[8px] sm:text-[9px] text-slate-400 block font-medium mt-0.5">
+                  Laporan diserahkan
+                </span>
+              </div>
+            </div>
+
+            <div className="p-3 bg-white dark:bg-slate-950/40 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-col justify-between h-20 shadow-sm relative overflow-hidden group hover:border-emerald-500/20 transition-all">
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">ACC (Lulus)</span>
+                <CheckCircle2 className="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-400 transition-colors" />
+              </div>
+              <div>
+                <span className="text-lg sm:text-2xl font-black text-emerald-400 leading-none">
+                  {metrikData.overall.acc}
+                </span>
+                <span className="text-[8px] sm:text-[9px] text-slate-400 block font-medium mt-0.5">
+                  Telah disetujui
+                </span>
+              </div>
+            </div>
+
+            <div className="p-3 bg-white dark:bg-slate-950/40 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-col justify-between h-20 shadow-sm relative overflow-hidden group hover:border-rose-500/20 transition-all">
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">REJECT (Ditolak)</span>
+                <XCircle className="w-3.5 h-3.5 text-slate-400 group-hover:text-rose-400 transition-colors" />
+              </div>
+              <div>
+                <span className="text-lg sm:text-2xl font-black text-rose-400 leading-none">
+                  {metrikData.overall.reject}
+                </span>
+                <span className="text-[8px] sm:text-[9px] text-slate-400 block font-medium mt-0.5">
+                  Tidak memenuhi syarat
+                </span>
+              </div>
+            </div>
+
+            <div className="p-3 bg-white dark:bg-slate-950/40 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-col justify-between h-20 shadow-sm relative overflow-hidden group hover:border-indigo-500/20 transition-all">
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">Rasio Kelulusan</span>
+                <TrendingUp className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-400 transition-colors" />
+              </div>
+              <div>
+                <span className="text-lg sm:text-2xl font-black text-indigo-400 leading-none">
+                  {metrikData.overall.successRate}%
+                </span>
+                <span className="text-[8px] sm:text-[9px] text-slate-400 block font-medium mt-0.5">
+                  Rasio ACC / Total
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Core Analytics Card */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            
+            {/* Left Column: Personal Performance Score / KPIs */}
+            <div className="md:col-span-1 space-y-4">
+              <GlassCard className="p-4 border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 space-y-4 shadow-sm">
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-900 pb-3">
+                  <h3 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-1.5">
+                    <Target className="w-4 h-4 text-indigo-400" />
+                    {isAdminOrOwner ? 'Analisis Performa' : 'Performa Saya'}
+                  </h3>
+                  {selectedStats.rank !== undefined && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-black bg-indigo-500/10 text-indigo-400 border border-indigo-500/30 shadow-sm uppercase tracking-wide">
+                      Peringkat #{selectedStats.rank}
+                    </span>
+                  )}
+                </div>
+
+                {/* Recruiter Selector Dropdown for Admin or Owner */}
+                {isAdminOrOwner && (
+                  <div className="space-y-1 bg-slate-50 dark:bg-slate-900/60 p-2.5 rounded-xl border border-slate-100 dark:border-slate-900">
+                    <label className="text-[9px] font-black uppercase text-slate-500 tracking-wider block mb-1">Pilih Recruiter</label>
+                    <select
+                      value={selectedMetrikRecruiter}
+                      onChange={(e) => {
+                        setSelectedMetrikRecruiter(e.target.value);
+                        triggerHaptic('selection');
+                      }}
+                      className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold rounded-lg px-2.5 py-1.5 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    >
+                      <option value="Saya">Saya ({userProfile?.firstName || userProfile?.username || 'Admin'})</option>
+                      {recruitersList.map((rec) => (
+                        <option key={rec.key} value={rec.key}>
+                          {rec.name} (@{rec.username || rec.key})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-center shrink-0 overflow-hidden">
+                      {selectedStats.photoUrl ? (
+                        <img 
+                          src={selectedStats.photoUrl} 
+                          alt={selectedStats.name}
+                          referrerPolicy="no-referrer"
+                          className="w-full h-full object-cover rounded-xl"
+                        />
+                      ) : (
+                        <div className="w-full h-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-slate-950 font-black text-xs rounded-xl shadow-md">
+                          {selectedStats.name.charAt(0).toUpperCase() || 'R'}
+                        </div>
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <span className="text-xs sm:text-sm font-black text-slate-900 dark:text-white block truncate leading-none">
+                        {selectedStats.name}
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-medium block mt-1">
+                        {selectedStats.username}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Visual breakdown for Selected Stats */}
+                  <div className="grid grid-cols-3 gap-1 bg-slate-50 dark:bg-slate-900/60 p-2.5 rounded-xl border border-slate-100 dark:border-slate-900 text-center">
+                    <div>
+                      <span className="text-[8px] text-slate-400 font-bold block uppercase tracking-wider">Total</span>
+                      <span className="text-sm font-black text-slate-900 dark:text-white mt-0.5 block">{selectedStats.stats.total}</span>
+                    </div>
+                    <div>
+                      <span className="text-[8px] text-emerald-500 font-bold block uppercase tracking-wider">ACC</span>
+                      <span className="text-sm font-black text-emerald-400 mt-0.5 block">{selectedStats.stats.acc}</span>
+                    </div>
+                    <div>
+                      <span className="text-[8px] text-rose-500 font-bold block uppercase tracking-wider">REJECT</span>
+                      <span className="text-sm font-black text-rose-400 mt-0.5 block">{selectedStats.stats.reject}</span>
+                    </div>
+                  </div>
+
+                  {/* Ratio Indicator bar */}
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between items-center text-[9px] sm:text-[10px] font-black uppercase tracking-wider">
+                      <span className="text-slate-500 dark:text-slate-400">Rasio Seleksi</span>
+                      <span className="text-indigo-400">{selectedStats.stats.total > 0 ? Math.round((selectedStats.stats.acc / selectedStats.stats.total) * 100) : 0}% ACC</span>
+                    </div>
+                    <div className="w-full h-2 bg-slate-100 dark:bg-slate-900 rounded-full overflow-hidden flex">
+                      <div className="h-full bg-emerald-500 transition-all duration-500" style={{ width: `${selectedStats.stats.total > 0 ? (selectedStats.stats.acc / selectedStats.stats.total) * 100 : 0}%` }} />
+                      <div className="h-full bg-rose-500 transition-all duration-500" style={{ width: `${selectedStats.stats.total > 0 ? (selectedStats.stats.reject / selectedStats.stats.total) * 100 : 0}%` }} />
+                      <div className="h-full bg-amber-500 transition-all duration-500" style={{ width: `${selectedStats.stats.total > 0 ? (selectedStats.stats.pending / selectedStats.stats.total) * 100 : 0}%` }} />
+                    </div>
+                    <div className="flex justify-between text-[8px] text-slate-400 font-medium">
+                      <span>Selesai: {selectedStats.stats.acc + selectedStats.stats.reject}</span>
+                      <span>Pending: {selectedStats.stats.pending}</span>
+                    </div>
+                  </div>
+
+                  {/* Target Tracker (e.g. Target 5 submissions per week) */}
+                  <div className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-100 dark:border-slate-900 space-y-2">
+                    <div className="flex justify-between items-center text-[9px] font-black uppercase tracking-wide">
+                      <span className="text-slate-500">Target Mingguan</span>
+                      <span className="text-indigo-400">{selectedStats.stats.acc} / 5 ACC</span>
+                    </div>
+                    <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-900 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full"
+                        style={{ width: `${Math.min((selectedStats.stats.acc / 5) * 100, 100)}%` }}
+                      />
+                    </div>
+                    <span className="text-[8px] text-slate-400 block font-medium">
+                      {selectedStats.stats.acc >= 5 ? '🎉 Target ACC minggu ini telah tercapai!' : `Kurang ${5 - selectedStats.stats.acc} ACC lagi untuk mencapai KPI target minggu ini.`}
+                    </span>
+                  </div>
+                </div>
+              </GlassCard>
+            </div>
+
+            {/* Right Column: Complete Recruiter Performance Ranking / Leaderboard */}
+            <div className="md:col-span-2 space-y-4">
+              <GlassCard className="p-4 border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 space-y-4 shadow-sm">
+                <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-900 pb-3.5">
+                  <div>
+                    <h3 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
+                      <ListOrdered className="w-4 h-4 text-indigo-400" />
+                      Leaderboard Performa Recruiter
+                    </h3>
+                    <p className="text-[9px] text-slate-500 dark:text-slate-400 font-bold mt-1">
+                      Peringkat recruiter berdasarkan jumlah ACC pelamar lulus
+                    </p>
+                  </div>
+                  <span className="text-[9px] sm:text-[10px] font-black bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-2 py-0.5 rounded-lg uppercase tracking-wider">
+                    {metrikData.list.length} Recruiter Aktif
+                  </span>
+                </div>
+
+                {metrikData.list.length === 0 ? (
+                  <div className="text-center py-12 text-xs text-slate-500 dark:text-slate-400 font-medium">
+                    Tidak ada aktivitas perekrutan pada periode ini.
+                  </div>
+                ) : (
+                  <div className="space-y-3 max-h-[80vh] overflow-y-auto pr-1">
+                    {metrikData.list.map((rec, idx) => {
+                      const sTgId = rec.telegramId ? String(rec.telegramId) : undefined;
+                      const myCleanUname = (userProfile?.username || telegramUser?.username || '').replace(/@/g, '').trim().toLowerCase();
+                      const isCurrentUser = (sTgId && telegramId && sTgId === telegramId) || 
+                        (rec.username.replace(/@/g, '').trim().toLowerCase() === myCleanUname);
+
+                      const successRate = rec.total > 0 ? Math.round((rec.acc / rec.total) * 100) : 0;
+
+                      const matched = (rec.telegramId ? userPhotoMap.get(rec.telegramId) : undefined) ||
+                                      (rec.key ? userPhotoMap.get(rec.key) : undefined) ||
+                                      userPhotoMap.get(rec.username.replace(/@/g, '').toLowerCase().trim());
+                      const photoUrl = matched?.photoUrl;
+
+                      return (
+                        <div 
+                          key={rec.key}
+                          className={`p-3 rounded-2xl border transition-all duration-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                            isCurrentUser 
+                              ? 'bg-indigo-500/5 border-indigo-500/30 shadow-md ring-1 ring-indigo-500/20' 
+                              : 'bg-white dark:bg-slate-950/20 border-slate-100 dark:border-slate-900 hover:border-slate-200 dark:hover:border-slate-800'
+                          }`}
+                        >
+                          {/* Left info: rank, name */}
+                          <div className="flex items-center gap-3 min-w-0">
+                            {/* Rank circle badge */}
+                            <div className={`w-6 h-6 rounded-full flex items-center justify-center font-black text-[10px] shrink-0 ${
+                              idx === 0 
+                                ? 'bg-amber-400 text-slate-950 shadow-md' 
+                                : idx === 1 
+                                ? 'bg-slate-300 text-slate-950 shadow-md' 
+                                : idx === 2 
+                                ? 'bg-amber-600 text-slate-950 shadow-md' 
+                                : 'bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800'
+                            }`}>
+                              {idx + 1}
+                            </div>
+
+                            {/* Profile details */}
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-center shrink-0">
+                                {photoUrl ? (
+                                  <img 
+                                    src={photoUrl} 
+                                    alt={rec.name}
+                                    referrerPolicy="no-referrer"
+                                    className="w-full h-full object-cover rounded-lg"
+                                  />
+                                ) : (
+                                  <span className="text-[10px] font-black text-slate-500">
+                                    {rec.name.charAt(0).toUpperCase()}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="min-w-0">
+                                <span className="text-xs sm:text-sm font-black text-slate-900 dark:text-white block truncate leading-none flex items-center gap-1.5">
+                                  {rec.name}
+                                  {isCurrentUser && (
+                                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" />
+                                  )}
+                                </span>
+                                <span className="text-[10px] text-slate-400 font-medium block mt-1 truncate">
+                                  {rec.username}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Right info: metrics and ratios */}
+                          <div className="flex items-center justify-between sm:justify-end gap-4 sm:gap-6 shrink-0 pt-2 sm:pt-0 border-t border-dashed border-slate-100 dark:border-slate-900 sm:border-0">
+                            {/* Breakdown counters */}
+                            <div className="flex items-center gap-2.5">
+                              <div className="text-center">
+                                <span className="text-[8px] text-slate-400 font-bold block uppercase tracking-wider">Total</span>
+                                <span className="text-xs font-black text-slate-800 dark:text-slate-200 mt-0.5 block">{rec.total}</span>
+                              </div>
+                              <div className="text-center">
+                                <span className="text-[8px] text-emerald-500 font-bold block uppercase tracking-wider">ACC</span>
+                                <span className="text-xs font-black text-emerald-400 mt-0.5 block">{rec.acc}</span>
+                              </div>
+                              <div className="text-center">
+                                <span className="text-[8px] text-rose-500 font-bold block uppercase tracking-wider">REJECT</span>
+                                <span className="text-xs font-black text-rose-400 mt-0.5 block">{rec.reject}</span>
+                              </div>
+                            </div>
+
+                            {/* Success progress bar and rate */}
+                            <div className="flex items-center gap-2">
+                              <div className="text-right">
+                                <span className="text-[8px] text-indigo-400 font-bold block uppercase tracking-wider">ACC Rate</span>
+                                <span className="text-xs font-black text-indigo-400 mt-0.5 block">{successRate}%</span>
+                              </div>
+                              
+                              {/* Small round ratio bar */}
+                              <div className="w-1.5 h-7 bg-slate-100 dark:bg-slate-900 rounded-full overflow-hidden flex flex-col">
+                                <div className="w-full bg-emerald-500" style={{ height: `${successRate}%` }} />
+                                <div className="w-full bg-rose-500 flex-1" />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </GlassCard>
+            </div>
+          </div>
         </div>
       )}
 

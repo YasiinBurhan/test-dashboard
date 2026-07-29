@@ -4,7 +4,7 @@ import { AzurLizeLogo } from '../components/logo/AzurLizeLogo';
 import { Button } from '../components/common/Button';
 import { Input } from '../components/common/Input';
 import { useAuth } from '../hooks/useAuth';
-import { LogIn, UserPlus, ChevronLeft, Hash, User, ShieldAlert, Sparkles, Lock } from 'lucide-react';
+import { LogIn, UserPlus, ChevronLeft, Hash, User, ShieldAlert, Lock, Smartphone, HelpCircle } from 'lucide-react';
 
 export const BrowserNoticePage: React.FC = () => {
   const { loginManually, registerManually } = useAuth();
@@ -17,20 +17,15 @@ export const BrowserNoticePage: React.FC = () => {
   const [username, setUsername] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [isCapacitor, setIsCapacitor] = useState(false);
+  const [isAndroid, setIsAndroid] = useState(false);
   const [showForgotPinMsg, setShowForgotPinMsg] = useState(false);
 
-  // Detect if running inside a Capacitor/Native WebView APK environment
+  // Detect if running on an Android device browser or user agent
   useEffect(() => {
-    const isCap = typeof window !== 'undefined' && (
-      (window as any).Capacitor ||
-      window.location.protocol === 'capacitor:' ||
-      navigator.userAgent.includes('Capacitor') ||
-      (navigator.userAgent.includes('Android') && !navigator.userAgent.includes('Chrome')) // Webview fallback
-    );
-    setIsCapacitor(Boolean(isCap));
-    if (isCap) {
-      // Auto-open manual login form inside the APK for better UX
+    const isAnd = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
+    setIsAndroid(isAnd);
+    if (isAnd) {
+      // Auto-open login form directly for Android users
       setShowManualForm(true);
     }
   }, []);
@@ -94,15 +89,43 @@ export const BrowserNoticePage: React.FC = () => {
           <AzurLizeLogo size="lg" />
         </div>
 
-        {/* Capacitor / APK Environment Detector Badge */}
-        {isCapacitor && (
-          <div className="mx-auto inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[11px] font-bold">
-            <Sparkles className="w-3 h-3 animate-pulse" /> Terdeteksi di Aplikasi Android (APK)
-          </div>
-        )}
+        {!isAndroid ? (
+          /* BLOCK SCREEN FOR NON-ANDROID DEVICES */
+          <div className="space-y-6">
+            <div className="w-16 h-16 rounded-3xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center mx-auto text-amber-500 dark:text-amber-400">
+              <Smartphone className="w-8 h-8" />
+            </div>
 
-        {!showManualForm ? (
-          /* SECTION 1: STANDARD INSTRUCTIONS */
+            <div className="space-y-2">
+              <h2 className="text-xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+                Akses Khusus Perangkat Android
+              </h2>
+              <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed font-medium">
+                Maaf, web ini dirancang khusus untuk dibuka melalui browser perangkat <span className="text-sky-400 font-bold">Android</span> atau langsung di dalam <span className="text-sky-400 font-bold">Telegram Mini App</span>.
+              </p>
+            </div>
+
+            <div className="bg-slate-50 dark:bg-slate-900/80 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 text-left space-y-2 text-xs">
+              <p className="font-bold text-slate-800 dark:text-slate-200">Cara Mengakses Aplikasi:</p>
+              <ul className="list-disc list-inside space-y-1.5 text-slate-700 dark:text-slate-300 font-medium">
+                <li>Buka link ini menggunakan smartphone <strong className="text-sky-400 font-bold">Android</strong> Anda.</li>
+                <li>Atau buka Bot Rekrutmen kami di Telegram: <strong className="text-sky-400 font-bold">@azurlize_recruitment_bot</strong> lalu jalankan aplikasi.</li>
+              </ul>
+            </div>
+
+            <div className="pt-2 border-t border-slate-200 dark:border-slate-800/60 flex flex-col gap-3">
+              <Button
+                fullWidth
+                onClick={() => {
+                  window.location.href = 'https://t.me/azurlize_recruitment_bot';
+                }}
+              >
+                Buka Telegram Bot
+              </Button>
+            </div>
+          </div>
+        ) : !showManualForm ? (
+          /* SECTION 1: INSTRUCTIONS FOR ANDROID USERS IF NOT CURRENTLY SHOWING FORM (Fallback option) */
           <div className="space-y-6">
             <div className="w-16 h-16 rounded-3xl bg-sky-500/10 border border-sky-500/30 flex items-center justify-center mx-auto text-sky-500 dark:text-sky-400 text-3xl">
               📱
@@ -110,19 +133,19 @@ export const BrowserNoticePage: React.FC = () => {
 
             <div className="space-y-2">
               <h2 className="text-xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-                Akses Khusus Telegram Bot
+                Akses Perangkat Android
               </h2>
               <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
-                Aplikasi rekrutmen <strong className="text-sky-400 font-bold">AzurLizeTeam</strong> dikhususkan untuk dibuka melalui Telegram Mini App dari Bot kami.
+                Anda berada di perangkat Android. Kami merekomendasikan membuka aplikasi rekrutmen <strong className="text-sky-400 font-bold">AzurLizeTeam</strong> langsung melalui Telegram Mini App dari Bot kami.
               </p>
             </div>
 
             <div className="bg-slate-50 dark:bg-slate-900/80 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 text-left space-y-2 text-xs">
-              <p className="font-bold text-slate-200">Cara Membuka Aplikasi:</p>
+              <p className="font-bold text-slate-800 dark:text-slate-200">Buka via Telegram:</p>
               <ol className="list-decimal list-inside space-y-1.5 text-slate-700 dark:text-slate-300 font-medium">
-                <li>Buka aplikasi Telegram di perangkat Anda.</li>
+                <li>Buka aplikasi Telegram Anda.</li>
                 <li>Cari Bot Rekrutmen <strong className="text-sky-400 font-bold">@azurlize_recruitment_bot</strong></li>
-                <li>Tekan tombol <strong className="text-sky-400 font-bold">"Buka Web App"</strong> atau kirim perintah <code className="text-amber-300 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-700">/app</code></li>
+                <li>Tekan tombol <strong className="text-sky-400 font-bold">"Buka Web App"</strong> atau ketik <code className="text-amber-300 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-700">/app</code></li>
               </ol>
             </div>
 
@@ -141,28 +164,25 @@ export const BrowserNoticePage: React.FC = () => {
                 onClick={() => setShowManualForm(true)}
                 className="text-xs font-bold text-sky-400 hover:text-sky-300 transition-colors py-1 hover:underline cursor-pointer"
               >
-                Gunakan Akses Manual / Masuk dari APK
+                Tetap Masuk via Web Browser
               </button>
             </div>
           </div>
         ) : (
-          /* SECTION 2: MANUAL LOGIN / REGISTER FORM FOR APK / STANDALONE BROWSER */
+          /* SECTION 2: MANUAL LOGIN / REGISTER FORM FOR GENUINE ANDROID USERS */
           <div className="space-y-4 text-left">
             <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800/60 pb-3">
               <button
                 type="button"
                 onClick={() => {
-                  if (!isCapacitor) {
-                    setShowManualForm(false);
-                  }
+                  setShowManualForm(false);
                 }}
-                disabled={isCapacitor}
-                className={`flex items-center gap-1 text-xs font-bold transition-colors ${isCapacitor ? 'text-slate-500 dark:text-slate-400 cursor-not-allowed' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:text-white cursor-pointer'}`}
+                className="flex items-center gap-1 text-xs font-bold transition-colors text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white cursor-pointer"
               >
-                {!isCapacitor && <ChevronLeft className="w-4 h-4" />} Akses Manual
+                <ChevronLeft className="w-4 h-4" /> Buka via Bot
               </button>
-              <span className="text-[10px] bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 px-2 py-0.5 rounded-full text-slate-700 dark:text-slate-300 font-bold">
-                APK & Browser
+              <span className="text-[10px] bg-sky-500/10 border border-sky-500/30 px-2 py-0.5 rounded-full text-sky-400 font-bold">
+                Browser Android
               </span>
             </div>
 
@@ -178,7 +198,7 @@ export const BrowserNoticePage: React.FC = () => {
                 }`}
               >
                 <LogIn className="w-3.5 h-3.5" />
-                <span>Masuk Akun Active</span>
+                <span>Masuk Akun</span>
               </button>
               <button
                 type="button"
@@ -204,9 +224,9 @@ export const BrowserNoticePage: React.FC = () => {
             {mode === 'login' ? (
               <form onSubmit={handleLogin} className="space-y-4">
                 <div className="bg-sky-500/10 border border-sky-500/20 p-3 rounded-2xl text-xs text-sky-300 space-y-1">
-                  <p className="font-bold">🔐 Sudah Terdaftar di Firestore?</p>
+                  <p className="font-bold">🔐 Masuk Akun Aktif Anda</p>
                   <p className="text-[11px] text-slate-700 dark:text-slate-300">
-                    Masukkan ID Telegram Anda untuk langsung masuk ke dashboard tanpa registrasi ulang.
+                    Masukkan ID Telegram Anda untuk masuk ke dashboard secara instan.
                   </p>
                 </div>
 
@@ -242,18 +262,18 @@ export const BrowserNoticePage: React.FC = () => {
                 {showForgotPinMsg && (
                   <div className="bg-amber-500/10 border border-amber-500/25 p-3.5 rounded-2xl text-[11px] text-amber-300 space-y-1.5 leading-relaxed border-dashed">
                     <p className="font-bold flex items-center gap-1.5 text-amber-400 text-xs">
-                      💡 Cara Mendapatkan / Memulihkan PIN:
+                      💡 Cara Mendapatkan PIN:
                     </p>
                     <ol className="list-decimal list-inside space-y-1 pl-1 text-slate-300 font-medium text-left">
-                      <li>Buka Bot Telegram Resmi kami: <a href="https://t.me/azurlize_recruitment_bot" target="_blank" rel="noopener noreferrer" className="text-sky-400 underline hover:text-sky-300 font-bold">@azurlize_recruitment_bot</a></li>
-                      <li>Kirim perintah <code className="text-amber-300 bg-slate-800/80 px-1 py-0.5 rounded border border-slate-700 font-mono">/pin</code> di dalam obrolan bot.</li>
-                      <li>Bot akan secara otomatis mengirimkan <b>ID Telegram</b> dan <b>Kode PIN login</b> Anda secara pribadi, instan, dan aman.</li>
+                      <li>Buka Bot Telegram: <a href="https://t.me/azurlize_recruitment_bot" target="_blank" rel="noopener noreferrer" className="text-sky-400 underline hover:text-sky-300 font-bold">@azurlize_recruitment_bot</a></li>
+                      <li>Kirim perintah <code className="text-amber-300 bg-slate-800/80 px-1 py-0.5 rounded border border-slate-700 font-mono">/pin</code></li>
+                      <li>Bot akan mengirimkan ID Telegram dan Kode PIN login Anda secara instan dan aman.</li>
                     </ol>
                   </div>
                 )}
 
                 <p className="text-[10px] text-slate-500 dark:text-slate-400 -mt-2 pl-1 leading-relaxed">
-                  *Dapatkan ID dari bot Telegram seperti <span className="text-sky-400">@userinfobot</span> (ketik /id).
+                  *Dapatkan ID dari bot Telegram seperti <span className="text-sky-400 font-bold">@userinfobot</span> (ketik /id).
                 </p>
 
                 <Button
@@ -263,7 +283,7 @@ export const BrowserNoticePage: React.FC = () => {
                   icon={<LogIn className="w-4 h-4" />}
                   className="bg-sky-600 hover:bg-sky-500 text-white rounded-2xl cursor-pointer font-bold py-3"
                 >
-                  Masuk Sesi Sekarang
+                  Masuk Sekarang
                 </Button>
               </form>
             ) : (
@@ -280,7 +300,7 @@ export const BrowserNoticePage: React.FC = () => {
                 />
 
                 <Input
-                  label="Nama Lengkap / Panggilan"
+                  label="Nama Lengkap"
                   type="text"
                   placeholder="Masukkan Nama Anda"
                   icon={<User className="w-4 h-4" />}
@@ -305,21 +325,9 @@ export const BrowserNoticePage: React.FC = () => {
                   icon={<UserPlus className="w-4 h-4" />}
                   className="bg-sky-600 hover:bg-sky-500 text-white rounded-2xl cursor-pointer font-bold py-3"
                 >
-                  Lanjut Pendaftaran Baru
+                  Daftar Akun Baru
                 </Button>
               </form>
-            )}
-
-            {!isCapacitor && (
-              <div className="text-center pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowManualForm(false)}
-                  className="text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-700 dark:text-slate-300 hover:underline cursor-pointer"
-                >
-                  Lihat Cara Buka dengan Bot Telegram
-                </button>
-              </div>
             )}
           </div>
         )}

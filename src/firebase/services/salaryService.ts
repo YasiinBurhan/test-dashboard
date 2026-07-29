@@ -128,31 +128,28 @@ export async function calculateRecruiterMetrics(
     const totalPostingan = reportsInWeek.reduce((sum, r) => sum + (Number(r.posting) || 0), 0);
 
     const currentMondayStr = getWIBMonday(0);
+    const isPeriodInPemeriksaan = periodeMondayStr < currentMondayStr;
 
-    // 3. Deklarasi T0: Count detailed applicant reports where grup is T0 (must be in examination tab)
-    const deklarasiT0 = reportsInWeek
-      .filter(r => r.grup === 'T0' && (r.applicantWhatsapp || r.uid9Kucing || r.applicantTelegramUsername) && r.date < currentMondayStr)
-      .length;
+    // 3. Deklarasi T0: Count detailed applicant reports where grup is T0 in this week (regardless of verification)
+    const deklarasiT0 = reportsInWeek.filter(r => r.grup === 'T0' && (r.applicantWhatsapp || r.uid9Kucing || r.applicantTelegramUsername)).length;
 
-    // 4. Sebenarnya T0: Verified (ACC) T0 recruits (must be in examination tab)
-    const sebenarnyaT0 = reportsInWeek
-      .filter(r => r.result === 'ACC' && r.grup === 'T0' && (r.applicantWhatsapp || r.uid9Kucing || r.applicantTelegramUsername) && r.date < currentMondayStr)
-      .length;
+    // 4. Sebenarnya T0: Verified (ACC) T0 recruits in this week (only retrieved when in Pemeriksaan phase)
+    const sebenarnyaT0 = isPeriodInPemeriksaan
+      ? reportsInWeek.filter(r => r.result === 'ACC' && r.grup === 'T0' && (r.applicantWhatsapp || r.uid9Kucing || r.applicantTelegramUsername)).length
+      : 0;
 
-    // 5. T3: Verified (ACC) T3 recruits (must be in examination tab)
-    const t3 = reportsInWeek
-      .filter(r => r.result === 'ACC' && r.grup === 'T3' && (r.applicantWhatsapp || r.uid9Kucing || r.applicantTelegramUsername) && r.date < currentMondayStr)
-      .length;
+    // 5. T3: Verified (ACC) T3 recruits in this week (only retrieved when in Pemeriksaan phase)
+    const t3 = isPeriodInPemeriksaan
+      ? reportsInWeek.filter(r => r.result === 'ACC' && r.grup === 'T3' && (r.applicantWhatsapp || r.uid9Kucing || r.applicantTelegramUsername)).length
+      : 0;
 
-    // 6. Deklarasi V0: Count detailed applicant reports where grup is V0 (must be in examination tab)
-    const deklarasiV0 = reportsInWeek
-      .filter(r => r.grup === 'V0' && (r.applicantWhatsapp || r.uid9Kucing || r.applicantTelegramUsername) && r.date < currentMondayStr)
-      .length;
+    // 6. Deklarasi V0: Count detailed applicant reports where grup is V0 in this week (regardless of verification)
+    const deklarasiV0 = reportsInWeek.filter(r => r.grup === 'V0' && (r.applicantWhatsapp || r.uid9Kucing || r.applicantTelegramUsername)).length;
 
-    // 7. Sebenarnya V0: Verified (ACC) V0 recruits (must be in examination tab)
-    const sebenarnyaV0 = reportsInWeek
-      .filter(r => r.result === 'ACC' && r.grup === 'V0' && (r.applicantWhatsapp || r.uid9Kucing || r.applicantTelegramUsername) && r.date < currentMondayStr)
-      .length;
+    // 7. Sebenarnya V0: Verified (ACC) V0 recruits in this week (only retrieved when in Pemeriksaan phase)
+    const sebenarnyaV0 = isPeriodInPemeriksaan
+      ? reportsInWeek.filter(r => r.result === 'ACC' && r.grup === 'V0' && (r.applicantWhatsapp || r.uid9Kucing || r.applicantTelegramUsername)).length
+      : 0;
 
     // 8. Deduksi (auto-calculate late submission fines: sum of fine)
     const deduksi = reportsInWeek.reduce((sum, r) => sum + (Number(r.fine) || 0), 0);

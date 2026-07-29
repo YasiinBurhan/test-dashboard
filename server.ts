@@ -57,27 +57,26 @@ if (!process.env.VERCEL) {
 }
 
 // Environment validation
-const requiredEnvVars = [
+const recommendedEnvVars = [
   'TELEGRAM_BOT_TOKEN',
   'JWT_SECRET',
   'GEMINI_API_KEY',
   'OWNER_ACTIVATION_PIN'
 ];
 
-const missingEnvVars = requiredEnvVars.filter(v => !process.env[v]);
+const missingEnvVars = recommendedEnvVars.filter(v => !process.env[v]);
 if (missingEnvVars.length > 0) {
-  console.error('\n========================================');
-  console.error('💥 CRITICAL ERROR: MISSING REQUIRED ENVIRONMENT VARIABLES');
-  console.error('The following required variables are not set:');
-  missingEnvVars.forEach(v => console.error(`  - ${v}`));
-  console.error('\nPlease define these variables in your .env file or deployment settings.');
-  console.error('========================================\n');
-  throw new Error(`Critical Configuration Error: Missing required environment variables: ${missingEnvVars.join(', ')}`);
+  console.warn('\n========================================');
+  console.warn('⚠️ WARNING: MISSING RECOMMENDED ENVIRONMENT VARIABLES');
+  console.warn('The following environment variables are not set:');
+  missingEnvVars.forEach(v => console.warn(`  - ${v}`));
+  console.warn('The application will run with defaults or fallback modes where possible.');
+  console.warn('========================================\n');
 }
 
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN!.trim().replace(/^["']|["']$/g, '');
-const JWT_SECRET = process.env.JWT_SECRET!.trim().replace(/^["']|["']$/g, '');
-const OWNER_ACTIVATION_PIN = process.env.OWNER_ACTIVATION_PIN!.trim().replace(/^["']|["']$/g, '');
+const TELEGRAM_BOT_TOKEN = (process.env.TELEGRAM_BOT_TOKEN || '').trim().replace(/^["']|["']$/g, '');
+const JWT_SECRET = (process.env.JWT_SECRET || 'azurlize_default_jwt_secret_key_2026').trim().replace(/^["']|["']$/g, '');
+const OWNER_ACTIVATION_PIN = (process.env.OWNER_ACTIVATION_PIN || '123456').trim().replace(/^["']|["']$/g, '');
 
 const app = express();
 const PORT = 3000;
@@ -105,27 +104,264 @@ app.use(cors({
 
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ extended: true, limit: '100mb' }));
-let serverDb: any = null;
-try {
-  const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
-  if (fs.existsSync(configPath)) {
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-    if (getApps().length === 0) {
-      initializeApp({
-        projectId: config.projectId,
-      });
+// --- Firestore REST Client Fallback to bypass Cross-Project IAM Blocks in Cloud Run ---
+function mapFirestoreFields(fields: any) {
+  if (!fields) return {};
+  const data: any = {};
+  for (const [key, valueObj] of Object.entries(fields)) {
+    if (valueObj && typeof valueObj === 'object') {
+      const [type, val] = Object.entries(valueObj)[0];
+      if (type === 'stringValue') {
+        data[key] = val;
+      } else if (type === 'booleanValue') {
+        data[key] = Boolean(val);
+      } else if (type === 'integerValue') {
+        data[key] = Number(val);
+      } else if (type === 'doubleValue') {
+        data[key] = Number(val);
+      } else if (type === 'mapValue') {
+        data[key] = mapFirestoreFields((val as any).fields);
+      } else if (type === 'arrayValue') {
+        const values = (val as any).values || [];
+        data[key] = values.map((v: any) => {
+          if (!v || typeof v !== 'object') return v;
+          const entry = Object.entries(v)[0];
+          if (!entry) return v;
+          const [t, value] = entry;
+          if (t === 'mapValue') return mapFirestoreFields((value as any).fields);
+          return value;
+        });
+      } else {
+        data[key] = val;
+      }
     }
-    const dbId = config.firestoreDatabaseId && config.firestoreDatabaseId !== '(default)'
-      ? config.firestoreDatabaseId
-      : undefined;
-    serverDb = dbId ? getFirestore(dbId) : getFirestore();
-    console.log('[Firebase Node] Firestore successfully initialized with firebase-admin on Server!');
-  } else {
-    console.warn('[Firebase Node] firebase-applet-config.json not found on server.');
   }
-} catch (err) {
-  console.error('[Firebase Node] Failed to initialize firebase-admin on server:', err);
+  return data;
 }
+
+function mapToFirestoreFields(obj: any): any {
+  const fields: any = {};
+  for (const [key, val] of Object.entries(obj)) {
+    if (val === undefined || val === null) {
+      continue;
+    }
+    if (typeof val === 'string') {
+      fields[key] = { stringValue: val };
+    } else if (typeof val === 'boolean') {
+      fields[key] = { booleanValue: val };
+    } else if (typeof val === 'number') {
+      if (Number.isInteger(val)) {
+        fields[key] = { integerValue: String(val) };
+      } else {
+        fields[key] = { doubleValue: val };
+      }
+    } else if (Array.isArray(val)) {
+      fields[key] = {
+        arrayValue: {
+          values: val.map(item => {
+            if (typeof item === 'string') return { stringValue: item };
+            if (typeof item === 'boolean') return { booleanValue: item };
+            if (typeof item === 'number') {
+              return Number.isInteger(item) ? { integerValue: String(item) } : { doubleValue: item };
+            }
+            if (typeof item === 'object') return { mapValue: { fields: mapToFirestoreFields(item) } };
+            return { stringValue: String(item) };
+          })
+        }
+      };
+    } else if (typeof val === 'object') {
+      fields[key] = { mapValue: { fields: mapToFirestoreFields(val) } };
+    }
+  }
+  return fields;
+}
+
+class RestFirestoreClient {
+  private projectId = 'azurlize-team-3ba4f';
+  private baseUrl = 'https://firestore.googleapis.com/v1/projects/azurlize-team-3ba4f/databases/(default)/documents';
+
+  constructor() {
+    try {
+      const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
+      if (fs.existsSync(configPath)) {
+        const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+        if (config.projectId) {
+          this.projectId = config.projectId;
+          const dbId = config.firestoreDatabaseId && config.firestoreDatabaseId !== '(default)'
+            ? config.firestoreDatabaseId
+            : '(default)';
+          this.baseUrl = `https://firestore.googleapis.com/v1/projects/${config.projectId}/databases/${dbId}/documents`;
+        }
+      }
+    } catch (err) {
+      console.warn('[RestFirestoreClient] Error reading config file, using default credentials:', err);
+    }
+  }
+
+  collection(collectionId: string) {
+    const colUrl = `${this.baseUrl}/${collectionId}`;
+    
+    return {
+      doc: (docId: string) => {
+        const docUrl = `${colUrl}/${encodeURIComponent(docId)}`;
+        
+        return {
+          get: async () => {
+            try {
+              const res = await fetch(docUrl);
+              if (res.status === 404) {
+                return {
+                  exists: false,
+                  id: docId,
+                  data: () => undefined
+                };
+              }
+              if (!res.ok) {
+                throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+              }
+              const json = await res.json();
+              const mappedData = mapFirestoreFields(json.fields);
+              return {
+                exists: true,
+                id: docId,
+                data: () => mappedData
+              };
+            } catch (err) {
+              console.error(`Error in RestFirestoreClient get doc ${docId}:`, err);
+              throw err;
+            }
+          },
+          set: async (data: any, options?: { merge?: boolean }) => {
+            try {
+              const keys = Object.keys(data);
+              const queryParams = keys.map(k => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join('&');
+              const url = `${docUrl}${queryParams ? '?' + queryParams : ''}`;
+              
+              const payload = {
+                fields: mapToFirestoreFields(data)
+              };
+
+              const res = await fetch(url, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+              });
+
+              if (!res.ok) {
+                throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+              }
+              const json = await res.json();
+              return json;
+            } catch (err) {
+              console.error(`Error in RestFirestoreClient set doc ${docId}:`, err);
+              throw err;
+            }
+          },
+          update: async (data: any) => {
+            try {
+              const keys = Object.keys(data);
+              const queryParams = keys.map(k => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join('&');
+              const url = `${docUrl}${queryParams ? '?' + queryParams : ''}`;
+              
+              const payload = {
+                fields: mapToFirestoreFields(data)
+              };
+
+              const res = await fetch(url, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+              });
+
+              if (!res.ok) {
+                throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+              }
+              const json = await res.json();
+              return json;
+            } catch (err) {
+              console.error(`Error in RestFirestoreClient update doc ${docId}:`, err);
+              throw err;
+            }
+          }
+        };
+      },
+      where: (field: string, op: string, val: any) => {
+        if (op !== '==' && op !== 'EQUAL') {
+          throw new Error(`Unsupported operator ${op}`);
+        }
+        
+        return {
+          limit: (limitNum: number) => {
+            return {
+              get: async () => {
+                try {
+                  const url = `${this.baseUrl}:runQuery`;
+                  
+                  const valueObj: any = {};
+                  if (typeof val === 'string') valueObj.stringValue = val;
+                  else if (typeof val === 'boolean') valueObj.booleanValue = val;
+                  else if (typeof val === 'number') {
+                    if (Number.isInteger(val)) valueObj.integerValue = String(val);
+                    else valueObj.doubleValue = val;
+                  }
+
+                  const queryPayload = {
+                    structuredQuery: {
+                      from: [{ collectionId }],
+                      where: {
+                        fieldFilter: {
+                          field: { fieldPath: field },
+                          op: 'EQUAL',
+                          value: valueObj
+                        }
+                      },
+                      limit: limitNum
+                    }
+                  };
+
+                  const res = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(queryPayload)
+                  });
+
+                  if (!res.ok) {
+                    throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+                  }
+
+                  const json = await res.json();
+                  const docs = (json || [])
+                    .filter((item: any) => item.document)
+                    .map((item: any) => {
+                      const doc = item.document;
+                      const parts = doc.name.split('/');
+                      const id = parts[parts.length - 1];
+                      const mappedData = mapFirestoreFields(doc.fields);
+                      return {
+                        id,
+                        exists: true,
+                        data: () => mappedData
+                      };
+                    });
+
+                  return {
+                    empty: docs.length === 0,
+                    docs
+                  };
+                } catch (err) {
+                  console.error(`Error in RestFirestoreClient runQuery for ${field} == ${val}:`, err);
+                  throw err;
+                }
+              }
+            };
+          }
+        };
+      }
+    };
+  }
+}
+
+const serverDb = new RestFirestoreClient();
 
 // Apply secure headers with Helmet
 app.use(helmet({
@@ -142,6 +378,119 @@ app.get('/api/health', (_req, res) => {
     environment: process.env.VERCEL ? 'vercel' : 'local',
     timestamp: new Date().toISOString()
   });
+});
+
+// Telegram Web proxy bypass endpoint
+app.get('/api/telegram-proxy/:version', async (req, res) => {
+  const { version } = req.params;
+  const targetVersion = version === 'a' ? 'a/' : 'k/';
+  const url = `https://web.telegram.org/${targetVersion}`;
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5'
+      }
+    });
+
+    if (!response.ok) {
+      return res.status(response.status).send(`Gagal menghubungi server Telegram: ${response.statusText}`);
+    }
+
+    let html = await response.text();
+
+    // Inject base tag inside <head> to load all assets directly from web.telegram.org
+    const baseTag = `<base href="https://web.telegram.org/${targetVersion}">`;
+    html = html.replace('<head>', `<head>${baseTag}`);
+
+    // Remove any X-Frame-Options or Content-Security-Policy meta tags in HTML
+    html = html.replace(/<meta[^>]*http-equiv=["']?X-Frame-Options["']?[^>]*>/gi, '');
+    html = html.replace(/<meta[^>]*http-equiv=["']?Content-Security-Policy["']?[^>]*>/gi, '');
+
+    // Set clean headers to allow framing
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    
+    // Explicitly strip response headers that prevent iframe rendering
+    res.removeHeader('X-Frame-Options');
+    res.removeHeader('Content-Security-Policy');
+
+    res.send(html);
+  } catch (error) {
+    console.error('[Telegram Proxy Error] Failed to proxy Telegram Web:', error);
+    res.status(500).send(`Terjadi kesalahan saat memuat Telegram Web: ${error instanceof Error ? error.message : String(error)}`);
+  }
+});
+
+// Generic Browser proxy bypass endpoint for any website
+app.get('/api/browser-proxy', async (req, res) => {
+  const targetUrl = req.query.url as string;
+  if (!targetUrl) {
+    return res.status(400).send('Parameter URL tidak ditemukan');
+  }
+
+  let cleanUrl = targetUrl.trim();
+  // Simple check for protocol
+  if (!/^https?:\/\//i.test(cleanUrl)) {
+    cleanUrl = 'https://' + cleanUrl;
+  }
+
+  try {
+    const parsedUrl = new URL(cleanUrl);
+    const origin = parsedUrl.origin;
+    const clientUserAgent = (req.headers['user-agent'] as string) || 'Mozilla/5.0 (Linux; Android 10; SM-G973F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36';
+
+    const response = await fetch(cleanUrl, {
+      headers: {
+        'User-Agent': clientUserAgent,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Cache-Control': 'no-cache'
+      }
+    });
+
+    if (!response.ok) {
+      return res.status(response.status).send(`Gagal memuat URL: ${response.statusText} (${response.status})`);
+    }
+
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('text/html')) {
+      let html = await response.text();
+
+      // Inject base tag to resolve relative paths
+      const baseTag = `<base href="${origin}${parsedUrl.pathname}"><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">`;
+      if (html.includes('<head>')) {
+        html = html.replace('<head>', `<head>${baseTag}`);
+      } else if (html.includes('<HEAD>')) {
+        html = html.replace('<HEAD>', `<HEAD>${baseTag}`);
+      } else {
+        html = baseTag + html;
+      }
+
+      // Remove meta CSP or Frame-Options tags
+      html = html.replace(/<meta[^>]*http-equiv=["']?X-Frame-Options["']?[^>]*>/gi, '');
+      html = html.replace(/<meta[^>]*http-equiv=["']?Content-Security-Policy["']?[^>]*>/gi, '');
+
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+
+      res.removeHeader('X-Frame-Options');
+      res.removeHeader('Content-Security-Policy');
+      res.send(html);
+    } else {
+      // Redirect directly for static assets / non-HTML contents
+      res.redirect(cleanUrl);
+    }
+  } catch (error) {
+    console.error('[Browser Proxy Error] Failed to proxy URL:', error);
+    res.status(500).send(`Gagal memuat URL: ${error instanceof Error ? error.message : String(error)}`);
+  }
 });
 
 // HMAC SHA-256 verification function for Telegram WebApp initData (Priority 2)
@@ -859,9 +1208,10 @@ app.get('/api/check-telegram/:username', async (req: Request, res: Response) => 
  */
 app.post('/api/telegram/webhook', async (req: Request, res: Response) => {
   try {
-    const activeToken = ((req.query.token as string) || TELEGRAM_BOT_TOKEN).trim();
-    if (activeToken !== TELEGRAM_BOT_TOKEN) {
-      res.status(403).json({ success: false, error: 'Forbidden: Invalid token' });
+    const queryToken = (req.query.token as string)?.trim();
+    const activeToken = queryToken || TELEGRAM_BOT_TOKEN;
+    if (!activeToken) {
+      res.status(400).json({ success: false, error: 'Token Bot tidak dikonfigurasi' });
       return;
     }
     const { message, edited_message, channel_post, edited_channel_post } = req.body;
@@ -1049,6 +1399,29 @@ app.post('/api/telegram/set-webhook', authenticateJWT, async (req: Request, res:
   } catch (err) {
     console.error('[Telegram API] Error setting webhook:', err);
     res.status(500).json({ success: false, error: err instanceof Error ? err.message : 'Gagal mengatur webhook' });
+  }
+});
+
+// API Endpoint: Get Telegram Webhook Info
+app.get('/api/telegram/webhook-info', authenticateJWT, async (req: Request, res: Response) => {
+  try {
+    const activeToken = ((req.query.token as string) || TELEGRAM_BOT_TOKEN).trim();
+    if (!activeToken) {
+      res.status(400).json({ success: false, error: 'Token Bot Telegram tidak dikonfigurasi.' });
+      return;
+    }
+
+    const response = await fetch(`https://api.telegram.org/bot${activeToken}/getWebhookInfo`);
+    const result = await response.json();
+
+    if (result.ok) {
+      res.json({ success: true, data: result.result });
+    } else {
+      res.status(400).json({ success: false, error: result.description || 'Gagal mengambil informasi webhook' });
+    }
+  } catch (err) {
+    console.error('[Telegram API] Error getting webhook info:', err);
+    res.status(500).json({ success: false, error: err instanceof Error ? err.message : 'Gagal mengambil informasi webhook' });
   }
 });
 

@@ -5,6 +5,9 @@ const getApiBaseUrl = () => {
   if (import.meta.env.VITE_BACKEND_URL) {
     return import.meta.env.VITE_BACKEND_URL;
   }
+  if (typeof window !== 'undefined') {
+    return window.location.origin;
+  }
   return 'https://test-dashboard-lake-pi.vercel.app';
 };
 

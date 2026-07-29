@@ -23,6 +23,9 @@ const getApiBaseUrl = () => {
   if (import.meta.env.VITE_BACKEND_URL) {
     return import.meta.env.VITE_BACKEND_URL;
   }
+  if (typeof window !== 'undefined') {
+    return window.location.origin;
+  }
   return 'https://test-dashboard-lake-pi.vercel.app';
 };
 
@@ -54,7 +57,9 @@ export const OwnerPage: React.FC = () => {
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [settingsSuccess, setSettingsSuccess] = useState<string | null>(null);
   const [isSettingWebhook, setIsSettingWebhook] = useState(false);
+  const [isCheckingWebhook, setIsCheckingWebhook] = useState(false);
   const [webhookStatus, setWebhookStatus] = useState<string | null>(null);
+  const [webhookDetails, setWebhookDetails] = useState<{ url?: string; pending_update_count?: number; last_error_message?: string; last_error_date?: number } | null>(null);
   const [botInfo, setBotInfo] = useState<{ first_name: string; username: string } | null>(null);
   const [isTestingTelegram, setIsTestingTelegram] = useState(false);
   const [testTelegramStatus, setTestTelegramStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -587,9 +592,39 @@ export const OwnerPage: React.FC = () => {
     }
   };
 
+  const handleCheckWebhook = async () => {
+    setIsCheckingWebhook(true);
+    const botToken = settings?.telegramBotToken?.trim();
+    if (!botToken) {
+      setWebhookStatus('❌ Token Bot Telegram belum diisi.');
+      setIsCheckingWebhook(false);
+      return;
+    }
+
+    try {
+      const response = await fetch(`https://api.telegram.org/bot${botToken}/getWebhookInfo`);
+      const result = await response.json();
+      if (result.ok) {
+        setWebhookDetails(result.result);
+        if (result.result.url) {
+          setWebhookStatus(`✅ Webhook Aktif di Telegram: ${result.result.url}`);
+        } else {
+          setWebhookStatus('⚠️ Webhook BELUM aktif di Telegram (URL masih kosong).');
+        }
+      } else {
+        setWebhookStatus(`❌ Telegram Error: ${result.description}`);
+      }
+    } catch (err) {
+      setWebhookStatus(`❌ Error koneksi: ${err instanceof Error ? err.message : 'Koneksi gagal'}`);
+    } finally {
+      setIsCheckingWebhook(false);
+    }
+  };
+
   const handleSetWebhook = async () => {
     setIsSettingWebhook(true);
     setWebhookStatus(null);
+    setWebhookDetails(null);
     
     const botToken = settings?.telegramBotToken?.trim();
     if (!botToken) {
@@ -599,8 +634,6 @@ export const OwnerPage: React.FC = () => {
     }
 
     const currentOrigin = window.location.origin;
-    const isLocalDev = currentOrigin.includes('localhost:') || currentOrigin.includes('127.0.0.1:');
-    const isFirebaseHosting = currentOrigin.includes('firebaseapp.com') || currentOrigin.includes('web.app');
     
     let defaultBaseUrl = currentOrigin;
     if (API_BASE_URL !== '' && API_BASE_URL !== undefined) {
@@ -608,7 +641,7 @@ export const OwnerPage: React.FC = () => {
     }
 
     const targetBaseUrl = (settings?.webhookUrl?.trim() || defaultBaseUrl).replace(/\/$/, '');
-    const fullWebhookUrl = `${targetBaseUrl}/api/telegram/webhook`;
+    const fullWebhookUrl = `${targetBaseUrl}/api/telegram/webhook?token=${encodeURIComponent(botToken)}`;
 
     // Try backend API if configured
     if (API_BASE_URL !== undefined) {
@@ -626,7 +659,8 @@ export const OwnerPage: React.FC = () => {
         if (contentType && contentType.includes('application/json')) {
           const result = await response.json();
           if (result.success) {
-            setWebhookStatus('✅ Webhook Bot berhasil diaktifkan di Vercel!');
+            setWebhookStatus('✅ Webhook Bot berhasil diaktifkan!');
+            handleCheckWebhook();
             setIsSettingWebhook(false);
             return;
           }
@@ -643,6 +677,7 @@ export const OwnerPage: React.FC = () => {
 
       if (result.ok) {
         setWebhookStatus('✅ Webhook Bot berhasil diaktifkan langsung di Telegram!');
+        handleCheckWebhook();
       } else {
         setWebhookStatus(`❌ Telegram Error: ${result.description || 'Gagal mengaktifkan Webhook'}`);
       }
@@ -1958,19 +1993,63 @@ export const OwnerPage: React.FC = () => {
               </div>
 
               {webhookStatus && (
-                <div className={`text-[10px] font-bold p-2 rounded-lg ${webhookStatus.includes('✅') ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
+                <div className={`text-[10px] font-bold p-2.5 rounded-lg border ${
+                  webhookStatus.includes('✅') 
+                    ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
+                    : webhookStatus.includes('⚠️') 
+                      ? 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+                      : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+                }`}>
                   {webhookStatus}
                 </div>
               )}
 
-              <Button 
-                variant="secondary" 
-                fullWidth 
-                onClick={handleSetWebhook}
-                isLoading={isSettingWebhook}
-              >
-                Aktifkan Webhook Bot
-              </Button>
+              {webhookDetails && (
+                <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3 space-y-1.5 text-[10px] font-mono text-slate-300">
+                  <div className="flex justify-between items-center text-slate-400">
+                    <span>URL Webhook Telegram:</span>
+                    <span className={webhookDetails.url ? "text-emerald-400 font-bold" : "text-rose-400 font-bold"}>
+                      {webhookDetails.url ? "AKTIF" : "KOSONG"}
+                    </span>
+                  </div>
+                  {webhookDetails.url && (
+                    <div className="truncate text-sky-300 bg-black/40 p-1.5 rounded border border-slate-800/80">
+                      {webhookDetails.url}
+                    </div>
+                  )}
+                  <div className="flex justify-between items-center">
+                    <span>Pending Updates:</span>
+                    <span className="text-white font-bold">{webhookDetails.pending_update_count ?? 0}</span>
+                  </div>
+                  {webhookDetails.last_error_message && (
+                    <div className="mt-2 pt-2 border-t border-rose-500/30 text-rose-300">
+                      <span className="font-bold uppercase text-[9px] text-rose-400 block mb-0.5">⚠️ Error Terakhir dari Telegram:</span>
+                      <p className="bg-rose-950/50 p-1.5 rounded border border-rose-500/20 text-[9.5px]">
+                        {webhookDetails.last_error_message}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-2">
+                <Button 
+                  variant="secondary" 
+                  fullWidth 
+                  onClick={handleCheckWebhook}
+                  isLoading={isCheckingWebhook}
+                >
+                  🔍 Cek Webhook
+                </Button>
+                <Button 
+                  variant="primary" 
+                  fullWidth 
+                  onClick={handleSetWebhook}
+                  isLoading={isSettingWebhook}
+                >
+                  ⚡ Aktifkan Webhook
+                </Button>
+              </div>
               
               <p className="text-[9px] text-slate-500 dark:text-slate-400 italic text-center">
                 *Hanya bot yang dikonfigurasi di server yang akan merespon.
