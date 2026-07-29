@@ -89,6 +89,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!inTelegram || !webApp) {
       // Check if we have a persisted manual login in localStorage!
       const savedUserStr = localStorage.getItem('azurlize_manual_user');
+      const savedToken = localStorage.getItem('azurlize_session_token');
       if (savedUserStr) {
         try {
           const savedUser = JSON.parse(savedUserStr);
@@ -109,7 +110,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 isAuthenticated: true,
                 telegramUser: tgUser,
                 userProfile: profile,
-                token: 'manual_session_token',
+                token: savedToken || 'manual_session_token',
                 initData: '',
                 error: null,
                 isTelegramContext: true
@@ -367,6 +368,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         
         // Save to localStorage
         localStorage.setItem('azurlize_manual_user', JSON.stringify(tgUser));
+        localStorage.setItem('azurlize_session_token', apiResult.data.token);
 
         setState({
           isAuthenticated: true,

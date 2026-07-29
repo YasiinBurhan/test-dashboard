@@ -18,6 +18,7 @@ import { subscribeToAllReports } from '../firebase/services/reportService';
 import { Key, Megaphone, Settings, Users, ShieldAlert, Plus, Trash2, CheckCircle2, BarChart2, Bot, Globe, XCircle, AlertTriangle, Send, FileSpreadsheet, FileText, Copy, Download, Calendar, Filter, Check, Database, Eye, RefreshCw, AlertCircle, Search, CheckSquare, Square } from 'lucide-react';
 import { doc, getDoc, deleteDoc, updateDoc, deleteField, collection, getDocs, limit, query } from 'firebase/firestore';
 import { db } from '../firebase/config';
+import { useAuthContext } from '../contexts/AuthContext';
 
 const getApiBaseUrl = () => {
   if (import.meta.env.VITE_BACKEND_URL) {
@@ -42,6 +43,7 @@ const formatDateDDMMYYYY = (dateString?: string) => {
 };
 
 export const OwnerPage: React.FC = () => {
+  const { token } = useAuthContext();
   const { users, changeStatus, changeRole, deleteUser, refetch: refetchUsers } = useRecruiters();
 
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
@@ -78,7 +80,10 @@ export const OwnerPage: React.FC = () => {
       if (API_BASE_URL !== undefined) {
         const response = await fetch(`${API_BASE_URL}/api/telegram/test-send`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          },
           body: JSON.stringify({
             groupId: settings.telegramGroupId,
             topicId: settings.telegramTopicId,
@@ -563,7 +568,9 @@ export const OwnerPage: React.FC = () => {
         const queryUrl = botToken 
           ? `${API_BASE_URL}/api/telegram/bot-info?token=${encodeURIComponent(botToken)}`
           : `${API_BASE_URL}/api/telegram/bot-info`;
-        const response = await fetch(queryUrl);
+        const response = await fetch(queryUrl, {
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+        });
         const contentType = response.headers.get('content-type');
         if (contentType && contentType.includes('application/json')) {
           const result = await response.json();
@@ -642,13 +649,18 @@ export const OwnerPage: React.FC = () => {
 
     const targetBaseUrl = (settings?.webhookUrl?.trim() || defaultBaseUrl).replace(/\/$/, '');
     const fullWebhookUrl = `${targetBaseUrl}/api/telegram/webhook?token=${encodeURIComponent(botToken)}`;
+    
+    console.log('Activating Webhook with URL:', fullWebhookUrl);
 
     // Try backend API if configured
     if (API_BASE_URL !== undefined) {
       try {
         const response = await fetch(`${API_BASE_URL}/api/telegram/set-webhook`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          },
           body: JSON.stringify({ 
             url: targetBaseUrl,
             botToken: botToken

@@ -81,6 +81,9 @@ const OWNER_ACTIVATION_PIN = (process.env.OWNER_ACTIVATION_PIN || '123456').trim
 const app = express();
 const PORT = 3000;
 
+// Enable trust proxy for Cloud Run/Vercel to correctly identify HTTPS
+app.set('trust proxy', 1);
+
 // Security: Restrict CORS to specific production origin
 const allowedOrigins = [
   'https://ais-dev-j7rbidxuktuwu6i34ejnsa-593623455181.asia-southeast1.run.app',
@@ -110,7 +113,9 @@ function mapFirestoreFields(fields: any) {
   const data: any = {};
   for (const [key, valueObj] of Object.entries(fields)) {
     if (valueObj && typeof valueObj === 'object') {
-      const [type, val] = Object.entries(valueObj)[0];
+      const entries = Object.entries(valueObj);
+      if (entries.length === 0) continue;
+      const [type, val] = entries[0];
       if (type === 'stringValue') {
         data[key] = val;
       } else if (type === 'booleanValue') {
@@ -125,9 +130,9 @@ function mapFirestoreFields(fields: any) {
         const values = (val as any).values || [];
         data[key] = values.map((v: any) => {
           if (!v || typeof v !== 'object') return v;
-          const entry = Object.entries(v)[0];
-          if (!entry) return v;
-          const [t, value] = entry;
+          const vEntries = Object.entries(v);
+          if (vEntries.length === 0) return v;
+          const [t, value] = vEntries[0];
           if (t === 'mapValue') return mapFirestoreFields((value as any).fields);
           return value;
         });
@@ -361,7 +366,225 @@ class RestFirestoreClient {
   }
 }
 
+
+
 const serverDb = new RestFirestoreClient();
+
+/**
+ * TELEGRAM WEBHOOK HANDLER
+ * Allows the bot to respond to commands like /id or /info in groups.
+ * To use: Set your webhook URL to https://<your-app-url>/api/telegram/webhook
+ */
+app.post('/api/telegram/webhook', async (req: Request, res: Response) => {
+  try {
+    const queryToken = (req.query.token as string)?.trim();
+    const activeToken = queryToken || TELEGRAM_BOT_TOKEN;
+    
+    console.log(`[Telegram Webhook] Update received at ${new Date().toISOString()}`);
+    
+    if (!activeToken) {
+      console.error('[Telegram Webhook] Error: Bot Token not configured.');
+      res.status(200).send('OK (Bot token not configured)');
+      return;
+    }
+
+    // Log the structure of the incoming update
+    if (req.body) {
+      console.log('[Telegram Webhook] Update keys:', Object.keys(req.body));
+    } else {
+      console.log('[Telegram Webhook] Empty body received.');
+      res.status(200).send('OK (Empty body)');
+      return;
+    }
+    
+    const { message, edited_message, channel_post, edited_channel_post, callback_query } = req.body || {};
+    
+    // Process standard messages
+    const msg = message || edited_message || channel_post || edited_channel_post;
+    
+    if (!msg && !callback_query) {
+      console.log('[Telegram Webhook] No message or callback_query in update.');
+      res.status(200).send('OK (Ignored update type)');
+      return;
+    }
+
+    // If it's a message
+    if (msg) {
+      console.log(`[Telegram Webhook] Message from: ${msg.from?.id}, Chat: ${msg.chat.id}, Text: ${msg.text || '[No Text]'}`);
+      
+      if (msg.text && (msg.text.startsWith('/start') || msg.text.startsWith('/help'))) {
+        const chatId = msg.chat.id;
+        const threadId = msg.message_thread_id;
+        const firstName = msg.from?.first_name || 'Teman';
+        const senderId = msg.from?.id;
+        
+        console.log(`[Telegram Webhook] Processing /start for user ${senderId}`);
+
+        let responseText = `👋 <b>Halo, ${firstName}! Selamat datang di AzurLizeTeam Bot!</b>\n\n`;
+        responseText += `Saya adalah bot asisten untuk <b>AzurLizeTeam</b>.\n\n`;
+        
+        let userPinText = '';
+        if (senderId && typeof serverDb !== 'undefined') {
+          try {
+            const userRef = serverDb.collection('users').doc(String(senderId));
+            const docSnap = await userRef.get();
+            if (docSnap.exists) {
+              const data = docSnap.data();
+              if (data.pin) {
+                userPinText = `🔑 <b>Kode PIN login Anda:</b> <code>${data.pin}</code>\n<i>Gunakan PIN di atas untuk masuk di Aplikasi APK / Browser Mandiri. Jangan bagikan PIN ini demi keamanan!</i>\n\n`;
+              } else {
+                userPinText = `🔑 <b>Akun Anda terdaftar, namun PIN belum diatur.</b>\n<i>Silakan masuk lalu buat/atur PIN Anda melalui menu Profil di dalam aplikasi.</i>\n\n`;
+              }
+            }
+          } catch (dbErr) {
+            console.error('[Telegram Webhook] Error looking up user pin during /start:', dbErr);
+          }
+        }
+        
+        responseText += `🚀 <b>Mini Web App kami sudah siap digunakan!</b> Anda dapat mengelola laporan harian, memantau data pelamar, memeriksa postingan harian, dan melihat statistik performa secara langsung dan real-time.\n\n`;
+        
+        if (userPinText) {
+          responseText += userPinText;
+        }
+        
+        responseText += `📱 <b>Cara membuka Mini Web App:</b>\n`;
+        responseText += `• Klik tombol <b>"Buka Mini App"</b> di bawah ini.\n`;
+        responseText += `• Atau klik tombol menu/web app di pojok kiri bawah obrolan ini.\n\n`;
+        responseText += `<i>Jika Anda lupa PIN, ketik perintah /pin untuk mendapatkan PIN login Anda secara instan dan aman.</i>`;
+
+        // Get WebApp URL dynamically
+        let webAppUrl = 'https://azurlize-team-3ba4f.firebaseapp.com';
+        try {
+          const host = req.get('host');
+          if (host && !host.includes('localhost')) {
+            const protocol = req.headers['x-forwarded-proto'] === 'http' ? 'http' : 'https';
+            webAppUrl = `${protocol}://${host}`;
+          }
+        } catch (hErr) {
+          console.error('[Telegram Webhook] Error determining WebApp URL:', hErr);
+        }
+
+        const keyboard = {
+          inline_keyboard: [
+            [
+              {
+                text: '🚀 Buka Mini App',
+                web_app: { url: webAppUrl }
+              }
+            ]
+          ]
+        };
+
+        console.log(`[Telegram Webhook] Sending reply to Telegram...`);
+        const tRes = await fetch(`https://api.telegram.org/bot${activeToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: responseText,
+            parse_mode: 'HTML',
+            reply_markup: keyboard,
+            message_thread_id: threadId
+          })
+        });
+        
+        try {
+          const tResult = await tRes.json();
+          console.log(`[Telegram Webhook] Telegram Response:`, JSON.stringify(tResult));
+        } catch (jErr) {
+          console.warn(`[Telegram Webhook] Could not parse Telegram response as JSON (Status: ${tRes.status})`);
+        }
+        
+        res.status(200).send('OK');
+        return;
+      }
+    }
+
+    if (msg && msg.text && msg.text.startsWith('/pin')) {
+      const chatId = msg.chat.id;
+      const threadId = msg.message_thread_id;
+      const senderId = msg.from?.id;
+      const firstName = msg.from?.first_name || 'Teman';
+
+      let responseText = '';
+      if (!senderId) {
+        responseText = `❌ Gagal memproses data Telegram ID Anda.`;
+      } else if (typeof serverDb === 'undefined') {
+        responseText = `⚠️ Database Firestore server belum siap. Hubungi Admin.`;
+      } else {
+        try {
+          const userRef = serverDb.collection('users').doc(String(senderId));
+          const docSnap = await userRef.get();
+          if (docSnap.exists) {
+            const data = docSnap.data();
+            const userPin = data.pin || '<i>Belum diatur (Silakan login ke aplikasi lalu atur PIN di halaman Profil)</i>';
+            responseText = `🔑 <b>INFORMASI KODE PIN (AKSES MASUK)</b>\n\n`;
+            responseText += `👤 <b>Nama:</b> ${data.firstName || data.name || firstName}\n`;
+            responseText += `🆔 <b>ID Telegram:</b> <code>${senderId}</code>\n`;
+            responseText += `🔐 <b>PIN Anda:</b> <code>${userPin}</code>\n\n`;
+            responseText += `<i>Gunakan ID Telegram dan PIN di atas untuk masuk di Aplikasi APK atau Browser Mandiri. Jaga kerahasiaan PIN Anda!</i>`;
+          } else {
+            responseText = `❌ <b>Akun Anda Belum Terdaftar!</b>\n\n`;
+            responseText += `ID Telegram Anda (<code>${senderId}</code>) belum tercatat di database AzurLizeTeam.\n\n`;
+            responseText += `Silakan buka Aplikasi APK atau buka Mini Web App untuk mendaftar profil baru terlebih dahulu.`;
+          }
+        } catch (dbErr) {
+          console.error('[Telegram Webhook] Error looking up user pin during /pin:', dbErr);
+          responseText = `⚠️ Terjadi kesalahan internal saat membaca data PIN Anda.`;
+        }
+      }
+
+      await fetch(`https://api.telegram.org/bot${activeToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: responseText,
+          parse_mode: 'HTML',
+          message_thread_id: threadId
+        })
+      });
+    }
+
+    if (msg && msg.text && (msg.text.startsWith('/id') || msg.text.startsWith('/info'))) {
+      const chatId = msg.chat.id;
+      const threadId = msg.message_thread_id;
+      const chatTitle = msg.chat.title || msg.chat.username || msg.chat.first_name || 'Private Chat';
+      const isTopic = Boolean(threadId);
+
+      let responseText = `<b>📍 TELEGRAM CHAT INFO</b>\n\n`;
+      responseText += `🏷️ <b>Title:</b> ${chatTitle}\n`;
+      responseText += `🆔 <b>Chat ID:</b> <code>${chatId}</code>\n`;
+      
+      if (isTopic) {
+        responseText += `🧵 <b>Topic ID:</b> <code>${threadId}</code>\n`;
+      }
+      
+      responseText += `\n<i>Gunakan ID di atas pada Pengaturan Aplikasi AzurLize.</i>`;
+
+      // Reply to the message
+      await fetch(`https://api.telegram.org/bot${activeToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: responseText,
+          parse_mode: 'HTML',
+          reply_to_message_id: msg.message_id,
+          message_thread_id: threadId // Ensure reply stays in the same topic
+        })
+      });
+    }
+
+    // Always respond 200 OK to Telegram
+    console.log('[Telegram Webhook] Finished processing update.');
+    res.status(200).send('OK');
+  } catch (err) {
+    console.error('[Telegram Webhook] Error:', err);
+    res.status(200).send('OK'); // Still send 200 to avoid retries from Telegram
+  }
+});
+
 
 // Apply secure headers with Helmet
 app.use(helmet({
@@ -1108,10 +1331,80 @@ app.get('/api/check-telegram/:username', async (req: Request, res: Response) => 
       return;
     }
 
-    const unavatarUrl = `https://unavatar.io/telegram/${username}?fallback=false`;
+    const unavatarUrl = `https://unavatar.io/telegram/${username}`;
+    const tmeAvatarUrl = `https://t.me/i/userpic/320/${username}.jpg`;
     const targetUrl = `https://t.me/${username}`;
-    
-    // Server-side fetch to bypass CORS
+    const tokenQuery = (req.query.token as string)?.trim();
+    const activeToken = tokenQuery || TELEGRAM_BOT_TOKEN;
+
+    // Method 1: Try official Telegram Bot API getChat if token is available
+    if (activeToken) {
+      try {
+        const tgRes = await fetch(`https://api.telegram.org/bot${activeToken}/getChat?chat_id=@${username}`);
+        const tgData = await tgRes.json();
+
+        if (tgData.ok && tgData.result) {
+          const chat = tgData.result;
+          const firstName = chat.first_name || '';
+          const lastName = chat.last_name || '';
+          const fullName = `${firstName} ${lastName}`.trim() || chat.title || chat.username || `@${username}`;
+          const telegramId = chat.id;
+
+          let photoUrl: string | undefined = undefined;
+
+          // Try getting user profile photo if private chat / user
+          try {
+            const photoRes = await fetch(`https://api.telegram.org/bot${activeToken}/getUserProfilePhotos?user_id=${telegramId}&limit=1`);
+            const photoData = await photoRes.json();
+            if (photoData.ok && photoData.result?.photos?.[0]?.[0]?.file_id) {
+              const fileId = photoData.result.photos[0][0].file_id;
+              const fileRes = await fetch(`https://api.telegram.org/bot${activeToken}/getFile?file_id=${fileId}`);
+              const fileData = await fileRes.json();
+              if (fileData.ok && fileData.result?.file_path) {
+                photoUrl = `https://api.telegram.org/file/bot${activeToken}/${fileData.result.file_path}`;
+              }
+            }
+          } catch (pErr) {
+            console.warn('[TelegramCheck] Failed to fetch profile photo via Bot API:', pErr);
+          }
+
+          if (!photoUrl) {
+            photoUrl = unavatarUrl;
+          }
+
+          res.json({
+            success: true,
+            exists: true,
+            isSyntaxValid: true,
+            title: fullName,
+            username: chat.username || username,
+            telegramId: telegramId,
+            photoUrl: photoUrl,
+            verifiedBy: 'telegram_api'
+          });
+          return;
+        } else if (tgData.error_code === 400 && (
+          tgData.description?.toLowerCase().includes('username_not_occupied') ||
+          tgData.description?.toLowerCase().includes('username_invalid')
+        )) {
+          res.json({
+            success: true,
+            exists: false,
+            isSyntaxValid: true,
+            title: username,
+            message: `Username @${username} tidak terdaftar di Telegram.`,
+            verifiedBy: 'telegram_api'
+          });
+          return;
+        }
+        // Note: 'chat not found' in Bot API just means the user hasn't chatted with bot before.
+        // Fall through to t.me scraping below.
+      } catch (botApiErr) {
+        console.warn('[TelegramCheck] Bot API getChat check failed, falling back to t.me scraping:', botApiErr);
+      }
+    }
+
+    // Method 2: Fallback to t.me HTML scraping
     const response = await fetch(targetUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -1120,38 +1413,44 @@ app.get('/api/check-telegram/:username', async (req: Request, res: Response) => 
     });
 
     if (!response.ok) {
-      res.json({ success: false, exists: null, isSyntaxValid: true, message: 'HTTP Error' });
+      res.json({
+        success: true,
+        exists: true,
+        isSyntaxValid: true,
+        title: `@${username}`,
+        photoUrl: unavatarUrl
+      });
       return;
     }
 
     const html = await response.text();
 
-    const isTelegramPage = html.includes('tgme_page') || html.includes('Telegram Web') || html.includes('content="Telegram"');
-    if (!isTelegramPage) {
-      res.json({ success: true, exists: null, isSyntaxValid: true, title: username });
-      return;
-    }
-
-    const isUserNotFoundMsg = html.includes('User not found') || html.includes('Page not found');
-    const isNotFoundText = html.includes('If you have <strong>Telegram</strong>, you can contact') || html.includes('If you have Telegram, you can contact');
-    
-    // Use regex to match actual class attributes of elements, avoiding CSS rule strings in style tags
-    const hasPageTitle = /class=["'][^"']*(tgme_page_title|tgme_page_extra)[^"']*["']/i.test(html);
+    const isUserNotFoundMsg = html.includes('User not found') || 
+                             html.includes('Page not found') || 
+                             html.includes('tgme_page_error');
 
     if (isUserNotFoundMsg) {
-      res.json({ success: true, exists: false, isSyntaxValid: true, title: username });
-      return;
-    }
-
-    if ((isNotFoundText && !hasPageTitle) || (!hasPageTitle && html.includes('If you have Telegram'))) {
-      res.json({ success: true, exists: null, isSyntaxValid: true, title: username });
+      res.json({
+        success: true,
+        exists: false,
+        isSyntaxValid: true,
+        title: username,
+        message: `Username @${username} tidak terdaftar di Telegram.`
+      });
       return;
     }
 
     let extractedTitle = username;
-    const titleMatch = html.match(/<div class="tgme_page_title"[^>]*><span[^>]*>(.*?)<\/span><\/div>/s) || html.match(/<meta property="og:title" content="(.*?)"/);
+    const titleMatch = html.match(/<div class="tgme_page_title"[^>]*><span[^>]*>(.*?)<\/span><\/div>/s) || 
+                       html.match(/<meta property="og:title" content="(.*?)"/);
     if (titleMatch && titleMatch[1]) {
-      const cleanTitle = titleMatch[1].replace(/<[^>]+>/g, '').trim();
+      const cleanTitle = titleMatch[1]
+        .replace(/<[^>]+>/g, '')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&amp;/g, '&')
+        .replace(/^Telegram:\s*Contact\s*/i, '')
+        .trim();
       if (cleanTitle && !cleanTitle.toLowerCase().includes('telegram: contact')) {
         extractedTitle = cleanTitle;
       }
@@ -1184,7 +1483,7 @@ app.get('/api/check-telegram/:username', async (req: Request, res: Response) => 
       }
     }
     
-    // Always provide unavatar fallback if no native photo URL was found
+    // Always provide unavatar / tme userpic as photo URL if no direct scraped photo was found
     if (!photoUrl) {
       photoUrl = unavatarUrl;
     }
@@ -1193,182 +1492,22 @@ app.get('/api/check-telegram/:username', async (req: Request, res: Response) => 
       success: true,
       exists: true,
       isSyntaxValid: true,
-      title: extractedTitle,
+      title: extractedTitle !== username ? extractedTitle : `@${username}`,
       photoUrl: photoUrl
     });
   } catch (err) {
-    res.json({ success: false, exists: null, isSyntaxValid: true, error: err instanceof Error ? err.message : 'Fetch failed' });
+    res.json({ 
+      success: true, 
+      exists: true, 
+      isSyntaxValid: true, 
+      title: `@${req.params.username}`,
+      photoUrl: `https://unavatar.io/telegram/${req.params.username}`
+    });
   }
 });
 
-/**
- * TELEGRAM WEBHOOK HANDLER
- * Allows the bot to respond to commands like /id or /info in groups.
- * To use: Set your webhook URL to https://<your-app-url>/api/telegram/webhook
- */
-app.post('/api/telegram/webhook', async (req: Request, res: Response) => {
-  try {
-    const queryToken = (req.query.token as string)?.trim();
-    const activeToken = queryToken || TELEGRAM_BOT_TOKEN;
-    if (!activeToken) {
-      res.status(400).json({ success: false, error: 'Token Bot tidak dikonfigurasi' });
-      return;
-    }
-    const { message, edited_message, channel_post, edited_channel_post } = req.body;
-    
-    // Process standard messages
-    const msg = message || edited_message || channel_post || edited_channel_post;
-    
-    if (msg && msg.text && msg.text.startsWith('/start')) {
-      const chatId = msg.chat.id;
-      const threadId = msg.message_thread_id;
-      const firstName = msg.from?.first_name || 'Teman';
-      const senderId = msg.from?.id;
-      
-      let responseText = `👋 <b>Halo, ${firstName}! Selamat datang di AzurLizeTeam Bot!</b>\n\n`;
-      responseText += `Saya adalah bot asisten untuk <b>AzurLizeTeam</b>.\n\n`;
-      
-      let userPinText = '';
-      if (senderId && serverDb) {
-        try {
-          const userRef = serverDb.collection('users').doc(String(senderId));
-          const docSnap = await userRef.get();
-          if (docSnap.exists) {
-            const data = docSnap.data();
-            if (data.pin) {
-              userPinText = `🔑 <b>Kode PIN login Anda:</b> <code>${data.pin}</code>\n<i>Gunakan PIN di atas untuk masuk di Aplikasi APK / Browser Mandiri. Jangan bagikan PIN ini demi keamanan!</i>\n\n`;
-            } else {
-              userPinText = `🔑 <b>Akun Anda terdaftar, namun PIN belum diatur.</b>\n<i>Silakan masuk lalu buat/atur PIN Anda melalui menu Profil di dalam aplikasi.</i>\n\n`;
-            }
-          }
-        } catch (dbErr) {
-          console.error('[Telegram Webhook] Error looking up user pin during /start:', dbErr);
-        }
-      }
-      
-      responseText += `🚀 <b>Mini Web App kami sudah siap digunakan!</b> Anda dapat mengelola laporan harian, memantau data pelamar, memeriksa postingan harian, dan melihat statistik performa secara langsung dan real-time.\n\n`;
-      
-      if (userPinText) {
-        responseText += userPinText;
-      }
-      
-      responseText += `📱 <b>Cara membuka Mini Web App:</b>\n`;
-      responseText += `• Klik tombol <b>"Buka Mini App"</b> di bawah ini.\n`;
-      responseText += `• Atau klik tombol menu/web app di pojok kiri bawah obrolan ini.\n\n`;
-      responseText += `<i>Jika Anda lupa PIN, ketik perintah /pin untuk mendapatkan PIN login Anda secara instan dan aman.</i>`;
 
-      // Get WebApp URL dynamically (defaulting to Firebase hosting domain)
-      const host = req.get('host');
-      const protocol = req.secure || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
-      const webAppUrl = host && !host.includes('localhost') ? `${protocol}://${host}` : 'https://azurlize-team-3ba4f.firebaseapp.com';
-
-      const keyboard = {
-        inline_keyboard: [
-          [
-            {
-              text: '🚀 Buka Mini App',
-              web_app: { url: webAppUrl }
-            }
-          ]
-        ]
-      };
-
-      await fetch(`https://api.telegram.org/bot${activeToken}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: responseText,
-          parse_mode: 'HTML',
-          reply_markup: keyboard,
-          message_thread_id: threadId
-        })
-      });
-    }
-
-    if (msg && msg.text && msg.text.startsWith('/pin')) {
-      const chatId = msg.chat.id;
-      const threadId = msg.message_thread_id;
-      const senderId = msg.from?.id;
-      const firstName = msg.from?.first_name || 'Teman';
-
-      let responseText = '';
-      if (!senderId) {
-        responseText = `❌ Gagal memproses data Telegram ID Anda.`;
-      } else if (!serverDb) {
-        responseText = `⚠️ Database Firestore server belum siap. Hubungi Admin.`;
-      } else {
-        try {
-          const userRef = serverDb.collection('users').doc(String(senderId));
-          const docSnap = await userRef.get();
-          if (docSnap.exists) {
-            const data = docSnap.data();
-            const userPin = data.pin || '<i>Belum diatur (Silakan login ke aplikasi lalu atur PIN di halaman Profil)</i>';
-            responseText = `🔑 <b>INFORMASI KODE PIN (AKSES MASUK)</b>\n\n`;
-            responseText += `👤 <b>Nama:</b> ${data.firstName || data.name || firstName}\n`;
-            responseText += `🆔 <b>ID Telegram:</b> <code>${senderId}</code>\n`;
-            responseText += `🔐 <b>PIN Anda:</b> <code>${userPin}</code>\n\n`;
-            responseText += `<i>Gunakan ID Telegram dan PIN di atas untuk masuk di Aplikasi APK atau Browser Mandiri. Jaga kerahasiaan PIN Anda!</i>`;
-          } else {
-            responseText = `❌ <b>Akun Anda Belum Terdaftar!</b>\n\n`;
-            responseText += `ID Telegram Anda (<code>${senderId}</code>) belum tercatat di database AzurLizeTeam.\n\n`;
-            responseText += `Silakan buka Aplikasi APK atau buka Mini Web App untuk mendaftar profil baru terlebih dahulu.`;
-          }
-        } catch (dbErr) {
-          console.error('[Telegram Webhook] Error looking up user pin during /pin:', dbErr);
-          responseText = `⚠️ Terjadi kesalahan internal saat membaca data PIN Anda.`;
-        }
-      }
-
-      await fetch(`https://api.telegram.org/bot${activeToken}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: responseText,
-          parse_mode: 'HTML',
-          message_thread_id: threadId
-        })
-      });
-    }
-
-    if (msg && msg.text && (msg.text.startsWith('/id') || msg.text.startsWith('/info'))) {
-      const chatId = msg.chat.id;
-      const threadId = msg.message_thread_id;
-      const chatTitle = msg.chat.title || msg.chat.username || msg.chat.first_name || 'Private Chat';
-      const isTopic = Boolean(threadId);
-
-      let responseText = `<b>📍 TELEGRAM CHAT INFO</b>\n\n`;
-      responseText += `🏷️ <b>Title:</b> ${chatTitle}\n`;
-      responseText += `🆔 <b>Chat ID:</b> <code>${chatId}</code>\n`;
-      
-      if (isTopic) {
-        responseText += `🧵 <b>Topic ID:</b> <code>${threadId}</code>\n`;
-      }
-      
-      responseText += `\n<i>Gunakan ID di atas pada Pengaturan Aplikasi AzurLize.</i>`;
-
-      // Reply to the message
-      await fetch(`https://api.telegram.org/bot${activeToken}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: responseText,
-          parse_mode: 'HTML',
-          reply_to_message_id: msg.message_id,
-          message_thread_id: threadId // Ensure reply stays in the same topic
-        })
-      });
-    }
-
-    // Always respond 200 OK to Telegram
-    res.status(200).send('OK');
-  } catch (err) {
-    console.error('[Telegram Webhook] Error:', err);
-    res.status(200).send('OK'); // Still send 200 to avoid retries from Telegram
-  }
-});
+// --- Telegram Webhook Handler moved up ---
 
 // API Endpoint: Set Telegram Webhook
 app.post('/api/telegram/set-webhook', authenticateJWT, async (req: Request, res: Response) => {
@@ -1388,6 +1527,15 @@ app.post('/api/telegram/set-webhook', authenticateJWT, async (req: Request, res:
 
     const cleanUrl = url.replace(/\/$/, '');
     const webhookUrl = `${cleanUrl}/api/telegram/webhook?token=${encodeURIComponent(activeToken)}`;
+    
+    // Hapus webhook aktif dan drop pending updates
+    try {
+      await fetch(`https://api.telegram.org/bot${activeToken}/deleteWebhook?drop_pending_updates=true`);
+      console.log('[Telegram API] Webhook deleted and pending updates dropped.');
+    } catch (e) {
+      console.warn('[Telegram API] Failed to delete webhook before setting:', e);
+    }
+    
     const response = await fetch(`https://api.telegram.org/bot${activeToken}/setWebhook?url=${encodeURIComponent(webhookUrl)}`);
     const result = await response.json();
 
@@ -1428,7 +1576,8 @@ app.get('/api/telegram/webhook-info', authenticateJWT, async (req: Request, res:
 // API Endpoint: Get Bot Info
 app.get('/api/telegram/bot-info', authenticateJWT, async (req: Request, res: Response) => {
   try {
-    const activeToken = ((req.query.token as string) || TELEGRAM_BOT_TOKEN).trim();
+    const rawToken = (req.query.token as string) || TELEGRAM_BOT_TOKEN || '';
+    const activeToken = rawToken.trim();
     if (!activeToken) {
       res.status(400).json({ success: false, error: 'Token Bot Telegram tidak dikonfigurasi.' });
       return;
