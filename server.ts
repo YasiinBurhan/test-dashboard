@@ -99,7 +99,7 @@ app.use(cors({
     if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.run.app') || origin.endsWith('.vercel.app')) {
       callback(null, true);
     } else {
-      callback(new Error('Not allowed by CORS'));
+      callback(null, false);
     }
   },
   credentials: true
@@ -1441,7 +1441,7 @@ app.get('/api/check-telegram/:username', async (req: Request, res: Response) => 
     }
 
     let extractedTitle = username;
-    const titleMatch = html.match(/<div class="tgme_page_title"[^>]*><span[^>]*>(.*?)<\/span><\/div>/s) || 
+    const titleMatch = html.match(/<div class="tgme_page_title"[^>]*><span[^>]*>([\s\S]*?)<\/span><\/div>/) || 
                        html.match(/<meta property="og:title" content="(.*?)"/);
     if (titleMatch && titleMatch[1]) {
       const cleanTitle = titleMatch[1]
