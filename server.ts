@@ -1104,7 +1104,7 @@ function authorizeRoles(allowedRoles: string[]) {
         return;
       }
 
-      if (userData.status !== 'Active' || userData.approved !== true) {
+      if (userData.status !== 'Active') {
         res.status(403).json({ success: false, error: 'Access Denied: Akun belum aktif atau disetujui' });
         return;
       }
