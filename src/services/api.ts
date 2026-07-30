@@ -277,38 +277,38 @@ export async function sendReportToTelegramApi(
   // 2. Try server endpoint if API_BASE_URL is configured
   if (API_BASE_URL !== undefined) {
     try {
-      let finalVideoDataUrlForServer = videoDataUrl;
-      
-      // If we are falling back to the server and the video is a blob URL, we must convert it to base64
-      // so it can be transmitted in the JSON payload body.
-      if (videoDataUrl && videoDataUrl.startsWith('blob:')) {
-        try {
-          const blob = await (await fetch(videoDataUrl)).blob();
-          finalVideoDataUrlForServer = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = (e) => resolve(e.target?.result as string);
-            reader.onerror = (err) => reject(err);
-            reader.readAsDataURL(blob);
-          });
-        } catch (convErr) {
-          console.error('Failed to convert blob to base64 for server upload:', convErr);
+      const formDataPayload = new FormData();
+      formDataPayload.append('report', JSON.stringify(report || {}));
+      if (groupId) formDataPayload.append('groupId', groupId);
+      if (topicId) formDataPayload.append('topicId', topicId);
+      if (customText) formDataPayload.append('customText', customText);
+      if (token) formDataPayload.append('botToken', token);
+
+      if (videoDataUrl) {
+        if (videoDataUrl.startsWith('blob:') || videoDataUrl.startsWith('http')) {
+          try {
+            const blob = await (await fetch(videoDataUrl)).blob();
+            let ext = 'mp4';
+            if (blob.type.includes('gif')) ext = 'gif';
+            else if (blob.type.includes('quicktime') || blob.type.includes('mov')) ext = 'mov';
+            else if (blob.type.includes('webm')) ext = 'webm';
+            formDataPayload.append('video', blob, `media.${ext}`);
+          } catch (convErr) {
+            console.error('Failed to convert blob to file for server upload:', convErr);
+            formDataPayload.append('videoDataUrl', videoDataUrl);
+          }
+        } else {
+          formDataPayload.append('videoDataUrl', videoDataUrl);
         }
       }
 
+      const headers: any = {};
+      if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+
       const response = await fetch(`${API_BASE_URL}/api/telegram/send-report`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
-        },
-        body: JSON.stringify({ 
-          report, 
-          videoDataUrl: finalVideoDataUrlForServer, 
-          groupId, 
-          topicId, 
-          customText, 
-          botToken: token 
-        })
+        headers,
+        body: formDataPayload
       });
 
       const contentType = response.headers.get('content-type');

@@ -6,6 +6,7 @@ import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import multer from 'multer';
 
 const execPromise = promisify(exec);
 import dotenv from 'dotenv';
@@ -124,6 +125,11 @@ app.use(cors({
 
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ extended: true, limit: '100mb' }));
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 100 * 1024 * 1024 }
+});
 // --- Firestore REST Client Fallback to bypass Cross-Project IAM Blocks in Cloud Run ---
 function mapFirestoreFields(fields: any) {
   if (!fields) return {};
@@ -847,6 +853,8 @@ app.get('/api/health', (_req, res) => {
   res.json({ 
     status: 'ok', 
     environment: process.env.VERCEL ? 'vercel' : 'local',
+    hasGemini: !!process.env.GEMINI_API_KEY,
+    geminiLength: process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.length : 0,
     timestamp: new Date().toISOString()
   });
 });
@@ -1589,7 +1597,7 @@ app.post('/api/scan-uid', generalApiLimiter, authenticateJWT, authorizeRoles(['O
       return;
     }
     const response = await ai.models.generateContent({
-      model: 'gemini-3.6-flash',
+      model: 'gemini-2.5-flash',
       contents: [
         {
           inlineData: {
@@ -2209,9 +2217,13 @@ app.post('/api/telegram/send-post', authenticateJWT, async (req: Request, res: R
 });
 
 // API Endpoint: Send Daily Report & Video directly to Telegram Group Topic
-app.post('/api/telegram/send-report', authenticateJWT, async (req: Request, res: Response) => {
+app.post('/api/telegram/send-report', authenticateJWT, upload.single('video'), async (req: Request, res: Response) => {
   try {
-    const { report, videoDataUrl, groupId, topicId, customText, botToken } = req.body;
+    let { report, videoDataUrl, groupId, topicId, customText, botToken } = req.body;
+    if (typeof report === 'string') {
+      try { report = JSON.parse(report); } catch(e) {}
+    }
+    
     if (!report && !customText) {
       res.status(400).json({ success: false, error: 'Data laporan tidak ditemukan' });
       return;
@@ -2294,13 +2306,20 @@ Grub : <b>${displayGrup}</b>${photoLink}
 
     // Send video if available (Wrapped in try-catch to fallback on any failures)
     try {
-      if (videoDataUrl && typeof videoDataUrl === 'string') {
+      let buffer: Buffer | null = null;
+      let mimeType = 'video/mp4';
+      
+      if (req.file) {
+        videoAttempted = true;
+        buffer = req.file.buffer;
+        mimeType = req.file.mimetype || 'video/mp4';
+      } else if (videoDataUrl && typeof videoDataUrl === 'string') {
         videoAttempted = true;
         
         if (videoDataUrl.startsWith('data:')) {
           const match = videoDataUrl.match(/^data:(.*?);base64,(.*)$/);
           if (match) {
-            const mimeType = match[1] || 'video/mp4';
+            mimeType = match[1] || 'video/mp4';
             const base64Data = match[2];
             
             const validation = validateVideoUpload(base64Data, mimeType);
@@ -2309,36 +2328,45 @@ Grub : <b>${displayGrup}</b>${photoLink}
               return;
             }
 
-            const buffer = Buffer.from(base64Data, 'base64');
-            let ext = 'mp4';
-            if (mimeType.includes('quicktime') || mimeType.includes('mov')) ext = 'mov';
-            else if (mimeType.includes('gif')) ext = 'gif';
-            
-            // --- VIDEO COMPRESSION START ---
-            let blobToSend = new Blob([buffer], { type: mimeType });
-            let fileNameToSend = `laporan_${report?.reportId || Date.now()}.${ext}`;
-            
-            const tempId = crypto.randomBytes(8).toString('hex');
-            const inputPath = path.join('/tmp', `in_${tempId}.${ext}`);
-            const outputPath = path.join('/tmp', `out_${tempId}.mp4`);
-            
-            try {
-              console.log(`[Compression] Saving original video to ${inputPath} (${buffer.length} bytes)`);
-              await fs.promises.writeFile(inputPath, buffer);
-              
-              if (ext !== 'gif') {
-                console.log(`[Compression] Running ffmpeg compression...`);
-              // Settings: CRF 28, Scale to max 720p, keep audio with AAC
-              await execPromise(`ffmpeg -i "${inputPath}" -vcodec libx264 -crf 28 -preset fast -vf "scale=-2:720" -acodec aac -b:a 128k -movflags +faststart -y "${outputPath}"`);
-              
-              if (fs.existsSync(outputPath)) {
-                const compressedBuffer = await fs.promises.readFile(outputPath);
-                console.log(`[Compression] Success! ${buffer.length} -> ${compressedBuffer.length} bytes`);
-                blobToSend = new Blob([compressedBuffer], { type: 'video/mp4' });
-                fileNameToSend = `laporan_${report?.reportId || Date.now()}.mp4`;
-              }
-              }
-            } catch (compErr) {
+            buffer = Buffer.from(base64Data, 'base64');
+          }
+        } else if (videoDataUrl.startsWith('http')) {
+          // This block is handled down below for HTTP URL videos
+        } else if (videoDataUrl.startsWith('blob:')) {
+          videoErrorMsg = 'Format video blob: tidak didukung di server.';
+        }
+      }
+      
+      if (buffer) {
+        let ext = 'mp4';
+        if (mimeType.includes('quicktime') || mimeType.includes('mov')) ext = 'mov';
+        else if (mimeType.includes('gif')) ext = 'gif';
+        
+        // --- VIDEO COMPRESSION START ---
+        let blobToSend = new Blob([buffer], { type: mimeType });
+        let fileNameToSend = `laporan_${report?.reportId || Date.now()}.${ext}`;
+        
+        const tempId = crypto.randomBytes(8).toString('hex');
+        const inputPath = path.join('/tmp', `in_${tempId}.${ext}`);
+        const outputPath = path.join('/tmp', `out_${tempId}.mp4`);
+        
+        try {
+          console.log(`[Compression] Saving original video to ${inputPath} (${buffer.length} bytes)`);
+          await fs.promises.writeFile(inputPath, buffer);
+          
+          if (ext !== 'gif') {
+            console.log(`[Compression] Running ffmpeg compression...`);
+          // Settings: CRF 28, Scale to max 720p, keep audio with AAC
+          await execPromise(`ffmpeg -i "${inputPath}" -vcodec libx264 -crf 28 -preset fast -vf "scale=-2:720" -acodec aac -b:a 128k -movflags +faststart -y "${outputPath}"`);
+          
+          if (fs.existsSync(outputPath)) {
+            const compressedBuffer = await fs.promises.readFile(outputPath);
+            console.log(`[Compression] Success! ${buffer.length} -> ${compressedBuffer.length} bytes`);
+            blobToSend = new Blob([compressedBuffer], { type: 'video/mp4' });
+            fileNameToSend = `laporan_${report?.reportId || Date.now()}.mp4`;
+          }
+          }
+        } catch (compErr) {
               console.warn('[Compression] ffmpeg failed, using original:', compErr);
             } finally {
               // Cleanup temp files
@@ -2417,8 +2445,7 @@ Grub : <b>${displayGrup}</b>${photoLink}
               console.warn(`[Telegram API] ${apiMethod} failed, falling back to text-only:`, result);
               videoErrorMsg = result.description || 'Unknown Telegram Error';
             }
-          }
-        } else if (videoDataUrl.startsWith('http')) {
+        } else if (videoDataUrl && typeof videoDataUrl === 'string' && videoDataUrl.startsWith('http')) {
           const payload: Record<string, unknown> = {
             chat_id: actualTargetChat,
             video: videoDataUrl,
@@ -2478,10 +2505,7 @@ Grub : <b>${displayGrup}</b>${photoLink}
             console.warn('[Telegram API] sendVideo (URL) failed, falling back to text-only:', result);
             videoErrorMsg = result.description || 'Unknown Telegram Error';
           }
-        } else if (videoDataUrl.startsWith('blob:')) {
-          videoErrorMsg = 'Format video blob: tidak didukung di server.';
         }
-      }
     } catch (vidErr: any) {
       console.warn('[Telegram API] Exception during sendVideo, falling back to text-only:', vidErr);
       videoErrorMsg = vidErr instanceof Error ? vidErr.message : 'Koneksi ke server Telegram terputus saat upload video.';
