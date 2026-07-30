@@ -738,7 +738,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setActiveTab }) =>
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
-      className="space-y-5 pb-24"
+      className="space-y-5 pb-4"
     >
       {/* Welcome User Banner */}
       <GlassCard className="relative overflow-hidden border border-slate-200/80 dark:border-slate-800/80 bg-gradient-to-b from-white/90 to-slate-50/90 dark:from-slate-900/80 dark:to-slate-950/90 p-5 shadow-lg">
@@ -791,138 +791,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setActiveTab }) =>
             {announcementHeader}
           </p>
         </div>
-      )}
-
-      {/* Real-time Announcements Widget */}
-      {sortedAnnouncements.length > 0 && (
-        <GlassCard className="relative border border-sky-200/60 dark:border-sky-950/60 bg-gradient-to-r from-sky-500/5 via-sky-500/[0.02] to-transparent p-5 shadow-lg overflow-hidden">
-          {/* Decorative background blur */}
-          <div className="absolute top-0 right-0 w-24 h-24 bg-sky-500/10 rounded-full blur-2xl pointer-events-none" />
-          
-          <div className="flex flex-col gap-3">
-            {/* Header of widget */}
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/60 pb-2.5">
-              <div className="flex items-center gap-2">
-                <div className="p-1.5 rounded-lg bg-sky-500/10 text-sky-500 border border-sky-500/20">
-                  <Megaphone className="w-4 h-4 animate-bounce" />
-                </div>
-                <div>
-                  <h3 className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest flex items-center gap-1.5">
-                    <span>Pengumuman Rekrutmen</span>
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  </h3>
-                  <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">Instruksi & informasi manajemen terbaru</span>
-                </div>
-              </div>
-
-              {/* Navigation Arrows for Carousel */}
-              {sortedAnnouncements.length > 1 && (
-                <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-900 px-2 py-1 rounded-xl border border-slate-200/60 dark:border-slate-800/80 shrink-0">
-                  <button
-                    onClick={() => setCurrentAnnIndex(prev => (prev - 1 + sortedAnnouncements.length) % sortedAnnouncements.length)}
-                    className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
-                  >
-                    <ChevronLeft className="w-3.5 h-3.5" />
-                  </button>
-                  <span className="text-[9px] font-black text-slate-600 dark:text-slate-400 font-mono">
-                    {currentAnnIndex + 1}/{sortedAnnouncements.length}
-                  </span>
-                  <button
-                    onClick={() => setCurrentAnnIndex(prev => (prev + 1) % sortedAnnouncements.length)}
-                    className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
-                  >
-                    <ChevronRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Announcement Content */}
-            {(() => {
-              const ann = sortedAnnouncements[currentAnnIndex] || sortedAnnouncements[0];
-              if (!ann) return null;
-              
-              const totalReactions = ann.reactionsList?.length || 0;
-              const totalComments = ann.comments?.length || 0;
-              
-              return (
-                <div className="space-y-2.5 relative">
-                  {/* Badge Row */}
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {ann.pinned ? (
-                      <span className="text-[9px] bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30 px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider flex items-center gap-1 shadow-sm">
-                        📌 PINNED
-                      </span>
-                    ) : (
-                      <span className="text-[9px] bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20 px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider flex items-center gap-1 shadow-sm">
-                        TERBARU
-                      </span>
-                    )}
-                    <span className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold">
-                      Oleh: <span className="text-slate-700 dark:text-slate-300 font-bold">{ann.author}</span>
-                    </span>
-                    <span className="text-slate-300 dark:text-slate-800 font-light text-xs shrink-0">|</span>
-                    <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1">
-                      <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                      {formatWIBDate(ann.createdAt)}
-                    </span>
-                  </div>
-
-                  {/* Title & Body */}
-                  <div className="space-y-1">
-                    <h4 className={`text-sm leading-snug tracking-tight ${
-                      ann.author === 'Owner'
-                        ? 'font-black text-rose-600 dark:text-rose-400'
-                        : 'font-extrabold text-slate-900 dark:text-white'
-                    }`}>
-                      {ann.title}
-                    </h4>
-                    <p className={`text-xs line-clamp-3 leading-relaxed whitespace-pre-line ${
-                      ann.author === 'Owner'
-                        ? 'text-rose-600 dark:text-rose-400 font-bold'
-                        : 'text-slate-700 dark:text-slate-300 font-medium'
-                    }`}>
-                      {ann.content}
-                    </p>
-                  </div>
-
-                  {/* Stats & Link Footer */}
-                  <div className="flex items-center justify-between pt-2.5 border-t border-slate-100 dark:border-slate-800/40">
-                    {/* Reactions & Comments Info */}
-                    <div className="flex items-center gap-2.5">
-                      {totalReactions > 0 ? (
-                        <div className="flex items-center gap-1 bg-sky-500/10 dark:bg-sky-500/5 px-2 py-0.5 rounded-lg border border-sky-500/20 text-[10px] font-bold text-sky-600 dark:text-sky-400">
-                          <span>✨</span>
-                          <span>{totalReactions} Reaksi</span>
-                        </div>
-                      ) : (
-                        <span className="text-[10px] text-slate-400 dark:text-slate-500 italic">Belum ada reaksi</span>
-                      )}
-                      
-                      {totalComments > 0 ? (
-                        <div className="flex items-center gap-1 bg-indigo-500/10 dark:bg-indigo-500/5 px-2 py-0.5 rounded-lg border border-indigo-500/20 text-[10px] font-bold text-indigo-600 dark:text-indigo-400">
-                          <span>💬</span>
-                          <span>{totalComments} Komentar</span>
-                        </div>
-                      ) : (
-                        <span className="text-[10px] text-slate-400 dark:text-slate-500 italic">Belum ada diskusi</span>
-                      )}
-                    </div>
-
-                    {/* CTA Button to expand & discuss */}
-                    <button
-                      onClick={() => setActiveTab('pengumuman')}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-black text-white bg-sky-500 hover:bg-sky-600 dark:bg-sky-600 dark:hover:bg-sky-700 rounded-xl shadow-md shadow-sky-500/20 transition-all hover:scale-105 active:scale-95 cursor-pointer"
-                    >
-                      <span>Buka Diskusi</span>
-                      <ChevronRight className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              );
-            })()}
-          </div>
-        </GlassCard>
       )}
 
       {/* Pusat Aksi Cepat (Tactile Mobile Ergonomics) */}
@@ -1006,48 +874,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setActiveTab }) =>
         </div>
       </div>
 
-      {/* Top Banner / Hero Information */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-        {/* Reset Counter Panel */}
-        <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-500/10 to-amber-600/15 dark:from-amber-500/5 dark:to-amber-600/10 border border-amber-500/20 dark:border-amber-500/15 flex items-center justify-between gap-3 shadow-md backdrop-blur-md">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="p-2.5 rounded-xl bg-amber-500/20 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 shrink-0 border border-amber-500/30 dark:border-amber-500/20 shadow-inner">
-              <Timer className="w-5 h-5 text-amber-600 dark:text-amber-400" />
-            </div>
-            <div className="min-w-0">
-              <span className="text-[9px] font-black text-amber-700 dark:text-amber-400/90 uppercase tracking-widest block">Reset Mingguan</span>
-              <span className="text-[11px] font-extrabold text-slate-900 dark:text-slate-100 truncate block">Setiap Senin 10:00 WIB</span>
-            </div>
-          </div>
-          <div className="bg-white/90 dark:bg-slate-950/60 border border-amber-500/30 dark:border-amber-500/20 rounded-xl px-3 py-1.5 text-right shrink-0 shadow-inner">
-            <span className="text-[9px] text-slate-500 dark:text-slate-400 block font-black uppercase tracking-widest mb-0.5">Sisa Waktu</span>
-            <span className="text-xs font-mono font-black text-amber-600 dark:text-amber-400 tracking-wide flex items-center justify-end gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse inline-block shrink-0" />
-              {timeLeft || 'Menghitung...'}
-            </span>
-          </div>
-        </div>
 
-        {/* Date / Time Info */}
-        <div className="p-3.5 rounded-2xl bg-gradient-to-r from-blue-500/10 to-indigo-600/15 dark:from-blue-500/5 dark:to-indigo-600/10 border border-blue-500/20 dark:border-blue-500/15 flex items-center justify-between gap-3 shadow-md backdrop-blur-md">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="p-2.5 rounded-xl bg-blue-500/20 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 shrink-0 border border-blue-500/30 dark:border-blue-500/20 shadow-inner">
-              <Calendar className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-            </div>
-            <div className="min-w-0">
-              <span className="text-[9px] font-black text-blue-700 dark:text-blue-400/90 uppercase tracking-widest block">Hari Kerja</span>
-              <span className="text-[11px] font-extrabold text-slate-900 dark:text-slate-100 truncate block">Periode Aktif</span>
-            </div>
-          </div>
-          <div className="bg-white/90 dark:bg-slate-950/60 border border-blue-500/30 dark:border-blue-500/20 rounded-xl px-3 py-1.5 text-right shrink-0 shadow-inner">
-            <span className="text-[9px] text-slate-500 dark:text-slate-400 block font-black uppercase tracking-widest mb-0.5">WIB</span>
-            <span className="text-xs font-mono font-black text-sky-600 dark:text-sky-400 tracking-wide flex items-center justify-end gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-sky-500 animate-pulse inline-block shrink-0" />
-              {weekRangeInfo.shortFormattedRange}
-            </span>
-          </div>
-        </div>
-      </div>
 
       {/* Leaderboard Section */}
       <div className="space-y-3">

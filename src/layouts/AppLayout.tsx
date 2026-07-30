@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Header } from '../components/common/Header';
 import { BottomNav, TabType } from '../components/navigation/BottomNav';
+import { Sidebar } from '../components/navigation/Sidebar';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface AppLayoutProps {
@@ -17,6 +18,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   title
 }) => {
   const [isLowEnd, setIsLowEnd] = useState<boolean>(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
 
   useEffect(() => {
     // Detect low-end mobile device on mount
@@ -55,28 +57,41 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         </>
       )}
 
-      <Header title={title} setActiveTab={setActiveTab} />
-      
-      {/* Spacer for fixed header */}
-      <div 
-        style={{ 
-          height: 'calc(var(--tg-safe-area-inset-top, env(safe-area-inset-top, 0px)) + 76px)' 
-        }} 
-        className="w-full shrink-0" 
+      {/* Responsive Sidebar */}
+      <Sidebar 
+        activeTab={activeTab} 
+        setActiveTab={setActiveTab} 
+        isOpen={isSidebarOpen} 
+        onClose={() => setIsSidebarOpen(false)} 
       />
-      
-      <main 
-        style={{ 
-          paddingBottom: 'calc(180px + var(--tg-safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)))' 
-        }} 
-        className="flex-1 w-full max-w-7xl mx-auto px-3.5 sm:px-6 pt-3 relative flex flex-col min-h-0"
-      >
-        <div key={activeTab} className="flex-1 w-full space-y-4 md:space-y-6 animate-fadeIn">
-          {children}
-        </div>
-      </main>
 
-      <BottomNav activeTab={activeTab} setActiveTab={setActiveTab} />
+      {/* Main Layout Container (Offset by sidebar width on desktop) */}
+      <div className="flex-1 flex flex-col lg:pl-72 transition-all duration-300">
+        <Header 
+          title={title} 
+          setActiveTab={setActiveTab} 
+          onMenuClick={() => setIsSidebarOpen(true)} 
+        />
+        
+        {/* Spacer for fixed header */}
+        <div 
+          style={{ 
+            height: 'calc(var(--tg-safe-area-inset-top, env(safe-area-inset-top, 0px)) + 76px)' 
+          }} 
+          className="w-full shrink-0" 
+        />
+        
+        <main 
+          style={{ 
+            paddingBottom: 'calc(20px + var(--tg-safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)))' 
+          }} 
+          className="flex-1 w-full max-w-7xl mx-auto px-3.5 sm:px-6 pt-3 relative flex flex-col min-h-0"
+        >
+          <div key={activeTab} className="flex-1 w-full space-y-4 md:space-y-6 animate-fadeIn">
+            {children}
+          </div>
+        </main>
+      </div>
     </div>
   );
 };

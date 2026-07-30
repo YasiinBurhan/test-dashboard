@@ -10,28 +10,28 @@ interface ThemeContextType {
 }
 
 const darkParams: TelegramThemeParams = {
-  bg_color: '#030712',
-  secondary_bg_color: '#0f172a',
-  text_color: '#f8fafc',
-  hint_color: '#94a3b8',
-  link_color: '#38bdf8',
-  button_color: '#2563eb',
+  bg_color: '#000000',
+  secondary_bg_color: '#1c1c1e',
+  text_color: '#ffffff',
+  hint_color: '#8e8e93',
+  link_color: '#0a84ff',
+  button_color: '#0a84ff',
   button_text_color: '#ffffff',
-  header_bg_color: '#030712',
-  accent_text_color: '#60a5fa'
+  header_bg_color: '#000000',
+  accent_text_color: '#0a84ff'
 };
 
-// Warm, soft non-glaring light mode palette (slate-100 neutral background matching preview)
+// Precise native iOS Light system gray and white grouped colors
 const lightParams: TelegramThemeParams = {
-  bg_color: '#f1f5f9',
+  bg_color: '#f2f2f7',
   secondary_bg_color: '#ffffff',
-  text_color: '#0f172a',
-  hint_color: '#64748b',
-  link_color: '#0284c7',
-  button_color: '#2563eb',
+  text_color: '#000000',
+  hint_color: '#8e8e93',
+  link_color: '#007aff',
+  button_color: '#007aff',
   button_text_color: '#ffffff',
-  header_bg_color: '#e2e8f0',
-  accent_text_color: '#0284c7'
+  header_bg_color: '#f2f2f7',
+  accent_text_color: '#007aff'
 };
 
 const ThemeContext = createContext<ThemeContextType>({
@@ -82,10 +82,10 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         accent_text_color: params.accent_text_color || lightParams.accent_text_color
       };
       if (webApp?.setHeaderColor) {
-        try { webApp.setHeaderColor('#e2e8f0'); } catch(e) {}
+        try { webApp.setHeaderColor('#f2f2f7'); } catch(e) {}
       }
       if (webApp?.setBackgroundColor) {
-        try { webApp.setBackgroundColor('#f1f5f9'); } catch(e) {}
+        try { webApp.setBackgroundColor('#f2f2f7'); } catch(e) {}
       }
     } else {
       root.classList.remove('light');
@@ -102,10 +102,10 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         accent_text_color: params.accent_text_color || darkParams.accent_text_color
       };
       if (webApp?.setHeaderColor) {
-        try { webApp.setHeaderColor('#030712'); } catch(e) {}
+        try { webApp.setHeaderColor('#000000'); } catch(e) {}
       }
       if (webApp?.setBackgroundColor) {
-        try { webApp.setBackgroundColor('#030712'); } catch(e) {}
+        try { webApp.setBackgroundColor('#000000'); } catch(e) {}
       }
     }
 

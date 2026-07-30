@@ -402,8 +402,8 @@ app.post('/api/telegram/webhook', async (req: Request, res: Response) => {
     // Process standard messages
     const msg = message || edited_message || channel_post || edited_channel_post;
     
-    if (!msg && !callback_query) {
-      console.log('[Telegram Webhook] No message or callback_query in update.');
+    if (!msg) {
+      console.log('[Telegram Webhook] No message in update.');
       res.status(200).send('OK (Ignored update type)');
       return;
     }
@@ -574,6 +574,46 @@ app.post('/api/telegram/webhook', async (req: Request, res: Response) => {
           message_thread_id: threadId // Ensure reply stays in the same topic
         })
       });
+      res.status(200).send('OK');
+      return;
+    }
+
+    // Auto-reply for any direct message/video/photo in private chat with bot
+    if (msg && msg.chat && msg.chat.type === 'private') {
+      const chatId = msg.chat.id;
+      const firstName = msg.from?.first_name || 'Recruiter';
+      
+      let webAppUrl = 'https://azurlize-team-3ba4f.firebaseapp.com';
+      try {
+        const host = req.get('host');
+        if (host && !host.includes('localhost')) {
+          const protocol = req.headers['x-forwarded-proto'] === 'http' ? 'http' : 'https';
+          webAppUrl = `${protocol}://${host}`;
+        }
+      } catch (hErr) {
+        console.error('[Telegram Webhook] Error determining WebApp URL:', hErr);
+      }
+
+      let responseText = `👋 <b>Halo ${firstName}!</b>\n\n`;
+      responseText += `Laporan data harian dan video bukti pelamar diinputkan melalui <b>Aplikasi / Mini App AzurLize</b> agar terdaftar secara otomatis di database dan grup laporan.\n\n`;
+      responseText += `📱 <b>Silakan klik tombol "🚀 Buka Mini App" di bawah untuk menginput data & video laporan Anda:</b>`;
+
+      await fetch(`https://api.telegram.org/bot${activeToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: responseText,
+          parse_mode: 'HTML',
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: '🚀 Buka Mini App', web_app: { url: webAppUrl } }]
+            ]
+          }
+        })
+      });
+      res.status(200).send('OK');
+      return;
     }
 
     // Always respond 200 OK to Telegram

@@ -1315,7 +1315,7 @@ export const PostinganPage: React.FC = () => {
   };
 
   return (
-    <div className="pb-24 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="pb-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex flex-col gap-4">
         {/* Unified Daily Dashboard (Timer & Target Progress combined) */}
         <GlassCard className="p-4 border-slate-200/80 dark:border-slate-800/80 bg-white/80 dark:bg-slate-950/80 overflow-hidden relative shadow-xl space-y-4">

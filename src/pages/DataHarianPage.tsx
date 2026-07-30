@@ -863,10 +863,10 @@ const ReportListCard: React.FC<{
                 onChange={(e) => onUpdateStatus(rep.reportId || '', e.target.value as 'Pending' | 'ACC' | 'REJECT', rep.telegramId, rep.applicantTelegramUsername)}
                 className={`pl-2.5 pr-7 py-1 rounded-full text-[10px] font-black border outline-none cursor-pointer appearance-none transition-all ${
                   rep.result === 'ACC'
-                    ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30'
+                    ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
                     : rep.result === 'REJECT'
-                    ? 'bg-rose-500/20 text-rose-700 dark:text-rose-300 border-rose-500/30'
-                    : 'bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/30'
+                    ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/20'
+                    : 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/20'
                 }`}
               >
                 <option value="Pending" className="bg-white dark:bg-slate-900 text-amber-600 dark:text-amber-400">
@@ -4177,19 +4177,19 @@ Grub : ${grupDisplay}`;
               )}
 
               {/* Main List & Filters Section */}
-              <GlassCard className="p-4 space-y-4 border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/80">
+              <div className="ios-card p-4 sm:p-5 space-y-4 shadow-sm border border-slate-200/30 dark:border-white/5 bg-white dark:bg-[#1c1c1e]">
                 <div className="space-y-3">
                   {/* Title & Actions */}
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
                         <CheckCircle2 className="w-4 h-4" />
                       </div>
                       <div>
-                        <h2 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider leading-none">
+                        <h2 className="text-sm font-bold text-slate-900 dark:text-white tracking-tight">
                           {isAdminOrOwner ? 'Daftar Pemeriksaan' : 'Daftar Laporan Anda'}
                         </h2>
-                        <p className="text-[9px] text-slate-600 dark:text-slate-400 font-bold mt-1">
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium mt-0.5">
                           {isAdminOrOwner ? 'Verifikasi pelamar rekrutan minggu lalu' : 'Pantau status pelamar rekrutan minggu lalu'}
                         </p>
                       </div>
@@ -4206,7 +4206,7 @@ Grub : ${grupDisplay}`;
                       value={pemeriksaanSearch}
                       onChange={(e) => setPemeriksaanSearch(e.target.value)}
                       placeholder="Cari nama, Telegram, WhatsApp, atau UID..."
-                      className="w-full pl-9 pr-8 py-2.5 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-[11px] focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all shadow-sm dark:text-white"
+                      className="w-full pl-9 pr-8 py-2.5 bg-slate-50 dark:bg-[#2c2c2e]/60 border border-slate-200/50 dark:border-white/10 rounded-xl text-xs focus:ring-1 focus:ring-[#007aff] focus:border-[#007aff] transition-all shadow-sm dark:text-white"
                     />
                     {pemeriksaanSearch && (
                       <button
@@ -4225,7 +4225,7 @@ Grub : ${grupDisplay}`;
                     {pemeriksaanSearch && (
                       <button 
                         onClick={() => setPemeriksaanSearch('')}
-                        className="text-amber-500 font-black text-[10px] uppercase tracking-wider hover:underline"
+                        className="text-amber-500 font-bold text-[11px] hover:underline"
                       >
                         Hapus Filter Pencarian
                       </button>
@@ -4236,21 +4236,21 @@ Grub : ${grupDisplay}`;
                     <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
                       {paginatedReportsPemeriksaan.map((rep, idx) => (
                         <ReportListCard 
-                          key={rep.reportId || idx} 
-                          rep={rep} 
-                          isAdminOrOwner={isAdminOrOwner} 
-                          onUpdateStatus={updateStatus} 
-                          onUpdatePermission={updatePermission} 
-                          onUpdateDetails={updateDetails} 
-                          userPhotoMap={userPhotoMap} 
-                          isPemeriksaan={true}
+                           key={rep.reportId || idx} 
+                           rep={rep} 
+                           isAdminOrOwner={isAdminOrOwner} 
+                           onUpdateStatus={updateStatus} 
+                           onUpdatePermission={updatePermission} 
+                           onUpdateDetails={updateDetails} 
+                           userPhotoMap={userPhotoMap} 
+                           isPemeriksaan={true}
                         />
                       ))}
                     </div>
                     {renderPagination(filteredReportsPemeriksaan.length)}
                   </>
                 )}
-              </GlassCard>
+              </div>
             </div>
           ) : (
             <GlassCard className="p-3.5 sm:p-4 md:p-5 space-y-4 border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/80">
@@ -4903,6 +4903,14 @@ Grub : ${grupDisplay}`;
               >
                 <XCircle className="w-5 h-5" />
               </button>
+            </div>
+
+            {/* Instruction Banner */}
+            <div className="p-3 bg-sky-500/10 border border-sky-500/30 rounded-xl flex items-start gap-2.5 text-xs text-sky-600 dark:text-sky-400 font-medium leading-relaxed">
+              <Sparkles className="w-4 h-4 shrink-0 mt-0.5 text-sky-500" />
+              <span>
+                Harap tinjau kembali video & detail data pelamar. Jika data sudah benar, klik <strong className="font-bold text-sky-500">Kirim Sekarang</strong> untuk menyimpan dan memposting laporan ke grup Telegram.
+              </span>
             </div>
 
             {/* Video Bukti Preview */}

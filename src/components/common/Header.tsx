@@ -3,7 +3,7 @@ import { AzurLizeLogo } from '../logo/AzurLizeLogo';
 import { StatusBadge } from './StatusBadge';
 import { useAuth } from '../../hooks/useAuth';
 import { NotificationDrawer } from './NotificationDrawer';
-import { Bell, Sun, Moon } from 'lucide-react';
+import { Bell, Sun, Moon, Menu } from 'lucide-react';
 import { subscribeToNotifications } from '../../firebase/services/notificationService';
 import { isTelegramEnvironment, isStandaloneApp } from '../../telegram/webapp';
 import { TabType } from '../navigation/BottomNav';
@@ -58,9 +58,10 @@ interface HeaderProps {
   title?: string;
   showUserBadge?: boolean;
   setActiveTab?: (tab: TabType) => void;
+  onMenuClick?: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ title, showUserBadge = true, setActiveTab }) => {
+export const Header: React.FC<HeaderProps> = ({ title, showUserBadge = true, setActiveTab, onMenuClick }) => {
   const { userProfile, telegramUser } = useAuth();
   const { colorScheme, toggleTheme } = useTheme();
   const [isNotifOpen, setIsNotifOpen] = useState(false);
@@ -130,34 +131,48 @@ export const Header: React.FC<HeaderProps> = ({ title, showUserBadge = true, set
           paddingTop: 'calc(var(--tg-safe-area-inset-top, env(safe-area-inset-top, 0px)) + 12px)',
           paddingBottom: '12px'
         }}
-        className="fixed top-0 left-0 right-0 z-40 w-full backdrop-blur-xl border-b border-slate-200/80 dark:border-white/10 bg-slate-100/85 dark:bg-slate-950/85 px-4 md:px-8 transition-colors duration-300"
+        className="fixed top-0 left-0 lg:left-72 right-0 z-40 backdrop-blur-xl border-b border-slate-200/30 dark:border-white/5 bg-white/80 dark:bg-black/80 px-4 md:px-8 transition-all"
       >
         <div className="w-full max-w-7xl mx-auto flex items-center justify-between gap-3">
 
-          {title ? (
-            <div className="flex items-center gap-3">
-              <AzurLizeLogo size="sm" showText={false} />
-              <h1 className="text-lg font-bold text-slate-800 dark:text-white tracking-tight">{title}</h1>
-            </div>
-          ) : (
-            <AzurLizeLogo size="sm" />
-          )}
+          <div className="flex items-center gap-2.5">
+            {onMenuClick && (
+              <button
+                type="button"
+                onClick={onMenuClick}
+                className="lg:hidden p-2.5 rounded-2xl bg-slate-200/80 dark:bg-slate-900/90 border border-slate-300/80 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:text-sky-600 dark:hover:text-sky-400 cursor-pointer transition-all shrink-0 active:scale-95"
+                title="Buka Menu"
+              >
+                <Menu className="w-5 h-5" />
+              </button>
+            )}
+            
+            {title ? (
+              <div className="flex flex-col min-w-0">
+                <h1 className="text-base font-black text-slate-800 dark:text-white tracking-tight truncate">{title}</h1>
+                <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mt-0.5">Recruitment System</span>
+              </div>
+            ) : (
+              <div className="flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-2 select-none min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="font-black tracking-tight text-slate-900 dark:text-white text-base">
+                    Azur<span className="text-sky-500">Lize</span>
+                  </span>
+                  <span className="text-[9px] font-black uppercase tracking-wider text-sky-500/90 dark:text-sky-400 bg-sky-500/10 border border-sky-500/30 px-1.5 py-0.5 rounded-md shadow-sm">
+                    Team
+                  </span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="hidden sm:inline-block w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-700" />
+                  <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">
+                    Recruitment System
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
 
-          <div className="flex items-center gap-2">
-            {/* Theme Toggle Button */}
-            <button
-              type="button"
-              onClick={toggleTheme}
-              className="p-2.5 rounded-2xl bg-slate-200/80 dark:bg-slate-900/90 border border-slate-300/80 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:text-sky-600 dark:hover:text-sky-400 cursor-pointer transition-all shadow-sm active:scale-95"
-              title={colorScheme === 'dark' ? 'Beralih ke Mode Terang (Soft Light)' : 'Beralih ke Mode Gelap'}
-            >
-              {colorScheme === 'dark' ? (
-                <Sun className="w-5 h-5 text-amber-400" />
-              ) : (
-                <Moon className="w-5 h-5 text-indigo-600" />
-              )}
-            </button>
-
+          <div className="flex items-center gap-2.5">
             {/* Notification Bell Button */}
             {userTelegramId && (
               <button
@@ -175,21 +190,6 @@ export const Header: React.FC<HeaderProps> = ({ title, showUserBadge = true, set
               </button>
             )}
 
-            {showUserBadge && (userProfile || telegramUser) && (
-              <div className="relative shrink-0">
-                {telegramUser?.photo_url ? (
-                  <img referrerPolicy="no-referrer"                     src={telegramUser.photo_url}
-                    alt="Avatar"
-                    className="w-8 h-8 rounded-2xl object-cover border border-sky-400/50 shadow-md shadow-sky-500/20"
-                  />
-                ) : (
-                  <div className="w-8 h-8 rounded-2xl bg-gradient-to-tr from-sky-500 via-blue-600 to-indigo-600 flex items-center justify-center text-slate-900 dark:text-white font-black text-xs border border-white/20 shadow-md shadow-sky-500/20">
-                    {(userProfile?.firstName?.[0] || telegramUser?.first_name?.[0] || 'A').toUpperCase()}
-                  </div>
-                )}
-                <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-[var(--tg-bg-color,#030712)]" />
-              </div>
-            )}
           </div>
         </div>
       </header>

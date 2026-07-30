@@ -603,7 +603,7 @@ export const GajiPage: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6 px-1 pb-16">
+    <div className="space-y-6 px-1 pb-4">
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
