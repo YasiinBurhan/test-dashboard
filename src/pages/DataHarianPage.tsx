@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import Tesseract from 'tesseract.js';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { motion, AnimatePresence } from 'motion/react';
@@ -646,13 +645,16 @@ const ReportListCard: React.FC<{
   onUpdateStatus: (id: string, status: 'Pending' | 'ACC' | 'REJECT', targetTelegramId?: string, applicantTgUsername?: string) => void,
   onUpdatePermission?: (id: string, permission: number) => void,
   onUpdateDetails?: (id: string, data: any, targetTelegramId?: string) => Promise<void>,
+  onDelete?: (id: string) => Promise<void>,
   userPhotoMap?: Map<string, { photoUrl?: string; firstName?: string; name?: string }>,
   isPemeriksaan?: boolean,
   isArsip?: boolean
-}> = ({ rep, isAdminOrOwner, onUpdateStatus, onUpdatePermission, onUpdateDetails, userPhotoMap, isPemeriksaan, isArsip }) => {
+}> = ({ rep, isAdminOrOwner, onUpdateStatus, onUpdatePermission, onUpdateDetails, onDelete, userPhotoMap, isPemeriksaan, isArsip }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [showMediaModal, setShowMediaModal] = useState(false);
   const [imgErr, setImgErr] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const { clean, formatted, url } = rep.applicantTelegramUsername ? parseTelegramUsername(rep.applicantTelegramUsername) : { clean: null, formatted: null, url: null };
 
   const { userProfile, telegramUser } = useAuth();
@@ -727,6 +729,21 @@ const ReportListCard: React.FC<{
     }
   };
 
+  const handleDelete = async () => {
+    if (!onDelete || !rep.reportId) return;
+    setIsDeleting(true);
+    try {
+      await onDelete(rep.reportId);
+      triggerHaptic('notification', 'success');
+    } catch (err) {
+      console.error('Error deleting report:', err);
+      triggerHaptic('notification', 'error');
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteConfirm(false);
+    }
+  };
+
   const recruiterInfo = useMemo(() => {
     if (!userPhotoMap) return null;
     const tgId = rep.telegramId;
@@ -768,14 +785,14 @@ const ReportListCard: React.FC<{
   }, [displayName]);
 
   return (
-    <div className="bg-white dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 text-xs overflow-hidden transition-all shadow-md hover:border-slate-300 dark:hover:border-slate-300 dark:border-slate-700">
+    <div className="bg-white dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 text-xs overflow-hidden transition-all shadow-md hover:border-slate-300 dark:hover:border-slate-700">
       {/* Header Bar - Always Visible (Click to Collapse/Expand) */}
       <div 
         onClick={() => {
           setIsExpanded(!isExpanded);
           triggerHaptic('selection');
         }}
-        className="p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer select-none bg-slate-50 dark:bg-slate-950 hover:bg-slate-100 dark:hover:bg-slate-50 dark:bg-slate-900/60 transition-colors"
+        className="p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer select-none bg-slate-50 hover:bg-slate-100 dark:bg-slate-900/60 dark:hover:bg-slate-900/80 transition-colors"
       >
         <div className="flex items-start gap-2.5 min-w-0 flex-1">
           <div className={`w-8 h-8 rounded-full overflow-hidden shrink-0 flex items-center justify-center shadow-inner ${
@@ -811,7 +828,7 @@ const ReportListCard: React.FC<{
                 {displayName}
               </span>
               {rep.grup && (
-                <span className="text-[8px] sm:text-[9px] px-1.5 py-0.5 bg-purple-500/10 text-purple-600 dark:text-purple-400 rounded-md border border-purple-500/20 font-black shrink-0 flex items-center gap-0.5 uppercase tracking-wide">
+                <span className="text-[8px] sm:text-[9px] px-1.5 py-0.5 bg-purple-500/10 text-purple-600 dark:text-purple-400 rounded-md border border-purple-500/20 font-black shrink-0 flex items-center gap-0.5 uppercase tracking-wide whitespace-nowrap">
                   👥 {rep.grup === 'T0' ? 'T0-MARK' : rep.grup === 'V0' ? 'V0' : rep.grup === 'RECRUITER' ? 'RECRUITER' : rep.grup === 'T3' ? 'T0-MARK' : rep.grup}
                 </span>
               )}
@@ -837,17 +854,17 @@ const ReportListCard: React.FC<{
             {/* Badges row */}
             <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
               {rep.videoUrl && (
-                <span className="text-[8px] sm:text-[9px] px-1.5 py-0.5 bg-sky-500/10 text-sky-600 dark:text-sky-400 rounded-md border border-sky-500/20 font-medium shrink-0 flex items-center gap-1">
+                <span className="text-[8px] sm:text-[9px] px-1.5 py-0.5 bg-sky-500/10 text-sky-600 dark:text-sky-400 rounded-md border border-sky-500/20 font-medium shrink-0 flex items-center gap-1 whitespace-nowrap">
                   🎥 Video
                 </span>
               )}
               {rep.posting !== undefined && rep.posting > 0 && (
-                <span className="text-[8px] sm:text-[9px] px-1.5 py-0.5 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-md border border-indigo-500/20 font-bold shrink-0 flex items-center gap-1">
+                <span className="text-[8px] sm:text-[9px] px-1.5 py-0.5 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-md border border-indigo-500/20 font-bold shrink-0 flex items-center gap-1 whitespace-nowrap">
                   📦 {rep.posting} Post
                 </span>
               )}
               {!!(rep.isLate || (rep.fine && rep.fine > 0)) && (
-                <span className="text-[8px] sm:text-[9px] px-1.5 py-0.5 bg-rose-500/10 text-rose-600 dark:text-rose-400 rounded-md border border-rose-500/20 font-black shrink-0 flex items-center gap-1">
+                <span className="text-[8px] sm:text-[9px] px-1.5 py-0.5 bg-rose-500/10 text-rose-600 dark:text-rose-400 rounded-md border border-rose-500/20 font-black shrink-0 flex items-center gap-1 whitespace-nowrap">
                   ⚠️ Terlambat
                 </span>
               )}
@@ -899,19 +916,65 @@ const ReportListCard: React.FC<{
             </span>
           )}
 
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setIsExpanded(!isExpanded);
-              triggerHaptic('selection');
-            }}
-            className="px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-slate-900 hover:bg-slate-200 dark:hover:bg-slate-850 text-slate-800 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-slate-800 transition-all flex items-center gap-1 text-[10px] font-bold shadow-sm"
-            title={isExpanded ? "Sembunyikan Detail" : "Lihat Detail Akun"}
-          >
-            <span>{isExpanded ? 'Tutup' : 'Detail'}</span>
-            {isExpanded ? <ChevronUp className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />}
-          </button>
+          <div className="flex items-center gap-2">
+            {isAdminOrOwner && onDelete && (
+              <div className="relative">
+                {showDeleteConfirm ? (
+                  <div className="flex items-center gap-1.5 animate-in fade-in slide-in-from-right-2 duration-200">
+                    <button
+                      type="button"
+                      disabled={isDeleting}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDelete();
+                      }}
+                      className="px-2 py-1 bg-rose-500 hover:bg-rose-600 text-white rounded-lg text-[9px] font-black shadow-sm transition-all whitespace-nowrap"
+                    >
+                      {isDeleting ? '...' : 'YA'}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isDeleting}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowDeleteConfirm(false);
+                      }}
+                      className="px-2 py-1 bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-lg text-[9px] font-black shadow-sm transition-all"
+                    >
+                      X
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowDeleteConfirm(true);
+                      triggerHaptic('impact', 'light');
+                    }}
+                    className="p-1.5 bg-rose-50 dark:bg-rose-500/10 hover:bg-rose-100 dark:hover:bg-rose-500/20 text-rose-500 dark:text-rose-400 rounded-xl border border-rose-200 dark:border-rose-500/30 transition-all shadow-sm"
+                    title="Hapus Data"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsExpanded(!isExpanded);
+                triggerHaptic('selection');
+              }}
+              className="px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-slate-900 hover:bg-slate-200 dark:hover:bg-slate-850 text-slate-800 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white border border-slate-200 dark:border-slate-800 transition-all flex items-center gap-1 text-[10px] font-bold shadow-sm"
+              title={isExpanded ? "Sembunyikan Detail" : "Lihat Detail Akun"}
+            >
+              <span>{isExpanded ? 'Tutup' : 'Detail'}</span>
+              {isExpanded ? <ChevronUp className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1210,8 +1273,8 @@ const ReportListCard: React.FC<{
 };
 
 export const DataHarianPage: React.FC = () => {
-  const { userProfile, telegramUser } = useAuth();
-  const { reports, submitReport, updateStatus, updatePermission, updateDetails, isLoading } = useReports();
+  const { userProfile, telegramUser, token } = useAuth();
+  const { reports, submitReport, updateStatus, updatePermission, updateDetails, deleteReport, isLoading } = useReports();
   const [activeTab, setActiveTab] = useState<'formulir' | 'data_pelamar' | 'metrik_rekruter'>('data_pelamar');
   const [activeSubTab, setActiveSubTab] = useState<'minggu_ini' | 'minggu_lalu' | 'arsip'>('minggu_ini');
 
@@ -1240,6 +1303,22 @@ export const DataHarianPage: React.FC = () => {
   const [metrikPeriod, setMetrikPeriod] = useState<'semua' | 'minggu_ini' | 'minggu_lalu'>('semua');
   const [selectedMetrikRecruiter, setSelectedMetrikRecruiter] = useState<string>('Saya');
   const ITEMS_PER_PAGE = 10;
+
+  const resetFormFields = () => {
+    setFormData((prev) => ({
+      ...prev,
+      applicantWhatsapp: '',
+      uid9Kucing: '',
+      applicantTelegramUsername: '',
+      result: 'Pending',
+      grup: 'T0',
+      note: '',
+      videoUrl: undefined,
+      applicantPhotoUrl: undefined
+    }));
+    setFormStep('upload');
+    setShowReview(false);
+  };
 
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   const [generatingData, setGeneratingData] = useState(false);
@@ -2055,13 +2134,13 @@ export const DataHarianPage: React.FC = () => {
   const [formData, setFormData] = useState<DailyReportFormData>({
     date: todayStr,
     recruiterUsername: autoRecruiterUsername,
-    channel: 'Facebook',
+    channel: '',
     applicantWhatsapp: '',
     applicantName: '',
     uid9Kucing: '',
     applicantTelegramUsername: '',
     result: 'Pending',
-    grup: 'T0',
+    grup: undefined,
     visit: 0,
     applicant: 1,
     quality: 0,
@@ -2135,120 +2214,136 @@ export const DataHarianPage: React.FC = () => {
   const [uidScreenshotPreview, setUidScreenshotPreview] = useState<string | null>(null);
   const [isGeminiUnavailable, setIsGeminiUnavailable] = useState<boolean>(false);
 
+  // Helper to convert File to Base64 (original raw view)
+  const fileToBase64 = (f: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(f);
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = error => reject(error);
+    });
+  };
+
+  // PaddleOCR-style image preprocessing with grayscale, rescaling, and dynamic contrast stretching
+  const preprocessPaddleOCR = (file: File): Promise<{ base64: string; mimeType: string }> => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target?.result as string;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            resolve({ base64: event.target?.result as string, mimeType: file.type });
+            return;
+          }
+
+          // Standardize width to 1080px for optimal text recognition (standard PaddleOCR resolution)
+          const targetWidth = 1080;
+          const scale = targetWidth / img.width;
+          canvas.width = targetWidth;
+          canvas.height = img.height * scale;
+
+          // Draw image onto canvas
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+          try {
+            const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imgData.data;
+
+            // Apply Grayscale and Dynamic Contrast Enhancement
+            for (let i = 0; i < data.length; i += 4) {
+              const r = data[i];
+              const g = data[i + 1];
+              const b = data[i + 2];
+
+              // Luminance grayscale conversion
+              let gray = 0.299 * r + 0.587 * g + 0.114 * b;
+
+              // High-precision adaptive thresholding / contrast stretching for text detection
+              if (gray < 110) {
+                gray = Math.max(0, gray - 30); // Deepen text shadows
+              } else if (gray > 140) {
+                gray = Math.min(255, gray + 30); // Brighten background highlights
+              }
+
+              data[i] = gray;
+              data[i + 1] = gray;
+              data[i + 2] = gray;
+            }
+
+            ctx.putImageData(imgData, 0, 0);
+            
+            // Output as compressed JPEG (optimal size for API payload and high readability)
+            const processedBase64 = canvas.toDataURL('image/jpeg', 0.85);
+            resolve({ base64: processedBase64, mimeType: 'image/jpeg' });
+          } catch (e) {
+            console.warn('Canvas pixel processing blocked (CORS) or failed, using raw base64:', e);
+            resolve({ base64: event.target?.result as string, mimeType: file.type });
+          }
+        };
+        img.onerror = () => {
+          resolve({ base64: event.target?.result as string, mimeType: file.type });
+        };
+      };
+      reader.onerror = () => {
+        resolve({ base64: '', mimeType: file.type });
+      };
+    });
+  };
+
   const handleScanScreenshot = async (file: File) => {
     setIsScanningUID(true);
     setScanProgress(0);
     setScanError(null);
     triggerHaptic('impact');
-    
-    // Helper to convert File to Base64
-    const fileToBase64 = (f: File): Promise<string> => {
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(f);
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = error => reject(error);
-      });
-    };
 
     try {
-      setScanProgress(15);
-      const base64Image = await fileToBase64(file);
-      setUidScreenshotPreview(base64Image);
+      setScanProgress(10);
+      const rawBase64 = await fileToBase64(file);
+      setUidScreenshotPreview(rawBase64); // Show original nice screenshot to user
+      
       setScanProgress(30);
+      // Generate highly optimized PaddleOCR-style preprocessed image for Gemini
+      const preprocessed = await preprocessPaddleOCR(file);
+      setScanProgress(60);
       
       let extractedUid = '';
       let extractedWa = '';
       let extractedTg = '';
       let extractedName = '';
-      let usedLocalOcr = false;
 
-      try {
-        const response = await fetch(`${API_BASE_URL}/api/scan-uid`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            image: base64Image,
-            mimeType: file.type,
-          }),
-        });
+      const response = await fetch(`${API_BASE_URL}/api/scan-uid`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          image: preprocessed.base64,
+          mimeType: preprocessed.mimeType,
+        }),
+      });
 
-        const errData = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          if (errData.error === 'GEMINI_API_KEY_MISSING' || (errData.message && errData.message.includes('GEMINI_API_KEY'))) {
-            setIsGeminiUnavailable(true);
-          }
-          throw new Error(errData.message || errData.error || `Server error (${response.status}) saat memproses screenshot.`);
+      const errData = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        if (errData.error === 'GEMINI_API_KEY_MISSING' || (errData.message && errData.message.includes('GEMINI_API_KEY'))) {
+          setIsGeminiUnavailable(true);
         }
+        throw new Error(errData.message || errData.error || `Server error (${response.status}) saat memproses screenshot.`);
+      }
 
-        const resJson = errData; // Already parsed
-        if (resJson.success && resJson.data) {
-          const aiData = resJson.data;
-          extractedUid = aiData.uid ? aiData.uid.trim() : '';
-          extractedWa = aiData.whatsapp ? aiData.whatsapp.replace(/\D/g, '').trim() : '';
-          extractedTg = aiData.telegramUsername ? aiData.telegramUsername.replace(/^@/, '').trim() : '';
-          extractedName = aiData.name ? aiData.name.trim() : '';
-        }
-      } catch (serverErr: any) {
-        console.warn('Backend Gemini API tidak tersedia atau gagal, menggunakan OCR lokal (Tesseract.js)...', serverErr);
-        usedLocalOcr = true;
-        setIsGeminiUnavailable(true);
-        setScanProgress(40);
-        
-        // Execute client-side OCR
-        const ocrResult = await Tesseract.recognize(
-          file,
-          'eng',
-          {
-            logger: (m) => {
-              if (m.status === 'recognizing text') {
-                setScanProgress(Math.floor(40 + m.progress * 50));
-              }
-            }
-          }
-        );
-        
-        const text = ocrResult.data.text || '';
-        console.log('Tesseract Local OCR Extracted Text:', text);
-        
-        // Try to extract UID: look for pattern label (e.g. UID, ID) or a block of digits
-        const uidMatch = text.match(/(?:uid|id|user\s*id|player\s*id|akun|id\s*pelamar)\s*[:\-\s=]\s*(\d{5,15})/i);
-        if (uidMatch && uidMatch[1]) {
-          extractedUid = uidMatch[1];
-        } else {
-          // Alternative: look for standalone numeric words that are 5-15 digits long
-          const words = text.split(/[\s,;\n]+/);
-          const digitWords = words.map(w => w.replace(/\D/g, '')).filter(w => w.length >= 5 && w.length <= 15);
-          if (digitWords.length > 0) {
-            // Prefer numbers that are around 8-11 digits (typical game UID lengths)
-            const preferred = digitWords.find(w => w.length >= 8 && w.length <= 11);
-            extractedUid = preferred || digitWords[0];
-          }
-        }
+      setScanProgress(85);
 
-        // Try to extract WhatsApp number
-        const waMatch = text.match(/(?:wa|whatsapp|phone|telp|hp)\s*[:\-\s=]\s*(\+?\d{9,15})/i);
-        if (waMatch && waMatch[1]) {
-          extractedWa = waMatch[1].replace(/\D/g, '');
-        } else {
-          const generalWaMatch = text.match(/\b(?:08|\+?62|62)\d{8,11}\b/);
-          if (generalWaMatch) {
-            extractedWa = generalWaMatch[0].replace(/\D/g, '');
-          }
-        }
-
-        // Try to extract Telegram username
-        const tgMatch = text.match(/(?:tg|tele|telegram)\s*[:\-\s=]\s*@?([a-zA-Z0-9_]{5,32})/i);
-        if (tgMatch && tgMatch[1]) {
-          extractedTg = tgMatch[1];
-        } else {
-          const handleMatch = text.match(/@([a-zA-Z0-9_]{5,32})/);
-          if (handleMatch && handleMatch[1]) {
-            extractedTg = handleMatch[1];
-          }
-        }
+      const resJson = errData; // Already parsed
+      if (resJson.success && resJson.data) {
+        const aiData = resJson.data;
+        extractedUid = aiData.uid ? aiData.uid.trim() : '';
+        extractedWa = aiData.whatsapp ? aiData.whatsapp.replace(/\D/g, '').trim() : '';
+        extractedTg = aiData.telegramUsername ? aiData.telegramUsername.replace(/^@/, '').trim() : '';
+        extractedName = aiData.name ? aiData.name.trim() : '';
       }
 
       // Populate form fields
@@ -2274,11 +2369,7 @@ export const DataHarianPage: React.FC = () => {
           msg += ` dan melengkapi form otomatis (WA/Telegram)`;
         }
         
-        if (usedLocalOcr) {
-          showAlert('success', 'OCR Lokal Berhasil 🎉', msg + ' (Terdeteksi via sensor gambar lokal)');
-        } else {
-          showAlert('success', 'Gemini AI Berhasil 🎉', msg);
-        }
+        showAlert('success', 'Gemini AI Berhasil 🎉', msg);
       } else {
         throw new Error('UID tidak terdeteksi dalam screenshot. Pastikan screenshot memperlihatkan bagian profil atau nomor UID pelamar (5-15 digit) dengan jelas.');
       }
@@ -2594,6 +2685,18 @@ export const DataHarianPage: React.FC = () => {
       return;
     }
 
+    if (!formData.channel) {
+      setError('Channel / Platform wajib dipilih.');
+      showAlert('warning', 'Data Belum Lengkap', 'Silakan pilih Channel / Platform terlebih dahulu.');
+      return;
+    }
+
+    if (!formData.grup) {
+      setError('Grup / Penempatan wajib dipilih.');
+      showAlert('warning', 'Data Belum Lengkap', 'Silakan pilih Grup / Penempatan terlebih dahulu.');
+      return;
+    }
+
     if (!formData.applicantTelegramUsername || !formData.applicantTelegramUsername.trim()) {
       setError('Username Telegram pelamar wajib diisi.');
       showAlert('warning', 'Data Belum Lengkap', 'Username Telegram pelamar wajib diisi.');
@@ -2671,57 +2774,7 @@ export const DataHarianPage: React.FC = () => {
         grup: targetGrup
       };
       
-      // Send to Telegram using real-time settings or fallback (skip if T3/Dipromosikan)
-      let telegramNotice = '';
-      if (targetGrup === 'T3') {
-        telegramNotice = ' (Status T0-MARK Dipromosikan: disimpan di sistem, tidak dikirim ke Telegram)';
-      } else {
-        let currentSettings = settings;
-        if (!currentSettings || !currentSettings.telegramGroupId) {
-          try {
-            const sys = await getSystemSettings();
-            if (sys) currentSettings = sys;
-          } catch (sysErr) {
-            console.warn('[DataHarian] Fallback fetch system settings error:', sysErr);
-          }
-        }
-
-        const groupId = currentSettings?.telegramGroupId || '';
-        let topicId = '';
-        if (targetGrup === 'T0') topicId = currentSettings?.telegramTopicT0 || '';
-        if (targetGrup === 'V0') topicId = currentSettings?.telegramTopicV0 || '';
-        if (targetGrup === 'RECRUITER') topicId = currentSettings?.telegramTopicRecruiter || '';
-
-        // Construct custom text identical to preview
-        const rawTg = reportData.applicantTelegramUsername ? reportData.applicantTelegramUsername.replace(/^@+/, '') : '';
-        const tgUname = rawTg ? `@${rawTg}` : '-';
-        const rawRec = reportData.recruiterUsername ? reportData.recruiterUsername.replace(/^@+/, '') : '';
-        const recr = rawRec ? `@${rawRec}` : '-';
-        const grupDisplay = reportData.grup === 'T0' ? 'T0-MARK' : reportData.grup === 'V0' ? 'V0' : reportData.grup === 'RECRUITER' ? 'RECRUITER' : reportData.grup === 'T3' ? 'T0-MARK' : (reportData.grup || '-');
-        const tgName = reportData.applicantName || 'Tidak Diketahui';
-        const customText = `UID : ${reportData.uid9Kucing}
-WA : ${reportData.applicantWhatsapp}
-Nama : ${tgName}
-Username Telegram : ${tgUname}
-Rekomendasi dari : ${recr}
-Info dari sosmed : ${reportData.channel || '-'}
-
-Grub : ${grupDisplay}`;
-
-        // Send synchronously to make sure it actually lands in Telegram Group Topic
-        setSuccessMsg('Sedang mengompresi video dan mengirim ke Telegram (Harap tunggu)...');
-        const res = await sendReportToTelegramApi(reportData, formData.videoUrl, groupId, topicId, customText);
-        if (!res.success) {
-          throw new Error(`Gagal mengirim ke grup Telegram: ${res.error || 'Terjadi kesalahan jaringan'}. Harap pastikan format video valid, ukuran di bawah 50MB, dan koneksi internet stabil!`);
-        }
-        telegramNotice = ' Tersinkron ke Telegram & Google Sheets.';
-      }
-
-      // Save to Firestore database only after Telegram delivery is confirmed (or bypassed for T3)
-      // We exclude videoUrl from Firestore to keep the database lightweight, 
-      // as the video is already sent and stored in Telegram.
-      const { videoUrl: _v, ...firestoreData } = reportData;
-
+      // 1. Prepare Sender Info
       let customSenderInfo: { telegramId: string; username: string; name: string } | undefined = undefined;
       if (isAdminOrOwner && selectedOnBehalfRecruiter) {
         const recObj = recruitersList.find(r => r.key === selectedOnBehalfRecruiter);
@@ -2734,27 +2787,64 @@ Grub : ${grupDisplay}`;
         }
       }
 
-      await submitReport(firestoreData as any, customSenderInfo);
+      // 2. Save to Firestore database first (Status: Pending)
+      // We exclude videoUrl from Firestore to keep the database lightweight, 
+      // as the video is already sent and stored in Telegram.
+      const { videoUrl: _v, ...firestoreData } = reportData;
+      const savedReport = await submitReport(firestoreData as any, customSenderInfo);
+      
+      // 3. Send to Telegram using real-time settings or fallback
+      let telegramNotice = '';
+      let currentSettings = settings;
+      if (!currentSettings || !currentSettings.telegramGroupId) {
+        try {
+          const sys = await getSystemSettings();
+          if (sys) currentSettings = sys;
+        } catch (sysErr) {
+          console.warn('[DataHarian] Fallback fetch system settings error:', sysErr);
+        }
+      }
+
+      const groupId = currentSettings?.telegramGroupId || '';
+      let topicId = '';
+      if (targetGrup === 'T0') topicId = currentSettings?.telegramTopicT0 || '';
+      if (targetGrup === 'V0') topicId = currentSettings?.telegramTopicV0 || '';
+      if (targetGrup === 'RECRUITER') topicId = currentSettings?.telegramTopicRecruiter || '';
+      if (targetGrup === 'T3') topicId = currentSettings?.telegramTopicT3 || '';
+
+      // Construct custom text identical to preview
+      const rawTg = reportData.applicantTelegramUsername ? reportData.applicantTelegramUsername.replace(/^@+/, '') : '';
+      const tgUname = rawTg ? `@${rawTg}` : '-';
+      const rawRec = reportData.recruiterUsername ? reportData.recruiterUsername.replace(/^@+/, '') : '';
+      const recr = rawRec ? `@${rawRec}` : '-';
+      const grupDisplay = reportData.grup === 'T0' ? 'T0-MARK' : reportData.grup === 'V0' ? 'V0' : reportData.grup === 'RECRUITER' ? 'RECRUITER' : reportData.grup === 'T3' ? 'T0-MARK' : (reportData.grup || '-');
+      const tgName = reportData.applicantName || 'Tidak Diketahui';
+      const customText = `UID : ${reportData.uid9Kucing}
+WA : ${reportData.applicantWhatsapp}
+Nama : ${tgName}
+Username Telegram : ${tgUname}
+Rekomendasi dari : ${recr}
+Info dari sosmed : ${reportData.channel || '-'}
+
+Grub : ${grupDisplay}`;
+
+      // Send synchronously using the saved report (which contains reportId)
+      setSuccessMsg('Sedang mengompresi video dan mengirim ke Telegram (Harap tunggu)...');
+      const res = await sendReportToTelegramApi(savedReport, formData.videoUrl, groupId, topicId, customText, token || undefined);
+      if (!res.success) {
+        const warnMsg = `Data berhasil disimpan ke sistem, namun gagal mengirim ke Telegram: ${res.error || 'Terjadi kesalahan jaringan'}.`;
+        setSuccessMsg(warnMsg);
+        showAlert('warning', 'Tersimpan (Gagal Telegram)', warnMsg);
+        resetFormFields();
+        return;
+      } else {
+        telegramNotice = ` ${res.message || 'Tersinkron ke Telegram.'}`;
+      }
 
       const successMessage = `Data Harian pelamar berhasil disimpan!${telegramNotice}`;
       setSuccessMsg(successMessage);
       showAlert('success', 'Berhasil Disimpan 🎉', successMessage);
-
-      // Reset candidate specific fields for next entry
-      setFormData((prev) => ({
-        ...prev,
-        applicantWhatsapp: '',
-        uid9Kucing: '',
-        applicantTelegramUsername: '',
-        result: 'Pending',
-        grup: 'T0',
-        note: '',
-        videoUrl: undefined,
-        applicantPhotoUrl: undefined
-      }));
-      setFormStep('upload');
-      
-      setShowReview(false);
+      resetFormFields();
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : 'Gagal menyimpan data harian.';
       setError(errMsg);
@@ -2844,7 +2934,7 @@ Grub : ${grupDisplay}`;
             setActiveTab('formulir');
             triggerHaptic('selection');
           }}
-          className={`shrink-0 flex-1 min-w-[100px] py-2 px-3 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
+          className={`shrink-0 flex-1 min-w-[100px] py-2 px-3 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 whitespace-nowrap ${
             activeTab === 'formulir' ? 'bg-sky-500 text-slate-950 shadow-lg shadow-sky-500/20 scale-[1.02]' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-300/50 dark:hover:bg-white/5'
           }`}
         >
@@ -2858,7 +2948,7 @@ Grub : ${grupDisplay}`;
               setActiveTab('data_pelamar');
               triggerHaptic('selection');
             }}
-            className={`shrink-0 flex-1 min-w-[120px] py-2 px-3 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
+            className={`shrink-0 flex-1 min-w-[120px] py-2 px-3 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 whitespace-nowrap ${
               activeTab === 'data_pelamar' ? 'bg-amber-500 text-slate-950 shadow-lg shadow-amber-500/20 scale-[1.02]' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-300/50 dark:hover:bg-white/5'
             }`}
           >
@@ -2872,7 +2962,7 @@ Grub : ${grupDisplay}`;
             setActiveTab('metrik_rekruter');
             triggerHaptic('selection');
           }}
-          className={`shrink-0 flex-1 min-w-[120px] py-2 px-3 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
+          className={`shrink-0 flex-1 min-w-[120px] py-2 px-3 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 whitespace-nowrap ${
             activeTab === 'metrik_rekruter' ? 'bg-indigo-500 text-slate-950 shadow-lg shadow-indigo-500/20 scale-[1.02]' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-300/50 dark:hover:bg-white/5'
           }`}
         >
@@ -2890,7 +2980,7 @@ Grub : ${grupDisplay}`;
               setActiveSubTab('minggu_ini');
               triggerHaptic('selection');
             }}
-            className={`shrink-0 flex-1 min-w-[100px] py-2 px-3 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
+            className={`shrink-0 flex-1 min-w-[100px] py-2 px-3 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 whitespace-nowrap ${
               activeSubTab === 'minggu_ini' ? 'bg-amber-500 text-slate-950 shadow-md scale-[1.01]' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
@@ -2903,7 +2993,7 @@ Grub : ${grupDisplay}`;
               setActiveSubTab('minggu_lalu');
               triggerHaptic('selection');
             }}
-            className={`shrink-0 flex-1 min-w-[100px] py-2 px-3 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
+            className={`shrink-0 flex-1 min-w-[100px] py-2 px-3 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 whitespace-nowrap ${
               activeSubTab === 'minggu_lalu' ? 'bg-emerald-500 text-slate-950 shadow-md scale-[1.01]' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
@@ -2916,7 +3006,7 @@ Grub : ${grupDisplay}`;
               setActiveSubTab('arsip');
               triggerHaptic('selection');
             }}
-            className={`shrink-0 flex-1 min-w-[100px] py-2 px-3 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
+            className={`shrink-0 flex-1 min-w-[100px] py-2 px-3 rounded-xl text-[10px] sm:text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 whitespace-nowrap ${
               activeSubTab === 'arsip' ? 'bg-purple-500 text-slate-950 shadow-md scale-[1.01]' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
@@ -2946,7 +3036,7 @@ Grub : ${grupDisplay}`;
                 setSelectedRecruiter(e.target.value);
                 triggerHaptic('selection');
               }}
-              className="w-full pl-11 pr-8 py-2 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-sky-500 cursor-pointer appearance-none"
+              className="w-full pl-11 pr-8 h-10 py-0 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-sky-500 cursor-pointer appearance-none"
             >
               <option value="Semua">Semua Recruiter ({recruitersList.length})</option>
               {recruitersList.map((rec) => (
@@ -3226,7 +3316,7 @@ Grub : ${grupDisplay}`;
                   setSelectedOnBehalfRecruiter(e.target.value);
                   triggerHaptic('selection');
                 }}
-                className="w-full pl-11 pr-8 py-2.5 rounded-xl text-xs font-black border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-purple-500 cursor-pointer appearance-none"
+                className="w-full pl-11 pr-8 h-10 py-0 rounded-xl text-xs font-black border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-purple-500 cursor-pointer appearance-none"
               >
                 <option value="" disabled>-- Pilih Recruiter --</option>
                 {recruitersList.map((rec) => (
@@ -3328,199 +3418,331 @@ Grub : ${grupDisplay}`;
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* STEP 1: UPLOAD VIDEO FIRST */}
+          {/* STEP 1: UPLOAD BUKTI (KIRI: VIDEO, KANAN: SCREENSHOT UID) */}
           {formStep === 'upload' && (
             <div className="space-y-4">
-              {/* Metadata Bar (Tanggal, Recruiter, Status) */}
-              <div className="grid grid-cols-3 gap-2 text-[10px] sm:text-xs text-slate-600 dark:text-slate-400 bg-white dark:bg-slate-950/60 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-slate-500 dark:text-slate-400 font-bold uppercase text-[8px] tracking-wider">Tanggal</span>
-                  <span className="text-sky-300 font-black">{formData.date}</span>
+              {/* Header Info */}
+              <div className="bg-sky-500/10 border border-sky-500/20 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-sky-500/20 border border-sky-500/30 flex items-center justify-center shrink-0 text-sky-400 font-bold">
+                    <Sparkles className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900 dark:text-white">Halaman Upload Bukti Pelamar</h3>
+                    <p className="text-xs text-slate-600 dark:text-slate-400 font-medium">
+                      Unggah Bukti Video di sebelah <strong className="text-sky-400">KIRI</strong> dan Screenshot UID 9Kucing di sebelah <strong className="text-sky-400">KANAN</strong>.
+                    </p>
+                  </div>
                 </div>
-                <div className="flex flex-col gap-0.5 border-l border-slate-200 dark:border-slate-800/60 pl-2">
-                  <span className="text-slate-500 dark:text-slate-400 font-bold uppercase text-[8px] tracking-wider">Recruiter</span>
-                  <span className="text-sky-300 font-black truncate">{formData.recruiterUsername}</span>
-                </div>
-                <div className="flex flex-col gap-0.5 border-l border-slate-200 dark:border-slate-800/60 pl-2">
-                  <span className="text-slate-500 dark:text-slate-400 font-bold uppercase text-[8px] tracking-wider">Status Default</span>
-                  <span className="text-amber-400 font-black flex items-center gap-0.5">
-                    <Lock className="w-2.5 h-2.5 shrink-0" /> Pending
-                  </span>
+
+                {/* Metadata Bar */}
+                <div className="flex items-center gap-3 text-[10px] sm:text-xs text-slate-600 dark:text-slate-400 bg-white dark:bg-slate-950/80 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm shrink-0">
+                  <div className="flex items-center gap-1">
+                    <span className="text-slate-500 font-bold uppercase text-[9px]">Tgl:</span>
+                    <span className="text-sky-400 font-black">{formData.date}</span>
+                  </div>
+                  <div className="h-3 w-px bg-slate-200 dark:bg-slate-800" />
+                  <div className="flex items-center gap-1">
+                    <span className="text-slate-500 font-bold uppercase text-[9px]">Recruiter:</span>
+                    <span className="text-sky-400 font-black">{formData.recruiterUsername}</span>
+                  </div>
                 </div>
               </div>
 
-              {/* Upload Video Bukti FIRST */}
-              <div className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 space-y-4">
-                <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800/40 pb-2.5">
-                  <label className="text-xs font-black tracking-wider text-slate-800 dark:text-slate-200 uppercase flex items-center gap-1.5">
-                    <span>🎥</span>
-                    <span>Video Bukti Pelamar</span>
-                  </label>
-                  {formData.videoUrl ? (
-                    <span className="text-[10px] bg-emerald-500/10 text-emerald-500 dark:text-emerald-400 px-2.5 py-0.5 rounded-full font-black border border-emerald-500/20 uppercase tracking-wider">
-                      Ready ✅
-                    </span>
+              {/* 2-COLUMN GRID LAYOUT: KIRI VIDEO, KANAN SCREENSHOT UID */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                
+                {/* KIRI: VIDEO BUKTI PELAMAR */}
+                <div className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 space-y-3 flex flex-col justify-between shadow-sm">
+                  <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800/60 pb-2.5">
+                    <label className="text-xs font-black tracking-wider text-slate-800 dark:text-slate-200 uppercase flex items-center gap-1.5">
+                      <span className="text-base">🎥</span>
+                      <span>Bukti Video (Kiri)</span>
+                    </label>
+                    {formData.videoUrl ? (
+                      <span className="text-[10px] bg-emerald-500/10 text-emerald-500 dark:text-emerald-400 px-2.5 py-0.5 rounded-full font-black border border-emerald-500/20 uppercase tracking-wider">
+                        Video Ready ✅
+                      </span>
+                    ) : (
+                      <span className="text-[9px] bg-rose-500/10 text-rose-500 dark:text-rose-400 px-2.5 py-0.5 rounded-full font-black border border-rose-500/20 uppercase tracking-wider">
+                        Wajib Upload
+                      </span>
+                    )}
+                  </div>
+
+                  <input
+                    type="file"
+                    accept="video/*,image/gif"
+                    id="bukti-video-input"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+
+                      const isGif = file.type === 'image/gif' || /\.gif$/i.test(file.name);
+                      const isVideoExt = /\.(mp4|mov|webm|mkv|3gp|avi|m4v|qt|flv|wmv)$/i.test(file.name);
+                      const isVideoMime = file.type.startsWith('video/') || file.type.includes('video');
+                      const isVideo = isGif || isVideoExt || isVideoMime || file.type === '';
+
+                      if (!isVideo) {
+                        showAlert('error', 'Format File Salah ⚠️', 'Hanya diperbolehkan mengupload file video bukti pelamar (format video atau GIF). Foto selain GIF tidak diizinkan!');
+                        return;
+                      }
+                      
+                      if (file.size > 200 * 1024 * 1024) { 
+                        showAlert('error', 'Video Terlalu Besar ❌', 'Ukuran maksimal video yang diizinkan adalah 200MB.');
+                        return;
+                      }
+
+                      try {
+                        if (formData.videoUrl && formData.videoUrl.startsWith('blob:')) {
+                          URL.revokeObjectURL(formData.videoUrl);
+                        }
+
+                        const objectUrl = URL.createObjectURL(file);
+                        const fileSizeMB = (file.size / (1024 * 1024)).toFixed(1);
+
+                        if (isGif) {
+                          setFormData((prev) => ({ ...prev, videoUrl: objectUrl }));
+                          showAlert('success', 'GIF Berhasil Dimuat ✅', `File GIF bukti pelamar (${fileSizeMB} MB) berhasil ditambahkan.`);
+                          return;
+                        }
+
+                        if (file.size <= 35 * 1024 * 1024) {
+                          setFormData((prev) => ({ ...prev, videoUrl: objectUrl }));
+                          showAlert('success', 'Video Siap ✅', `File video (${fileSizeMB} MB) berhasil dimuat dan siap dikirim.`);
+                          return;
+                        }
+
+                        setIsCompressingVideo(true);
+                        setCompressionProgress(10);
+                        showAlert('warning', 'Mengoptimalkan Video ⏳', `Mengecek optimasi file video (${fileSizeMB} MB)...`);
+
+                        try {
+                          const compressedFile = await compressVideo(file, (progress) => {
+                            setCompressionProgress(Math.round(progress * 100));
+                          });
+
+                          if (compressedFile !== file) {
+                            const compressedObjectUrl = URL.createObjectURL(compressedFile);
+                            const compressedSizeMB = (compressedFile.size / (1024 * 1024)).toFixed(1);
+                            setFormData((prev) => ({ ...prev, videoUrl: compressedObjectUrl }));
+                            showAlert('success', 'Video Terkompresi ✅', `Video dioptimasi dari ${fileSizeMB}MB menjadi ${compressedSizeMB}MB.`);
+                          } else {
+                            setFormData((prev) => ({ ...prev, videoUrl: objectUrl }));
+                            showAlert('success', 'Video Siap ✅', `File video (${fileSizeMB} MB) siap digunakan.`);
+                          }
+                        } catch (compressErr) {
+                          console.warn('Compression skipped, using original video:', compressErr);
+                          setFormData((prev) => ({ ...prev, videoUrl: objectUrl }));
+                          showAlert('success', 'Video Siap ✅', `File video (${fileSizeMB} MB) siap digunakan.`);
+                        } finally {
+                          setIsCompressingVideo(false);
+                        }
+                      } catch (readErr) {
+                        console.error('Error loading video file:', readErr);
+                        showAlert('error', 'Gagal Memuat Video ❌', 'Tidak dapat membaca file video. Silakan coba pilih file video lain.');
+                      }
+                    }}
+                    className="hidden"
+                  />
+
+                  {isCompressingVideo ? (
+                    <div className="flex flex-col items-center justify-center p-6 text-center bg-slate-50 dark:bg-slate-900/40 border-2 border-dashed border-sky-500/30 rounded-2xl min-h-[180px] space-y-2">
+                      <div className="w-8 h-8 rounded-full border-3 border-sky-500/20 border-t-sky-500 animate-spin flex items-center justify-center mb-1" />
+                      <span className="text-xs font-extrabold text-slate-800 dark:text-slate-200">
+                        Mengompresi Video...
+                      </span>
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
+                        Proses Optimasi: {compressionProgress}%
+                      </span>
+                      <div className="w-full max-w-xs bg-slate-200 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                        <div 
+                          className="bg-sky-500 h-full transition-all duration-200"
+                          style={{ width: `${compressionProgress}%` }}
+                        />
+                      </div>
+                    </div>
+                  ) : formData.videoUrl ? (
+                    <div className="space-y-3">
+                      <div className="relative rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-black aspect-video w-full flex items-center justify-center shadow-inner">
+                        {formData.videoUrl.startsWith('data:image/') || formData.videoUrl.match(/\.(jpeg|jpg|png|webp|gif)($|\?)/i) ? (
+                          <img referrerPolicy="no-referrer"                             src={formData.videoUrl} 
+                            alt="Bukti Pelamar" 
+                            className="w-full h-full object-contain"
+                          />
+                        ) : (
+                          <video
+                            src={formData.videoUrl}
+                            controls
+                            className="w-full h-full object-contain"
+                          />
+                        )}
+                      </div>
+                      
+                      <div className="flex items-center justify-center gap-2">
+                        <label
+                          htmlFor="bukti-video-input"
+                          className="flex-1 py-2 px-3 rounded-xl bg-sky-500 hover:bg-sky-600 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors shadow-sm"
+                        >
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>Ganti Video</span>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFormData({ ...formData, videoUrl: undefined });
+                            showAlert('warning', 'Video Bukti Dihapus', 'File video bukti pelamar telah dihapus.');
+                          }}
+                          className="flex-1 py-2 px-3 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-rose-600 dark:text-rose-400 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Hapus Video</span>
+                        </button>
+                      </div>
+                    </div>
                   ) : (
-                    <span className="text-[9px] bg-rose-500/10 text-rose-500 dark:text-rose-400 px-2.5 py-0.5 rounded-full font-black border border-rose-500/20 uppercase tracking-wider">
-                      Wajib Upload
-                    </span>
+                    <label
+                      htmlFor="bukti-video-input"
+                      className="flex flex-col items-center justify-center border-2 border-dashed border-slate-200 dark:border-slate-800/80 hover:border-sky-500/50 bg-slate-50 dark:bg-slate-900/40 hover:bg-slate-100 dark:hover:bg-slate-900/60 rounded-2xl p-6 text-center cursor-pointer transition-all group min-h-[180px]"
+                    >
+                      <div className="p-3 rounded-2xl bg-sky-500/10 text-sky-500 group-hover:scale-110 transition-transform duration-200 mb-2">
+                        <Video className="w-6 h-6" />
+                      </div>
+                      <span className="text-xs font-extrabold text-slate-800 dark:text-slate-200">
+                        Upload Bukti Video Pelamar
+                      </span>
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium mt-1 max-w-xs">
+                        Format `.mp4`, `.webm`, `.mov`, `.gif` (Maksimal 200MB)
+                      </span>
+                    </label>
                   )}
                 </div>
 
-                <input
-                  type="file"
-                  accept="video/*,image/gif"
-                  id="bukti-video-input"
-                  onChange={async (e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-
-                    const isGif = file.type === 'image/gif' || /\.gif$/i.test(file.name);
-                    const isVideoExt = /\.(mp4|mov|webm|mkv|3gp|avi|m4v|qt|flv|wmv)$/i.test(file.name);
-                    const isVideoMime = file.type.startsWith('video/') || file.type.includes('video');
-                    const isVideo = isGif || isVideoExt || isVideoMime || file.type === '';
-
-                    if (!isVideo) {
-                      showAlert('error', 'Format File Salah ⚠️', 'Hanya diperbolehkan mengupload file video bukti pelamar (format video atau GIF). Foto selain GIF tidak diizinkan!');
-                      return;
-                    }
-                    
-                    if (file.size > 200 * 1024 * 1024) { 
-                      showAlert('error', 'Video Terlalu Besar ❌', 'Ukuran maksimal video yang diizinkan adalah 200MB.');
-                      return;
-                    }
-
-                    try {
-                      // Revoke old blob URL if present to free RAM memory
-                      if (formData.videoUrl && formData.videoUrl.startsWith('blob:')) {
-                        URL.revokeObjectURL(formData.videoUrl);
-                      }
-
-                      // Create object URL instantly (0 milliseconds, 0MB extra RAM)
-                      const objectUrl = URL.createObjectURL(file);
-                      const fileSizeMB = (file.size / (1024 * 1024)).toFixed(1);
-
-                      if (isGif) {
-                        setFormData((prev) => ({ ...prev, videoUrl: objectUrl }));
-                        showAlert('success', 'GIF Berhasil Dimuat ✅', `File GIF bukti pelamar (${fileSizeMB} MB) berhasil ditambahkan.`);
-                        return;
-                      }
-
-                      // For videos <= 35MB, Telegram API accepts direct upload, so no compression wait needed!
-                      if (file.size <= 35 * 1024 * 1024) {
-                        setFormData((prev) => ({ ...prev, videoUrl: objectUrl }));
-                        showAlert('success', 'Video Siap ✅', `File video (${fileSizeMB} MB) berhasil dimuat dan siap dikirim.`);
-                        return;
-                      }
-
-                      // For videos > 35MB, try fast non-blocking background compression
-                      setIsCompressingVideo(true);
-                      setCompressionProgress(10);
-                      showAlert('warning', 'Mengoptimalkan Video ⏳', `Mengecek optimasi file video (${fileSizeMB} MB)...`);
-
-                      try {
-                        const compressedFile = await compressVideo(file, (progress) => {
-                          setCompressionProgress(Math.round(progress * 100));
-                        });
-
-                        if (compressedFile !== file) {
-                          const compressedObjectUrl = URL.createObjectURL(compressedFile);
-                          const compressedSizeMB = (compressedFile.size / (1024 * 1024)).toFixed(1);
-                          setFormData((prev) => ({ ...prev, videoUrl: compressedObjectUrl }));
-                          showAlert('success', 'Video Terkompresi ✅', `Video dioptimasi dari ${fileSizeMB}MB menjadi ${compressedSizeMB}MB.`);
-                        } else {
-                          setFormData((prev) => ({ ...prev, videoUrl: objectUrl }));
-                          showAlert('success', 'Video Siap ✅', `File video (${fileSizeMB} MB) siap digunakan.`);
-                        }
-                      } catch (compressErr) {
-                        console.warn('Compression skipped, using original video:', compressErr);
-                        setFormData((prev) => ({ ...prev, videoUrl: objectUrl }));
-                        showAlert('success', 'Video Siap ✅', `File video (${fileSizeMB} MB) siap digunakan.`);
-                      } finally {
-                        setIsCompressingVideo(false);
-                      }
-                    } catch (readErr) {
-                      console.error('Error loading video file:', readErr);
-                      showAlert('error', 'Gagal Memuat Video ❌', 'Tidak dapat membaca file video. Silakan coba pilih file video lain.');
-                    }
-                  }}
-                  className="hidden"
-                />
-
-                {isCompressingVideo ? (
-                  <div className="flex flex-col items-center justify-center p-8 text-center bg-slate-50 dark:bg-slate-900/40 border-2 border-dashed border-sky-500/30 rounded-2xl min-h-[160px] space-y-3">
-                    <div className="w-10 h-10 rounded-full border-4 border-sky-500/20 border-t-sky-500 animate-spin flex items-center justify-center mb-1" />
-                    <span className="text-xs font-extrabold text-slate-800 dark:text-slate-200">
-                      Mengompresi Video...
-                    </span>
-                    <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
-                      Proses Optimasi: {compressionProgress}% (Mohon tunggu sebentar...)
-                    </span>
-                    <div className="w-full max-w-xs bg-slate-200 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
-                      <div 
-                        className="bg-sky-500 h-full transition-all duration-200"
-                        style={{ width: `${compressionProgress}%` }}
-                      />
-                    </div>
+                {/* KANAN: SCREENSHOT UID 9KUCING */}
+                <div className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 space-y-3 flex flex-col justify-between shadow-sm">
+                  <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800/60 pb-2.5">
+                    <label className="text-xs font-black tracking-wider text-slate-800 dark:text-slate-200 uppercase flex items-center gap-1.5">
+                      <span className="text-base">📸</span>
+                      <span>Screenshot UID (Kanan)</span>
+                    </label>
+                    {formData.uid9Kucing ? (
+                      <span className="text-[10px] bg-sky-500/10 text-sky-500 dark:text-sky-400 px-2.5 py-0.5 rounded-full font-black border border-sky-500/20 uppercase tracking-wider">
+                        UID: {formData.uid9Kucing}
+                      </span>
+                    ) : (
+                      <span className="text-[9px] bg-amber-500/10 text-amber-500 dark:text-amber-400 px-2.5 py-0.5 rounded-full font-black border border-amber-500/20 uppercase tracking-wider">
+                        Auto-Scan Gemini AI
+                      </span>
+                    )}
                   </div>
-                ) : formData.videoUrl ? (
-                  <div className="space-y-3">
-                    <div className="relative rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-black aspect-video max-w-md mx-auto flex items-center justify-center shadow-inner">
-                      {formData.videoUrl.startsWith('data:image/') || formData.videoUrl.match(/\.(jpeg|jpg|png|webp|gif)($|\?)/i) ? (
-                        <img referrerPolicy="no-referrer"                             src={formData.videoUrl} 
-                          alt="Bukti Pelamar" 
-                          className="w-full h-full object-contain"
-                        />
-                      ) : (
-                        <video
-                          src={formData.videoUrl}
-                          controls
-                          className="w-full h-full object-contain"
-                        />
-                      )}
-                    </div>
-                    
-                    <div className="flex items-center justify-center gap-2 max-w-md mx-auto">
-                      <label
-                        htmlFor="bukti-video-input"
-                        className="flex-1 py-2 px-3 rounded-xl bg-sky-500 hover:bg-sky-600 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors shadow-sm"
-                      >
-                        <Upload className="w-3.5 h-3.5" />
-                        <span>Ganti Video</span>
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setFormData({ ...formData, videoUrl: undefined });
-                          showAlert('warning', 'Video Bukti Dihapus', 'File video bukti pelamar telah dihapus.');
-                        }}
-                        className="flex-1 py-2 px-3 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-rose-600 dark:text-rose-400 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        <span>Hapus Video</span>
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <label
-                    htmlFor="bukti-video-input"
-                    className="flex flex-col items-center justify-center border-2 border-dashed border-slate-200 dark:border-slate-800/80 hover:border-sky-500/50 bg-slate-50 dark:bg-slate-900/40 hover:bg-slate-100 dark:hover:bg-slate-900/60 rounded-2xl p-8 text-center cursor-pointer transition-all group min-h-[160px]"
+
+                  <input
+                    id="uid-screenshot-input-step1"
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    disabled={isScanningUID}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleScanScreenshot(file);
+                    }}
+                  />
+
+                  <div 
+                    className={`relative border-2 border-dashed rounded-2xl p-4 flex flex-col items-center justify-center gap-2 transition-all duration-200 cursor-pointer min-h-[180px] ${
+                      isScanningUID 
+                        ? 'border-sky-500/50 bg-sky-500/5' 
+                        : 'border-slate-200 dark:border-slate-800/80 hover:border-sky-500/50 bg-slate-50 dark:bg-slate-900/40 hover:bg-slate-100 dark:hover:bg-slate-900/60'
+                    }`}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const file = e.dataTransfer.files?.[0];
+                      if (file && file.type.startsWith('image/')) {
+                        handleScanScreenshot(file);
+                      }
+                    }}
+                    onPaste={(e) => {
+                      const item = e.clipboardData.items[0];
+                      if (item && item.type.indexOf('image') === 0) {
+                        const file = item.getAsFile();
+                        if (file) handleScanScreenshot(file);
+                      }
+                    }}
+                    onClick={() => {
+                      const fileInput = document.getElementById('uid-screenshot-input-step1');
+                      fileInput?.click();
+                    }}
                   >
-                    <div className="p-3 rounded-2xl bg-sky-500/10 text-sky-500 group-hover:scale-110 transition-transform duration-200 mb-2">
-                      <Video className="w-6 h-6" />
+                    {isScanningUID ? (
+                      <div className="flex flex-col items-center gap-2 text-center p-2">
+                        <Loader2 className="w-8 h-8 text-sky-400 animate-spin" />
+                        <span className="text-xs font-bold text-sky-300 animate-pulse">PaddleOCR + Preprocessing Gemini AI...</span>
+                        {scanProgress > 0 && (
+                          <div className="w-32 bg-slate-200 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden mt-1">
+                            <div 
+                              className="bg-sky-400 h-full transition-all duration-300"
+                              style={{ width: `${scanProgress}%` }}
+                            />
+                          </div>
+                        )}
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400">{scanProgress > 0 ? `Proses: ${scanProgress}%` : 'Scanning screenshot...'}</span>
+                      </div>
+                    ) : uidScreenshotPreview ? (
+                      <div className="relative w-full h-[150px] rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-black/10 flex items-center justify-center group/img">
+                        <img 
+                          src={uidScreenshotPreview} 
+                          alt="Screenshot UID" 
+                          className="max-w-full max-h-full object-contain"
+                          referrerPolicy="no-referrer"
+                        />
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setUidScreenshotPreview(null);
+                          }}
+                          className="absolute top-1.5 right-1.5 z-10 w-6 h-6 rounded-full bg-rose-500/90 text-white flex items-center justify-center hover:bg-rose-600 transition-colors shadow-md font-bold text-sm"
+                          title="Hapus Screenshot"
+                        >
+                          &times;
+                        </button>
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 flex items-center justify-center transition-opacity duration-200 pointer-events-none">
+                          <span className="text-[10px] font-bold text-white bg-slate-900/80 px-2.5 py-1 rounded-md">Klik untuk Ganti Screenshot</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center gap-1.5 text-center">
+                        <div className="p-3 rounded-2xl bg-sky-500/10 text-sky-500 mb-1">
+                          <Upload className="w-6 h-6" />
+                        </div>
+                        <div className="text-xs font-extrabold text-slate-800 dark:text-slate-200">
+                          Klik / Seret / Paste Screenshot UID
+                        </div>
+                        <div className="text-[10px] text-slate-500 dark:text-slate-400 max-w-[220px]">
+                          Pilih gambar profil 9Kucing pelamar. AI akan membaca UID secara otomatis.
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {formData.uid9Kucing && (
+                    <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                        <span>UID Terdeteksi:</span>
+                      </span>
+                      <span className="bg-emerald-500/20 px-2 py-0.5 rounded font-black text-emerald-300">
+                        {formData.uid9Kucing}
+                      </span>
                     </div>
-                    <span className="text-xs font-extrabold text-slate-800 dark:text-slate-200">
-                      Pilih / Upload Video Bukti Pelamar
-                    </span>
-                    <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium mt-1 max-w-xs">
-                      Format file video yang diperbolehkan (`mp4`, `webm`, `mov`, `gif`). Penggunaan foto dilarang.
-                    </span>
-                  </label>
-                )}
+                  )}
+                </div>
+
               </div>
 
               {/* Continue Button */}
-              <div className="flex justify-end mt-2">
+              <div className="flex justify-end mt-4">
                 <Button
                   type="button"
                   fullWidth
@@ -3535,7 +3757,7 @@ Grub : ${grupDisplay}`;
                     triggerHaptic('selection');
                   }}
                   icon={<ArrowRight className="w-3.5 h-3.5" />}
-                  className="py-2.5 px-4 text-xs font-black uppercase tracking-wider"
+                  className="py-3 px-5 text-xs font-black uppercase tracking-wider bg-sky-500 hover:bg-sky-400 text-slate-950 shadow-lg shadow-sky-500/20"
                 >
                   Lanjutkan Isi Data Pelamar
                 </Button>
@@ -3644,138 +3866,32 @@ Grub : ${grupDisplay}`;
 
                 {/* 4. UID 9kucing */}
                 <div className="space-y-2 bg-slate-50 dark:bg-slate-900/50 p-4 rounded-2xl border border-slate-200 dark:border-slate-800">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between mb-1">
                     <span className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
                       <Hash className="w-4 h-4 text-amber-400" />
                       UID 9kucing
                     </span>
                     {formData.uid9Kucing && (
-                      <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-lg border border-emerald-500/20 font-bold">
-                        Terisi Otomatis
+                      <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-lg border border-emerald-500/20 font-bold flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3" /> Terisi Otomatis
                       </span>
                     )}
                   </div>
 
-                  <div 
-                    className={`relative border-2 border-dashed rounded-xl p-4 flex flex-col items-center justify-center gap-2 transition-all duration-200 cursor-pointer min-h-[110px] ${
-                      isScanningUID 
-                        ? 'border-sky-500/50 bg-sky-500/5' 
-                        : 'border-slate-200 dark:border-slate-800 hover:border-sky-500/40 bg-white dark:bg-slate-950/40 hover:bg-white dark:bg-slate-950/60'
-                    }`}
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      const file = e.dataTransfer.files?.[0];
-                      if (file && file.type.startsWith('image/')) {
-                        handleScanScreenshot(file);
-                      }
-                    }}
-                    onPaste={(e) => {
-                      const item = e.clipboardData.items[0];
-                      if (item && item.type.indexOf('image') === 0) {
-                        const file = item.getAsFile();
-                        if (file) handleScanScreenshot(file);
-                      }
-                    }}
-                    onClick={() => {
-                      const fileInput = document.getElementById('uid-screenshot-input');
-                      fileInput?.click();
-                    }}
-                  >
-                    <input
-                      id="uid-screenshot-input"
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      disabled={isScanningUID}
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) handleScanScreenshot(file);
-                      }}
-                    />
-
-                    {isScanningUID ? (
-                      <div className="flex flex-col items-center gap-2">
-                        <Loader2 className="w-8 h-8 text-sky-400 animate-spin" />
-                        <span className="text-xs font-bold text-sky-300 animate-pulse">Membaca screenshot via Gemini AI...</span>
-                        {scanProgress > 0 && (
-                          <div className="w-32 bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden mt-1">
-                            <div 
-                              className="bg-sky-400 h-full transition-all duration-300"
-                              style={{ width: `${scanProgress}%` }}
-                            />
-                          </div>
-                        )}
-                        <span className="text-[10px] text-slate-500 dark:text-slate-400">{scanProgress > 0 ? `Proses: ${scanProgress}%` : 'Menghubungkan ke Gemini AI...'}</span>
-                      </div>
-                    ) : uidScreenshotPreview ? (
-                      <div className="relative w-full max-w-[220px] h-[140px] rounded-lg overflow-hidden border border-slate-200 dark:border-slate-800 bg-black/5 flex items-center justify-center group/img">
-                        <img 
-                          src={uidScreenshotPreview} 
-                          alt="Screenshot UID" 
-                          className="max-w-full max-h-full object-contain"
-                          referrerPolicy="no-referrer"
-                        />
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setUidScreenshotPreview(null);
-                          }}
-                          className="absolute top-1.5 right-1.5 z-10 w-6 h-6 rounded-full bg-rose-500/90 text-white flex items-center justify-center hover:bg-rose-600 transition-colors shadow-md font-bold text-sm"
-                          title="Hapus Screenshot"
-                        >
-                          &times;
-                        </button>
-                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 flex items-center justify-center transition-opacity duration-200 pointer-events-none">
-                          <span className="text-[10px] font-bold text-white bg-slate-900/80 px-2 py-1 rounded-md">Ganti Screenshot</span>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col items-center gap-1.5 text-center">
-                        <div className="w-10 h-10 rounded-full bg-slate-50 dark:bg-slate-900/80 flex items-center justify-center border border-slate-200 dark:border-slate-800">
-                          <Upload className="w-5 h-5 text-slate-600 dark:text-slate-400" />
-                        </div>
-                        <div className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                          Klik / Seret / Paste Screenshot UID
-                        </div>
-                        <div className="text-[10px] text-slate-600 dark:text-slate-400 max-w-[250px]">
-                          Upload screenshot profil 9Kucing pelamar. UID akan otomatis dibaca & diisi.
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {isGeminiUnavailable && (
-                    <div className="text-[10px] text-amber-500 dark:text-amber-400 flex items-start gap-1.5 px-3 py-2 bg-amber-500/5 rounded-lg border border-amber-500/10">
-                      <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                      <div>
-                        <p className="font-semibold">Membaca Otomatis Nonaktif</p>
-                        <p className="text-[9px] text-slate-500 dark:text-slate-400 mt-0.5">Sistem pendeteksi otomatis tidak aktif karena Gemini API Key belum terpasang. Silakan lihat screenshot di atas dan ketik UID secara manual.</p>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="relative pt-1">
-                    <Input
-                      label="Atau edit manual jika diperlukan"
-                      type="text"
-                      inputMode="numeric"
-                      pattern="[0-9]*"
-                      placeholder="UID akan terisi otomatis dari screenshot di atas"
-                      icon={<Hash className="w-4 h-4 text-amber-400" />}
-                      value={formData.uid9Kucing}
-                      onChange={(e) => setFormData({ ...formData, uid9Kucing: e.target.value.replace(/\D/g, '') })}
-                      required
-                    />
-                  </div>
-
-                  {scanError && (
-                    <div className="text-[10px] text-rose-400 flex items-center gap-1.5 px-2 bg-rose-500/5 py-1.5 rounded-lg border border-rose-500/10">
-                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                      <span>{scanError}</span>
-                    </div>
-                  )}
+                  <Input
+                    label="UID Pelamar (Otomatis dari Screenshot)"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    placeholder="Masukkan atau edit UID 9Kucing"
+                    icon={<Hash className="w-4 h-4 text-amber-400" />}
+                    value={formData.uid9Kucing}
+                    onChange={(e) => setFormData({ ...formData, uid9Kucing: e.target.value.replace(/\D/g, '') })}
+                    required
+                  />
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
+                    UID telah otomatis terdeteksi dari screenshot awal. Anda dapat mengedit nomor UID di atas jika diperlukan.
+                  </p>
                 </div>
               </div>
 
@@ -3865,13 +3981,15 @@ Grub : ${grupDisplay}`;
                   </span>
                 </label>
                 <select
-                  value={formData.grup}
+                  value={formData.grup || ''}
                   onChange={(e) => {
-                    setFormData({ ...formData, grup: e.target.value as 'T0' | 'V0' | 'RECRUITER' | 'T3' });
+                    const val = e.target.value;
+                    setFormData({ ...formData, grup: val ? (val as 'T0' | 'V0' | 'RECRUITER' | 'T3') : undefined });
                     triggerHaptic('selection');
                   }}
                   className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-200 text-xs sm:text-sm rounded-xl px-3 py-2.5 focus:border-sky-500 focus:outline-none cursor-pointer font-black"
                 >
+                  <option value="" disabled className="bg-white dark:bg-slate-950 text-slate-400">Pilih Grup / Penempatan</option>
                   <option value="T0" className="bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-200">T0-MARK</option>
                   <option value="V0" className="bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-200">V0</option>
                   <option value="RECRUITER" className="bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-200">RECRUITER</option>
@@ -3962,7 +4080,7 @@ Grub : ${grupDisplay}`;
                     setActiveDayTab(e.target.value as any);
                     triggerHaptic('selection');
                   }}
-                  className="w-full pl-3 pr-8 py-2 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-amber-500 cursor-pointer appearance-none transition-all"
+                  className="w-full pl-3 pr-8 h-10 py-0 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-amber-500 cursor-pointer appearance-none transition-all"
                 >
                   {dayTabs.map((tab) => {
                     const count = getReportCountForDay(tab.name);
@@ -3992,7 +4110,7 @@ Grub : ${grupDisplay}`;
               <>
                 <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
                   {paginatedReportsMingguIni.map((rep, idx) => (
-                    <ReportListCard key={rep.reportId || idx} rep={rep} isAdminOrOwner={isAdminOrOwner} onUpdateStatus={updateStatus} onUpdatePermission={updatePermission} onUpdateDetails={updateDetails} userPhotoMap={userPhotoMap} />
+                    <ReportListCard key={rep.reportId || idx} rep={rep} isAdminOrOwner={isAdminOrOwner} onUpdateStatus={updateStatus} onUpdatePermission={updatePermission} onUpdateDetails={updateDetails} onDelete={deleteReport} userPhotoMap={userPhotoMap} />
                   ))}
                 </div>
                 {renderPagination(filteredReportsMingguIni.length)}
@@ -4242,6 +4360,7 @@ Grub : ${grupDisplay}`;
                            onUpdateStatus={updateStatus} 
                            onUpdatePermission={updatePermission} 
                            onUpdateDetails={updateDetails} 
+                           onDelete={deleteReport}
                            userPhotoMap={userPhotoMap} 
                            isPemeriksaan={true}
                         />
@@ -4472,6 +4591,7 @@ Grub : ${grupDisplay}`;
                                             onUpdateStatus={updateStatus} 
                                             onUpdatePermission={updatePermission} 
                                             onUpdateDetails={updateDetails} 
+                                            onDelete={deleteReport}
                                             userPhotoMap={userPhotoMap} 
                                             isArsip={true} 
                                           />
@@ -4654,7 +4774,7 @@ Grub : ${grupDisplay}`;
                         setSelectedMetrikRecruiter(e.target.value);
                         triggerHaptic('selection');
                       }}
-                      className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold rounded-lg px-2.5 py-1.5 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold rounded-lg h-9 py-0 px-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
                     >
                       <option value="Saya">Saya ({userProfile?.firstName || userProfile?.username || 'Admin'})</option>
                       {recruitersList.map((rec) => (

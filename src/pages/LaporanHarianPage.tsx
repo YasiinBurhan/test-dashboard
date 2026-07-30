@@ -16,7 +16,7 @@ import { getWIBDate, getWIBMonday, getWIBMondayOfDate, getIndonesianDayName, for
 
 export const LaporanHarianPage: React.FC = () => {
   const { submitReport, isLoading, reports, updateFine } = useReports();
-  const { userProfile, telegramUser } = useAuth();
+  const { userProfile, telegramUser, token } = useAuth();
 
   const getInitialDate = () => {
     const now = new Date();
@@ -608,7 +608,7 @@ export const LaporanHarianPage: React.FC = () => {
       const groupId = currentSettings?.telegramGroupId || '';
       const topicId = currentSettings?.telegramTopicId || currentSettings?.telegramTopicT0 || '';
 
-      const tgRes = await sendReportToTelegramApi(newReport, undefined, groupId, topicId, reportText);
+      const tgRes = await sendReportToTelegramApi(newReport, undefined, groupId, topicId, reportText, token || undefined);
       
       if (tgRes.success) {
         setAlertState({

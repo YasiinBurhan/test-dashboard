@@ -111,7 +111,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 isAuthenticated: true,
                 telegramUser: tgUser,
                 userProfile: profile,
-                token: savedToken || 'manual_session_token',
+                token: savedToken || `manual_session_token:${profile.telegramId}`,
                 initData: '',
                 error: null,
                 isTelegramContext: true
@@ -197,7 +197,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             photo_url: fallbackTgUser.photo_url || ''
           },
           userProfile: profile,
-          token: 'client_side_fallback_token',
+          token: `client_side_fallback_token:${telegramId}`,
           initData,
           error: null,
           isTelegramContext: true

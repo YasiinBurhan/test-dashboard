@@ -31,6 +31,7 @@ export const Input: React.FC<InputProps> = ({
         )}
         <input
           readOnly={readOnly}
+          style={{ paddingLeft: icon ? '2.75rem' : undefined, ...props.style }}
           className={`w-full rounded-xl py-3 px-4 ${
             icon ? 'pl-11' : 'pl-4'
           } text-sm font-medium transition-all duration-200 outline-none border text-slate-900 dark:text-slate-100 placeholder:text-slate-600 dark:text-slate-400 dark:placeholder:text-slate-500 dark:text-slate-400 ${

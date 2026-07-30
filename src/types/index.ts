@@ -165,6 +165,7 @@ export interface SystemSettings {
   telegramTopicT3?: string;
   telegramTopicPosting?: string;
   telegramTopicReport?: string;
+  telegramOwnerId?: string;
   webhookUrl?: string;
   updatedAt: string;
 }

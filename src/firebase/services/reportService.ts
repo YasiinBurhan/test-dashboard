@@ -7,7 +7,8 @@ import {
   query,
   where,
   orderBy,
-  onSnapshot
+  onSnapshot,
+  deleteDoc
 } from 'firebase/firestore';
 import { db } from '../config';
 import { handleFirestoreError, OperationType } from '../error';
@@ -440,5 +441,15 @@ export async function getAllReports(): Promise<DailyReport[]> {
     return combined.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, SUMMARY_COLLECTION);
+  }
+}
+
+export async function deleteReport(reportId: string): Promise<void> {
+  try {
+    const colName = await getCollectionName(reportId);
+    const reportRef = doc(db, colName, reportId);
+    await deleteDoc(reportRef);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `reports/${reportId}`);
   }
 }

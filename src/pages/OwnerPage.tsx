@@ -14,8 +14,8 @@ import {
   getSystemSettings,
   updateSystemSettings
 } from '../firebase/services/settingService';
-import { subscribeToAllReports } from '../firebase/services/reportService';
-import { Key, Megaphone, Settings, Users, ShieldAlert, Plus, Trash2, CheckCircle2, BarChart2, Bot, Globe, XCircle, AlertTriangle, Send, FileSpreadsheet, FileText, Copy, Download, Calendar, Filter, Check, Database, Eye, RefreshCw, AlertCircle, Search, CheckSquare, Square } from 'lucide-react';
+import { subscribeToAllReports, deleteReport } from '../firebase/services/reportService';
+import { Key, Megaphone, Settings, Users, ShieldAlert, Plus, Trash2, CheckCircle2, BarChart2, Bot, Globe, XCircle, AlertTriangle, Send, FileSpreadsheet, FileText, Copy, Download, Calendar, Filter, Check, Database, Eye, RefreshCw, AlertCircle, Search, CheckSquare, Square, Loader2 } from 'lucide-react';
 import { doc, getDoc, deleteDoc, updateDoc, deleteField, collection, getDocs, limit, query } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { useAuthContext } from '../contexts/AuthContext';
@@ -156,6 +156,8 @@ export const OwnerPage: React.FC = () => {
   const [exportSearchQuery, setExportSearchQuery] = useState<string>('');
   const [selectedReportIds, setSelectedReportIds] = useState<string[]>([]);
   const [copiedRowId, setCopiedRowId] = useState<string | null>(null);
+  const [deletingReportId, setDeletingReportId] = useState<string | null>(null);
+  const [isBatchDeleting, setIsBatchDeleting] = useState(false);
 
   // Firestore Database Manager State
   const [dbCollection, setDbCollection] = useState('users');
@@ -556,6 +558,59 @@ export const OwnerPage: React.FC = () => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const handleSingleDeleteReport = async (reportId: string) => {
+    if (!reportId) return;
+    try {
+      await deleteReport(reportId);
+      setDeletingReportId(null);
+    } catch (err) {
+      console.error('Failed to delete report:', err);
+      alert('Gagal menghapus laporan: ' + (err instanceof Error ? err.message : 'Unknown error'));
+    }
+  };
+
+  const handleBatchDeleteReports = async () => {
+    if (selectedReportIds.length === 0) return;
+    
+    if (!window.confirm(`Apakah Anda yakin ingin menghapus ${selectedReportIds.length} data pelamar terpilih secara permanen? Tindakan ini tidak dapat dibatalkan.`)) {
+      return;
+    }
+
+    setIsBatchDeleting(true);
+    try {
+      // Find all report IDs for the selected items
+      const idsToDelete: string[] = [];
+      
+      selectedReportIds.forEach(id => {
+        if (id.startsWith('REP_')) {
+          idsToDelete.push(id);
+        } else {
+          // If it's a synthetic ID, try to find the matching report in allReports
+          const found = allReports.find((r, idx) => {
+            const synth = r.reportId || `${r.date || ''}_${r.uid9Kucing || ''}_${r.applicantWhatsapp || ''}_${idx}`;
+            return synth === id;
+          });
+          if (found && found.reportId) {
+            idsToDelete.push(found.reportId);
+          }
+        }
+      });
+
+      if (idsToDelete.length === 0) {
+        setIsBatchDeleting(false);
+        return;
+      }
+
+      await Promise.all(idsToDelete.map(id => deleteReport(id)));
+      setSelectedReportIds([]);
+    } catch (err) {
+      console.error('Failed batch delete reports:', err);
+      alert('Terjadi kesalahan saat menghapus beberapa data.');
+    } finally {
+      setIsBatchDeleting(false);
+    }
   };
 
   const fetchBotInfo = async (currentSettings?: SystemSettings | null) => {
@@ -1257,6 +1312,21 @@ export const OwnerPage: React.FC = () => {
                   <Download className="w-4 h-4 text-sky-400" />
                   <span>Download .CSV</span>
                 </button>
+                {selectedReportIds.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleBatchDeleteReports}
+                    disabled={isBatchDeleting}
+                    className="px-3 py-2.5 bg-rose-500/10 hover:bg-rose-500 text-rose-500 hover:text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 cursor-pointer border border-rose-500/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isBatchDeleting ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="w-4 h-4" />
+                    )}
+                    <span>Hapus {selectedReportIds.length} Data</span>
+                  </button>
+                )}
               </div>
             </div>
           </GlassCard>
@@ -1418,28 +1488,42 @@ export const OwnerPage: React.FC = () => {
                               {r.grup || '-'}
                             </td>
                             <td className="p-2.5 text-center whitespace-nowrap">
-                              <button
-                                type="button"
-                                onClick={() => handleCopySingleRow(r, uniqueId)}
-                                className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold flex items-center gap-1 mx-auto transition-all cursor-pointer ${
-                                  isCopied 
-                                    ? 'bg-emerald-500 text-slate-950 scale-105' 
-                                    : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300'
-                                }`}
-                                title="Salin baris ini saja"
-                              >
-                                {isCopied ? (
-                                  <>
-                                    <Check className="w-3 h-3" />
-                                    <span>Tersalin!</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <Copy className="w-3 h-3 text-amber-400" />
-                                    <span>Salin</span>
-                                  </>
-                                )}
-                              </button>
+                              <div className="flex items-center justify-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopySingleRow(r, uniqueId)}
+                                  className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold flex items-center gap-1 transition-all cursor-pointer ${
+                                    isCopied 
+                                      ? 'bg-emerald-500 text-slate-950 scale-105' 
+                                      : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300'
+                                  }`}
+                                  title="Salin baris ini saja"
+                                >
+                                  {isCopied ? (
+                                    <>
+                                      <Check className="w-3 h-3" />
+                                      <span>Tersalin!</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Copy className="w-3 h-3 text-amber-400" />
+                                      <span>Salin</span>
+                                    </>
+                                  )}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (r.reportId && window.confirm('Hapus data ini secara permanen?')) {
+                                      handleSingleDeleteReport(r.reportId);
+                                    }
+                                  }}
+                                  className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500 text-rose-500 hover:text-white transition-all cursor-pointer border border-rose-500/20"
+                                  title="Hapus baris ini"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         );
@@ -1529,28 +1613,42 @@ export const OwnerPage: React.FC = () => {
                               {r.note || '-'}
                             </td>
                             <td className="p-2.5 text-center whitespace-nowrap">
-                              <button
-                                type="button"
-                                onClick={() => handleCopySingleRow(r, uniqueId)}
-                                className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold flex items-center gap-1 mx-auto transition-all cursor-pointer ${
-                                  isCopied 
-                                    ? 'bg-emerald-500 text-slate-950 scale-105' 
-                                    : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300'
-                                }`}
-                                title="Salin baris ini saja"
-                              >
-                                {isCopied ? (
-                                  <>
-                                    <Check className="w-3 h-3" />
-                                    <span>Tersalin!</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <Copy className="w-3 h-3 text-amber-400" />
-                                    <span>Salin</span>
-                                  </>
-                                )}
-                              </button>
+                              <div className="flex items-center justify-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopySingleRow(r, uniqueId)}
+                                  className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold flex items-center gap-1 transition-all cursor-pointer ${
+                                    isCopied 
+                                      ? 'bg-emerald-500 text-slate-950 scale-105' 
+                                      : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300'
+                                  }`}
+                                  title="Salin baris ini saja"
+                                >
+                                  {isCopied ? (
+                                    <>
+                                      <Check className="w-3 h-3" />
+                                      <span>Tersalin!</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Copy className="w-3 h-3 text-amber-400" />
+                                      <span>Salin</span>
+                                    </>
+                                  )}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (r.reportId && window.confirm('Hapus data ini secara permanen?')) {
+                                      handleSingleDeleteReport(r.reportId);
+                                    }
+                                  }}
+                                  className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500 text-rose-500 hover:text-white transition-all cursor-pointer border border-rose-500/20"
+                                  title="Hapus baris ini"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         );
@@ -1624,11 +1722,11 @@ export const OwnerPage: React.FC = () => {
                               <p className="truncate"><span className="text-slate-400 font-medium">Grup:</span> <span className="text-indigo-300 font-bold">{r.grup || '-'}</span></p>
                             </div>
 
-                            <div className="pt-2 border-t border-slate-200/60 dark:border-slate-800/60 flex justify-end">
+                            <div className="pt-2 border-t border-slate-200/60 dark:border-slate-800/60 flex items-center gap-2">
                               <button
                                 type="button"
                                 onClick={() => handleCopySingleRow(r, uniqueId)}
-                                className={`w-full py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                                className={`flex-1 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                                   isCopied 
                                     ? 'bg-emerald-500 text-slate-950 scale-[1.01]' 
                                     : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700/50'
@@ -1645,6 +1743,18 @@ export const OwnerPage: React.FC = () => {
                                     <span>Salin Baris</span>
                                   </>
                                 )}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (r.reportId && window.confirm('Hapus data ini secara permanen?')) {
+                                    handleSingleDeleteReport(r.reportId);
+                                  }
+                                }}
+                                className="p-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500 text-rose-500 hover:text-white transition-all cursor-pointer border border-rose-500/20"
+                                title="Hapus baris ini"
+                              >
+                                <Trash2 className="w-4 h-4" />
                               </button>
                             </div>
                           </div>
@@ -1756,11 +1866,11 @@ export const OwnerPage: React.FC = () => {
                               )}
                             </div>
 
-                            <div className="pt-2 border-t border-slate-200/60 dark:border-slate-800/60 flex justify-end">
+                            <div className="pt-2 border-t border-slate-200/60 dark:border-slate-800/60 flex items-center gap-2">
                               <button
                                 type="button"
                                 onClick={() => handleCopySingleRow(r, uniqueId)}
-                                className={`w-full py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                                className={`flex-1 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                                   isCopied 
                                     ? 'bg-emerald-500 text-slate-950 scale-[1.01]' 
                                     : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700/50'
@@ -1777,6 +1887,18 @@ export const OwnerPage: React.FC = () => {
                                     <span>Salin Baris</span>
                                   </>
                                 )}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (r.reportId && window.confirm('Hapus data ini secara permanen?')) {
+                                    handleSingleDeleteReport(r.reportId);
+                                  }
+                                }}
+                                className="p-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500 text-rose-500 hover:text-white transition-all cursor-pointer border border-rose-500/20"
+                                title="Hapus baris ini"
+                              >
+                                <Trash2 className="w-4 h-4" />
                               </button>
                             </div>
                           </div>
@@ -1858,6 +1980,18 @@ export const OwnerPage: React.FC = () => {
                 className="w-full bg-white dark:bg-slate-950 border border-amber-500/40 rounded-xl p-2.5 text-xs text-slate-900 dark:text-white outline-none focus:border-amber-400 font-mono"
               />
               <p className="text-[10px] text-slate-600 dark:text-slate-400">Dapatkan token dari @BotFather di Telegram lalu paste di sini.</p>
+            </div>
+
+            <div className="flex flex-col gap-1.5 bg-slate-50 dark:bg-slate-900/80 p-3 rounded-2xl border border-slate-200 dark:border-slate-800">
+              <label className="text-xs font-bold text-slate-900 dark:text-white">Telegram Owner ID (Chat ID Pribadi Owner)</label>
+              <input
+                type="text"
+                placeholder="Contoh: 12345678"
+                value={settings.telegramOwnerId || ''}
+                onChange={(e) => setSettings({ ...settings, telegramOwnerId: e.target.value })}
+                className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-2.5 text-xs text-slate-900 dark:text-white outline-none focus:border-amber-500"
+              />
+              <p className="text-[10px] text-slate-600 dark:text-slate-400">ID Telegram pribadi Anda untuk menerima notifikasi persetujuan (ACC).</p>
             </div>
 
             <div className="flex flex-col gap-1.5 bg-slate-50 dark:bg-slate-900/80 p-3 rounded-2xl border border-slate-200 dark:border-slate-800">

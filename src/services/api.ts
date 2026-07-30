@@ -193,13 +193,15 @@ export async function sendReportToTelegramApi(
   videoDataUrl?: string,
   groupId?: string,
   topicId?: string,
-  customText?: string
+  customText?: string,
+  authToken?: string
 ): Promise<ApiResponse> {
   const sys = await getSystemSettings();
   const token = sys?.telegramBotToken;
 
   // 1. Client-side direct upload for Video and GIF to bypass server JSON payload limits
-  if (videoDataUrl && token) {
+  // NOTE: We SKIP direct upload if telegramOwnerId is set, because we need the server to handle the Approval Flow (adding buttons, updating Firestore, etc.)
+  if (videoDataUrl && token && !sys?.telegramOwnerId) {
     try {
       const targetGroupRaw = groupId || sys?.telegramGroupId;
       const targetTopicRaw = topicId || sys?.telegramTopicReport;
@@ -296,7 +298,8 @@ export async function sendReportToTelegramApi(
       const response = await fetch(`${API_BASE_URL}/api/telegram/send-report`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
         },
         body: JSON.stringify({ 
           report, 

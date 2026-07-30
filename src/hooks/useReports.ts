@@ -7,7 +7,8 @@ import {
   updateReportStatus,
   updateReportPermission,
   updateReportDetails,
-  updateReportFine
+  updateReportFine,
+  deleteReport as deleteReportFirebase
 } from '../firebase/services/reportService';
 import { syncReportToSheetsApi } from '../services/api';
 import { useAuth } from './useAuth';
@@ -166,6 +167,20 @@ export function useReports() {
     }
   };
 
+  const deleteReport = async (reportId: string) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      await deleteReportFirebase(reportId);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Gagal menghapus laporan.';
+      setError(msg);
+      throw new Error(msg);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return {
     reports,
     isLoading,
@@ -175,6 +190,7 @@ export function useReports() {
     updateStatus,
     updatePermission,
     updateDetails,
-    updateFine
+    updateFine,
+    deleteReport
   };
 }
