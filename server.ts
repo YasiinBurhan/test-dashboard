@@ -730,18 +730,19 @@ app.post('/api/telegram/webhook', async (req: Request, res: Response) => {
 
             if (isAcc) {
               // 1. FORWARD TO GROUP
-              const rawGroupId = settings?.telegramGroupId;
+              // Use targetGroupId from report if available, otherwise fallback to settings
+              const rawGroupId = reportData.targetGroupId || settings?.telegramGroupId;
               
               // Determine topic based on report.grup
-              let rawTopicId = '';
+              let rawTopicId = reportData.targetTopicId || '';
               const rawGrup = (reportData.grup || '').toUpperCase().trim();
               
-              console.log(`[Telegram Webhook] ACC Process: Report ${reportId}, Grup: ${rawGrup}`);
-              
-              if (rawGrup === 'T0' || rawGrup === 'T0-MARK') rawTopicId = settings?.telegramTopicT0 || '';
-              else if (rawGrup === 'V0') rawTopicId = settings?.telegramTopicV0 || '';
-              else if (rawGrup === 'RECRUITER') rawTopicId = settings?.telegramTopicRecruiter || '';
-              else if (rawGrup === 'T3') rawTopicId = settings?.telegramTopicT3 || '';
+              if (!rawTopicId) {
+                if (rawGrup === 'T0' || rawGrup === 'T0-MARK') rawTopicId = settings?.telegramTopicT0 || '';
+                else if (rawGrup === 'V0') rawTopicId = settings?.telegramTopicV0 || '';
+                else if (rawGrup === 'RECRUITER') rawTopicId = settings?.telegramTopicRecruiter || '';
+                else if (rawGrup === 'T3') rawTopicId = settings?.telegramTopicT3 || '';
+              }
               
               const { targetGroup: groupId, topicNum: topicId } = parseTelegramChatAndTopic(rawGroupId, rawTopicId);
               
@@ -821,14 +822,16 @@ Grub : <b>${displayGrup}</b>${photoLink}
               await serverDb.collection(reportCollection).doc(reportId).update({ 
                 result: 'ACC',
                 approvedAt: new Date().toISOString(),
-                approvedBy: String(cbFrom.id)
+                approvedBy: String(cbFrom.id),
+                updatedAt: new Date().toISOString()
               });
             } else {
               // REJECT
               await serverDb.collection(reportCollection).doc(reportId).update({ 
                 result: 'REJECT',
                 rejectedAt: new Date().toISOString(),
-                rejectedBy: String(cbFrom.id)
+                rejectedBy: String(cbFrom.id),
+                updatedAt: new Date().toISOString()
               });
             }
 
