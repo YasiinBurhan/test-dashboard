@@ -1618,7 +1618,7 @@ app.post('/api/scan-uid', generalApiLimiter, authenticateJWT, authorizeRoles(['O
       return;
     }
     const response = await ai.models.generateContent({
-      model: 'gemini-1.5-flash',
+      model: 'gemini-2.0-flash',
       contents: [
         {
           inlineData: {
