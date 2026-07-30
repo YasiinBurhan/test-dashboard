@@ -113,19 +113,12 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab })
     { id: 'beranda' as TabType, label: 'Beranda', icon: LayoutGrid },
     { id: 'postingan' as TabType, label: 'Postingan', icon: ClipboardPen },
     { id: 'data_harian' as TabType, label: 'Data Harian', icon: CalendarClock },
-    { id: 'laporan' as TabType, label: 'Laporan', icon: FileText }
+    { id: 'laporan' as TabType, label: 'Laporan', icon: FileText },
+    { id: 'gaji' as TabType, label: 'Gaji', icon: Coins }
   ];
 
   // Secondary menu items inside drawer
   const secondaryMenuItems = [];
-
-  secondaryMenuItems.push({
-    id: 'gaji' as TabType,
-    label: 'Gaji & Bonus',
-    desc: 'Pantau komisi & perhitungan gaji',
-    icon: Coins,
-    color: 'from-emerald-500/20 to-teal-600/10 text-emerald-400 border-emerald-500/30'
-  });
 
   secondaryMenuItems.push(
     {
@@ -309,19 +302,19 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab })
         )}
       </AnimatePresence>
 
-      {/* Floating Bottom Nav Bar (5 Spacious Buttons) */}
+      {/* Floating Bottom Nav Bar */}
       <div 
         style={{
-          paddingBottom: 'calc(var(--tg-safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) + 24px)'
+          paddingBottom: 'calc(var(--tg-safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) + 12px)'
         }}
-        className={`fixed bottom-0 left-0 right-0 z-40 px-3 md:px-6 pointer-events-none transition-all duration-300 ease-in-out transform ${
+        className={`fixed bottom-0 left-0 right-0 z-40 px-2.5 sm:px-4 md:px-6 pointer-events-none transition-all duration-300 ease-in-out transform ${
           isKeyboardVisible ? 'translate-y-28 opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'
         }`}
       >
         <nav 
-          className="w-full max-w-xl mx-auto pointer-events-auto backdrop-blur-2xl border border-slate-200/90 dark:border-white/10 bg-white/85 dark:bg-slate-950/85 rounded-2xl p-1 shadow-lg shadow-slate-900/5 dark:shadow-2xl flex items-center justify-between"
+          className="w-full max-w-xl mx-auto pointer-events-auto backdrop-blur-2xl border border-slate-200/90 dark:border-slate-800/80 bg-white/90 dark:bg-slate-950/90 rounded-2xl p-1.5 shadow-2xl shadow-slate-900/10 dark:shadow-black/70 flex items-center justify-around gap-0.5"
         >
-          {/* Primary 4 Buttons */}
+          {/* Primary Buttons */}
           {primaryTabs.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
@@ -330,31 +323,47 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, setActiveTab })
               <button
                 key={item.id}
                 onClick={() => handleTabClick(item.id)}
-                className="flex-1 flex flex-col items-center justify-center py-2 px-1 rounded-xl transition-colors duration-200 relative"
+                className="flex-1 flex flex-col items-center justify-center py-2 px-1 rounded-xl transition-all duration-200 relative cursor-pointer select-none"
               >
-                <div className="relative flex items-center justify-center">
-                  <Icon className={`w-5 h-5 transition-transform duration-200 ${isActive ? 'scale-105 text-sky-600 dark:text-sky-400 font-extrabold' : 'scale-100 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`} />
-                </div>
+                {isActive && (
+                  <motion.div
+                    layoutId="activeBottomTabPill"
+                    className="absolute inset-0 bg-sky-500/10 dark:bg-sky-400/15 border border-sky-500/25 dark:border-sky-400/30 rounded-xl"
+                    transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                  />
+                )}
 
-                <span className={`text-[10px] md:text-[11px] tracking-tight mt-1 truncate max-w-full ${isActive ? 'text-sky-600 dark:text-sky-400 font-bold' : 'text-slate-500 dark:text-slate-400 font-medium'}`}>
-                  {item.label}
-                </span>
+                <div className="relative flex flex-col items-center justify-center z-10">
+                  <Icon className={`w-5 h-5 transition-transform duration-200 ${isActive ? 'scale-110 text-sky-600 dark:text-sky-400 font-black' : 'scale-100 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`} />
+                  
+                  <span className={`text-[9.5px] sm:text-[10.5px] tracking-tight mt-0.5 truncate max-w-full transition-colors ${isActive ? 'text-sky-600 dark:text-sky-400 font-extrabold' : 'text-slate-500 dark:text-slate-400 font-medium'}`}>
+                    {item.label}
+                  </span>
+                </div>
               </button>
             );
           })}
 
-          {/* 5th Dynamic Menu Button */}
+          {/* 6th Dynamic Menu Button */}
           <button
             onClick={handleMenuToggle}
-            className="flex-1 flex flex-col items-center justify-center py-2 px-1 rounded-xl transition-colors duration-200 relative"
+            className="flex-1 flex flex-col items-center justify-center py-2 px-1 rounded-xl transition-all duration-200 relative cursor-pointer select-none"
           >
-            <div className="relative flex items-center justify-center">
-              <FifthIcon className={`w-5 h-5 transition-transform duration-200 ${isSecondaryActive || isMenuOpen ? 'scale-105 text-sky-600 dark:text-sky-400 font-extrabold' : 'scale-100 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`} />
-            </div>
+            {(isSecondaryActive || isMenuOpen) && (
+              <motion.div
+                layoutId="activeBottomTabPill"
+                className="absolute inset-0 bg-sky-500/10 dark:bg-sky-400/15 border border-sky-500/25 dark:border-sky-400/30 rounded-xl"
+                transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+              />
+            )}
 
-            <span className={`text-[10px] md:text-[11px] tracking-tight mt-1 truncate max-w-full ${isSecondaryActive || isMenuOpen ? 'text-sky-600 dark:text-sky-400 font-bold' : 'text-slate-500 dark:text-slate-400 font-medium'}`}>
-              {fifthButtonLabel}
-            </span>
+            <div className="relative flex flex-col items-center justify-center z-10">
+              <FifthIcon className={`w-5 h-5 transition-transform duration-200 ${isSecondaryActive || isMenuOpen ? 'scale-110 text-sky-600 dark:text-sky-400 font-black' : 'scale-100 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`} />
+
+              <span className={`text-[9.5px] sm:text-[10.5px] tracking-tight mt-0.5 truncate max-w-full transition-colors ${isSecondaryActive || isMenuOpen ? 'text-sky-600 dark:text-sky-400 font-extrabold' : 'text-slate-500 dark:text-slate-400 font-medium'}`}>
+                {fifthButtonLabel}
+              </span>
+            </div>
           </button>
         </nav>
       </div>

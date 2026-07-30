@@ -3373,68 +3373,75 @@ Grub : ${grupDisplay}`;
                   id="bukti-video-input"
                   onChange={async (e) => {
                     const file = e.target.files?.[0];
-                    if (file) {
-                      const isGif = file.type === 'image/gif' || /\.gif$/i.test(file.name);
-                      const isVideo = file.type.startsWith('video/') || 
-                                      /\.(mp4|mov|webm|mkv|3gp|avi|m4v|qt)$/i.test(file.name) || isGif;
-                      if (!isVideo) {
-                        showAlert('error', 'Format File Salah ⚠️', 'Hanya diperbolehkan mengupload file video bukti pelamar (format video atau GIF). Foto selain GIF tidak diizinkan!');
-                        return;
+                    if (!file) return;
+
+                    const isGif = file.type === 'image/gif' || /\.gif$/i.test(file.name);
+                    const isVideoExt = /\.(mp4|mov|webm|mkv|3gp|avi|m4v|qt|flv|wmv)$/i.test(file.name);
+                    const isVideoMime = file.type.startsWith('video/') || file.type.includes('video');
+                    const isVideo = isGif || isVideoExt || isVideoMime || file.type === '';
+
+                    if (!isVideo) {
+                      showAlert('error', 'Format File Salah ⚠️', 'Hanya diperbolehkan mengupload file video bukti pelamar (format video atau GIF). Foto selain GIF tidak diizinkan!');
+                      return;
+                    }
+                    
+                    if (file.size > 200 * 1024 * 1024) { 
+                      showAlert('error', 'Video Terlalu Besar ❌', 'Ukuran maksimal video yang diizinkan adalah 200MB.');
+                      return;
+                    }
+
+                    try {
+                      // Revoke old blob URL if present to free RAM memory
+                      if (formData.videoUrl && formData.videoUrl.startsWith('blob:')) {
+                        URL.revokeObjectURL(formData.videoUrl);
                       }
-                      
-                      if (file.size > 200 * 1024 * 1024) { 
-                        showAlert('error', 'Video Terlalu Besar ❌', 'Ukuran maksimal video yang diizinkan adalah 200MB.');
-                        return;
-                      }
+
+                      // Create object URL instantly (0 milliseconds, 0MB extra RAM)
+                      const objectUrl = URL.createObjectURL(file);
+                      const fileSizeMB = (file.size / (1024 * 1024)).toFixed(1);
 
                       if (isGif) {
-                        const reader = new FileReader();
-                        reader.onload = (event) => {
-                          if (event.target?.result) {
-                            setFormData((prev) => ({ ...prev, videoUrl: event.target!.result as string }));
-                            showAlert('success', 'GIF Berhasil Dimuat ✅', 'File GIF bukti pelamar berhasil ditambahkan.');
-                          }
-                        };
-                        reader.readAsDataURL(file);
+                        setFormData((prev) => ({ ...prev, videoUrl: objectUrl }));
+                        showAlert('success', 'GIF Berhasil Dimuat ✅', `File GIF bukti pelamar (${fileSizeMB} MB) berhasil ditambahkan.`);
                         return;
                       }
 
+                      // For videos <= 35MB, Telegram API accepts direct upload, so no compression wait needed!
+                      if (file.size <= 35 * 1024 * 1024) {
+                        setFormData((prev) => ({ ...prev, videoUrl: objectUrl }));
+                        showAlert('success', 'Video Siap ✅', `File video (${fileSizeMB} MB) berhasil dimuat dan siap dikirim.`);
+                        return;
+                      }
+
+                      // For videos > 35MB, try fast non-blocking background compression
                       setIsCompressingVideo(true);
-                      setCompressionProgress(0);
-                      showAlert('warning', 'Mengompresi Video ⏳', 'Video sedang dikompresi sebelum diunggah (tunggu beberapa saat).');
+                      setCompressionProgress(10);
+                      showAlert('warning', 'Mengoptimalkan Video ⏳', `Mengecek optimasi file video (${fileSizeMB} MB)...`);
 
                       try {
                         const compressedFile = await compressVideo(file, (progress) => {
                           setCompressionProgress(Math.round(progress * 100));
                         });
-                        
-                        const dataUrl = await new Promise<string>((resolve, reject) => {
-                          const reader = new FileReader();
-                          reader.onload = () => resolve(reader.result as string);
-                          reader.onerror = (err) => reject(err);
-                          reader.readAsDataURL(compressedFile);
-                        });
 
-                        setFormData((prev) => ({ ...prev, videoUrl: dataUrl }));
-                        showAlert('success', 'Video Siap ✅', 'Video berhasil dikompresi dan dimuat.');
-                      } catch (err) {
-                        console.error('Compression failed:', err);
-                        // Fallback to original file
-                        try {
-                          const dataUrl = await new Promise<string>((resolve, reject) => {
-                            const reader = new FileReader();
-                            reader.onload = () => resolve(reader.result as string);
-                            reader.onerror = (err) => reject(err);
-                            reader.readAsDataURL(file);
-                          });
-                          setFormData((prev) => ({ ...prev, videoUrl: dataUrl }));
-                          showAlert('warning', 'Kompresi Gagal ⚠️', 'Gagal mengompresi video, menggunakan ukuran asli.');
-                        } catch (readErr) {
-                          showAlert('error', 'Gagal Memuat Video ❌', 'Tidak dapat membaca file video yang dipilih.');
+                        if (compressedFile !== file) {
+                          const compressedObjectUrl = URL.createObjectURL(compressedFile);
+                          const compressedSizeMB = (compressedFile.size / (1024 * 1024)).toFixed(1);
+                          setFormData((prev) => ({ ...prev, videoUrl: compressedObjectUrl }));
+                          showAlert('success', 'Video Terkompresi ✅', `Video dioptimasi dari ${fileSizeMB}MB menjadi ${compressedSizeMB}MB.`);
+                        } else {
+                          setFormData((prev) => ({ ...prev, videoUrl: objectUrl }));
+                          showAlert('success', 'Video Siap ✅', `File video (${fileSizeMB} MB) siap digunakan.`);
                         }
+                      } catch (compressErr) {
+                        console.warn('Compression skipped, using original video:', compressErr);
+                        setFormData((prev) => ({ ...prev, videoUrl: objectUrl }));
+                        showAlert('success', 'Video Siap ✅', `File video (${fileSizeMB} MB) siap digunakan.`);
                       } finally {
                         setIsCompressingVideo(false);
                       }
+                    } catch (readErr) {
+                      console.error('Error loading video file:', readErr);
+                      showAlert('error', 'Gagal Memuat Video ❌', 'Tidak dapat membaca file video. Silakan coba pilih file video lain.');
                     }
                   }}
                   className="hidden"

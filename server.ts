@@ -99,7 +99,7 @@ app.use(cors({
     if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.run.app') || origin.endsWith('.vercel.app')) {
       callback(null, true);
     } else {
-      callback(null, false);
+      callback(new Error('Not allowed by CORS'));
     }
   },
   credentials: true
@@ -1018,6 +1018,73 @@ app.post('/api/auth/verify-telegram', generalApiLimiter, (req, res) => {
 });
 
 // API Endpoint: Manual Login & Issue JWT Session Token
+
+// Telegram Widget Login Verification
+app.post('/api/auth/telegram-widget', generalApiLimiter, async (req, res) => {
+  try {
+    const { id, first_name, last_name, username, photo_url, auth_date, hash } = req.body;
+    
+    if (!id || !hash || !auth_date) {
+      return res.status(400).json({ success: false, error: 'Missing required Telegram data' });
+    }
+
+    // Verify hash
+    const botToken = TELEGRAM_BOT_TOKEN;
+    if (!botToken) {
+      return res.status(500).json({ success: false, error: 'Bot token not configured on server' });
+    }
+
+    const dataCheckArr = [];
+    if (auth_date) dataCheckArr.push(`auth_date=${auth_date}`);
+    if (first_name) dataCheckArr.push(`first_name=${first_name}`);
+    if (id) dataCheckArr.push(`id=${id}`);
+    if (last_name) dataCheckArr.push(`last_name=${last_name}`);
+    if (photo_url) dataCheckArr.push(`photo_url=${photo_url}`);
+    if (username) dataCheckArr.push(`username=${username}`);
+    
+    const dataCheckString = dataCheckArr.sort().join('\n');
+    
+    const secretKey = crypto.createHash('sha256').update(botToken).digest();
+    const calculatedHash = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
+
+    if (calculatedHash !== hash) {
+      return res.status(401).json({ success: false, error: 'Invalid Telegram hash (Authentication failed)' });
+    }
+
+    // Check if auth_date is not too old (e.g. 24 hours)
+    const now = Math.floor(Date.now() / 1000);
+    if (now - auth_date > 86400) {
+      return res.status(401).json({ success: false, error: 'Authentication data expired' });
+    }
+
+    // Check if user exists in DB
+    const usersRef = serverDb.collection('users');
+    let userExists = false;
+    
+    try {
+      const docSnap = await usersRef.doc(String(id)).get();
+      if (docSnap.exists) {
+        userExists = true;
+      }
+    } catch (e) {
+      console.error('Error checking user:', e);
+    }
+
+    // If user doesn't exist, we could auto-register or return error. 
+    // Here we just let them pass as "authenticated" and the frontend will redirect to Register Page if needed.
+    const token = jwt.sign(
+      { telegramId: String(id), role: userExists ? 'Recruiter' : 'Guest' },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.json({ success: true, token, userExists });
+  } catch (err) {
+    console.error('Telegram widget auth error:', err);
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
 app.post('/api/auth/login-manual', generalApiLimiter, async (req, res) => {
   try {
     const { telegramId, pin } = req.body;
@@ -1441,7 +1508,7 @@ app.get('/api/check-telegram/:username', async (req: Request, res: Response) => 
     }
 
     let extractedTitle = username;
-    const titleMatch = html.match(/<div class="tgme_page_title"[^>]*><span[^>]*>([\s\S]*?)<\/span><\/div>/) || 
+    const titleMatch = html.match(/<div class="tgme_page_title"[^>]*><span[^>]*>(.*?)<\/span><\/div>/s) || 
                        html.match(/<meta property="og:title" content="(.*?)"/);
     if (titleMatch && titleMatch[1]) {
       const cleanTitle = titleMatch[1]

@@ -206,6 +206,7 @@ export interface RecruiterSalary {
   username: string;        // Telegram username
   recruiterName: string;   // Full/First Name of recruiter
   telegramId: string;      // Recruiter Telegram ID
+  akun9Kucing?: string;    // Recruiter OKucing UID
   hariEfektif: number;     // Hari Efektif
   totalPostingan: number;  // TOTAL POSTINGAN
   deklarasiT0: number;     // Deklarasi T0

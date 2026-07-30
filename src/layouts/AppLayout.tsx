@@ -65,7 +65,12 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         className="w-full shrink-0" 
       />
       
-      <main className="flex-1 w-full max-w-7xl mx-auto px-3.5 sm:px-6 pt-3 pb-28 md:pb-32 relative flex flex-col">
+      <main 
+        style={{ 
+          paddingBottom: 'calc(180px + var(--tg-safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)))' 
+        }} 
+        className="flex-1 w-full max-w-7xl mx-auto px-3.5 sm:px-6 pt-3 relative flex flex-col min-h-0"
+      >
         <div key={activeTab} className="flex-1 w-full space-y-4 md:space-y-6 animate-fadeIn">
           {children}
         </div>

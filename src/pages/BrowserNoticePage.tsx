@@ -3,11 +3,12 @@ import { GlassCard } from '../components/common/GlassCard';
 import { AzurLizeLogo } from '../components/logo/AzurLizeLogo';
 import { Button } from '../components/common/Button';
 import { Input } from '../components/common/Input';
+import { TelegramLoginButton } from '../components/common/TelegramLoginButton';
 import { useAuth } from '../hooks/useAuth';
 import { LogIn, UserPlus, ChevronLeft, Hash, User, ShieldAlert, Lock, Smartphone, HelpCircle } from 'lucide-react';
 
 export const BrowserNoticePage: React.FC = () => {
-  const { loginManually, registerManually } = useAuth();
+  const { loginManually, registerManually, loginWithTelegramWidget } = useAuth() as any;
   
   const [showManualForm, setShowManualForm] = useState(false);
   const [mode, setMode] = useState<'login' | 'register'>('login');
@@ -184,6 +185,27 @@ export const BrowserNoticePage: React.FC = () => {
               <span className="text-[10px] bg-sky-500/10 border border-sky-500/30 px-2 py-0.5 rounded-full text-sky-400 font-bold">
                 Browser Android
               </span>
+            </div>
+
+            
+            {/* Telegram Login Widget */}
+            <div className="flex flex-col items-center justify-center space-y-3 pt-2 pb-4 border-b border-slate-200 dark:border-slate-800">
+              <p className="text-xs font-bold text-slate-700 dark:text-slate-300">Gunakan Telegram Login (Rekomendasi)</p>
+              <TelegramLoginButton 
+                botName="azurlize_recruitment_bot" 
+                onAuth={async (user) => {
+                  const res = await loginWithTelegramWidget(user);
+                  if (res && res.success && res.isNewUser) {
+                    setMode('register');
+                  }
+                }} 
+              />
+            </div>
+            
+            <div className="relative flex py-2 items-center">
+              <div className="flex-grow border-t border-slate-200 dark:border-slate-800"></div>
+              <span className="flex-shrink-0 mx-4 text-slate-400 text-xs font-bold">ATAU MANUAL LOGIN</span>
+              <div className="flex-grow border-t border-slate-200 dark:border-slate-800"></div>
             </div>
 
             {/* MODE TOGGLE SWITCH: Masuk Akun Terdaftar VS Daftar Baru */}

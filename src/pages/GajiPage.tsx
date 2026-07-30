@@ -23,12 +23,18 @@ import {
   Briefcase,
   TrendingDown,
   ChevronRight,
+  ChevronLeft,
   ChevronDown,
   Info,
   BookOpen,
   ListOrdered,
   ShieldAlert,
-  ChevronUp
+  ChevronUp,
+  Crown,
+  Trophy,
+  Medal,
+  DollarSign,
+  Eye
 } from 'lucide-react';
 import { GlassCard } from '../components/common/GlassCard';
 import { triggerHaptic } from '../telegram/webapp';
@@ -61,10 +67,13 @@ export const GajiPage: React.FC = () => {
   const [selectedPeriod, setSelectedPeriod] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'uninput' | 'draft' | 'paid'>('all');
-  const [sortBy, setSortBy] = useState<'name' | 'gaji' | 'hari'>('name');
+  const [sortBy, setSortBy] = useState<'name' | 'gaji' | 'hari' | 'acc'>('acc');
+  const [leaderboardScope, setLeaderboardScope] = useState<'period' | 'allTime'>('period');
+  const [leaderboardPage, setLeaderboardPage] = useState(1);
+  const ITEMS_PER_PAGE = 10;
 
   // Guide widget state
-  const [isGuideOpen, setIsGuideOpen] = useState(true);
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
   const [activeGuideTab, setActiveGuideTab] = useState<'ketentuan' | 'alur' | 'jadwal'>('ketentuan');
 
   // Period in examination check
@@ -223,9 +232,106 @@ export const GajiPage: React.FC = () => {
         const daysB = b.salarySlip?.hariEfektif || 0;
         return daysB - daysA; // highest effective days first
       }
+      if (sortBy === 'acc') {
+        const itemAReports = reports.filter(r => r.telegramId === a.user.telegramId && (r.applicantWhatsapp || r.uid9Kucing || r.applicantTelegramUsername));
+        const itemBReports = reports.filter(r => r.telegramId === b.user.telegramId && (r.applicantWhatsapp || r.uid9Kucing || r.applicantTelegramUsername));
+        
+        const periodAReports = itemAReports.filter(r => (r.date || r.createdAt?.split('T')[0]) && getWIBMondayOfDate(r.date || r.createdAt?.split('T')[0]) === selectedPeriod);
+        const periodBReports = itemBReports.filter(r => (r.date || r.createdAt?.split('T')[0]) && getWIBMondayOfDate(r.date || r.createdAt?.split('T')[0]) === selectedPeriod);
+
+        const repAccA = periodAReports.filter(r => r.result === 'ACC').length;
+        const repAccB = periodBReports.filter(r => r.result === 'ACC').length;
+
+        const slipAccA = a.salarySlip ? ((a.salarySlip.sebenarnyaT0 || 0) + (a.salarySlip.sebenarnyaV0 || 0) + (a.salarySlip.t3 || 0)) : 0;
+        const slipAccB = b.salarySlip ? ((b.salarySlip.sebenarnyaT0 || 0) + (b.salarySlip.sebenarnyaV0 || 0) + (b.salarySlip.t3 || 0)) : 0;
+
+        const totalAccA = Math.max(repAccA, slipAccA);
+        const totalAccB = Math.max(repAccB, slipAccB);
+
+        return totalAccB - totalAccA;
+      }
       return 0;
     });
   }, [users, reports, salaries, selectedPeriod, searchQuery, sortBy]);
+
+  // ACC Ranking Leaderboard for Admin & Owner
+  const accLeaderboard = useMemo(() => {
+    return users.map(u => {
+      // Applicant reports for this user
+      const userReports = reports.filter(r => r.telegramId === u.telegramId && (r.applicantWhatsapp || r.uid9Kucing || r.applicantTelegramUsername));
+      
+      // Period reports
+      const periodReports = userReports.filter(r => {
+        const rDate = r.date || (r.createdAt ? r.createdAt.split('T')[0] : '');
+        return getWIBMondayOfDate(rDate) === selectedPeriod;
+      });
+
+      // Count ACC in period from reports
+      const periodACC_T0 = periodReports.filter(r => r.result === 'ACC' && r.grup === 'T0').length;
+      const periodACC_V0 = periodReports.filter(r => r.result === 'ACC' && r.grup === 'V0').length;
+      const periodACC_T3 = periodReports.filter(r => r.result === 'ACC' && r.grup === 'T3').length;
+      const periodACC_Total = periodACC_T0 + periodACC_V0 + periodACC_T3;
+
+      // Check saved salary slip for this period
+      const savedSlip = salaries.find(s => s.telegramId === u.telegramId && s.periode === selectedPeriod);
+      const slipACC_T0 = savedSlip?.sebenarnyaT0 || 0;
+      const slipACC_V0 = savedSlip?.sebenarnyaV0 || 0;
+      const slipACC_T3 = savedSlip?.t3 || 0;
+      const slipACC_Total = slipACC_T0 + slipACC_V0 + slipACC_T3;
+      
+      // Take maximum for period accuracy
+      const finalT0 = Math.max(periodACC_T0, slipACC_T0);
+      const finalV0 = Math.max(periodACC_V0, slipACC_V0);
+      const finalT3 = Math.max(periodACC_T3, slipACC_T3);
+      const finalPeriodACC = finalT0 + finalV0 + finalT3;
+
+      // All time from reports
+      const allTimeACC_T0 = userReports.filter(r => r.result === 'ACC' && r.grup === 'T0').length;
+      const allTimeACC_V0 = userReports.filter(r => r.result === 'ACC' && r.grup === 'V0').length;
+      const allTimeACC_T3 = userReports.filter(r => r.result === 'ACC' && r.grup === 'T3').length;
+      
+      // All time from saved salaries
+      const userSalaries = salaries.filter(s => s.telegramId === u.telegramId);
+      const salariesACC_T0 = userSalaries.reduce((sum, s) => sum + (s.sebenarnyaT0 || 0), 0);
+      const salariesACC_V0 = userSalaries.reduce((sum, s) => sum + (s.sebenarnyaV0 || 0), 0);
+      const salariesACC_T3 = userSalaries.reduce((sum, s) => sum + (s.t3 || 0), 0);
+
+      const finalAllTimeT0 = Math.max(allTimeACC_T0, salariesACC_T0);
+      const finalAllTimeV0 = Math.max(allTimeACC_V0, salariesACC_V0);
+      const finalAllTimeT3 = Math.max(allTimeACC_T3, salariesACC_T3);
+      const finalAllTimeACC = finalAllTimeT0 + finalAllTimeV0 + finalAllTimeT3;
+
+      return {
+        user: u,
+        periodACC: finalPeriodACC,
+        periodACCBreakdown: { t0: finalT0, v0: finalV0, t3: finalT3 },
+        allTimeACC: finalAllTimeACC,
+        allTimeBreakdown: { t0: finalAllTimeT0, v0: finalAllTimeV0, t3: finalAllTimeT3 },
+        salarySlip: savedSlip || null,
+      };
+    }).sort((a, b) => {
+      if (leaderboardScope === 'period') {
+        return b.periodACC - a.periodACC || b.allTimeACC - a.allTimeACC;
+      }
+      return b.allTimeACC - a.allTimeACC || b.periodACC - a.periodACC;
+    });
+  }, [users, reports, salaries, selectedPeriod, leaderboardScope]);
+
+  // Reset page when scope or period changes
+  useEffect(() => {
+    setLeaderboardPage(1);
+  }, [leaderboardScope, selectedPeriod]);
+
+  const totalLeaderboardPages = useMemo(() => {
+    return Math.ceil(accLeaderboard.length / ITEMS_PER_PAGE) || 1;
+  }, [accLeaderboard.length, ITEMS_PER_PAGE]);
+
+  const currentLeaderboardPage = Math.min(leaderboardPage, totalLeaderboardPages);
+
+  const paginatedLeaderboard = useMemo(() => {
+    const start = (currentLeaderboardPage - 1) * ITEMS_PER_PAGE;
+    return accLeaderboard.slice(start, start + ITEMS_PER_PAGE);
+  }, [accLeaderboard, currentLeaderboardPage, ITEMS_PER_PAGE]);
 
   // Split into Belum and Sudah Input
   const { belumInputRecruiters, sudahInputRecruiters } = useMemo(() => {
@@ -283,6 +389,7 @@ export const GajiPage: React.FC = () => {
       // Open existing slip
       setFormData({
         ...slip,
+        akun9Kucing: slip.akun9Kucing || recruiter.akun9Kucing || '',
         deklarasiV0: slip.deklarasiV0 || 0,
         sebenarnyaV0: slip.sebenarnyaV0 || 0,
         deklarasiT0: slip.deklarasiT0 || 0,
@@ -303,6 +410,7 @@ export const GajiPage: React.FC = () => {
           username: recruiter.username || '',
           recruiterName: `${recruiter.firstName || ''} ${recruiter.lastName || ''}`.trim(),
           telegramId: recruiter.telegramId,
+          akun9Kucing: recruiter.akun9Kucing || '',
           status: 'Draft',
           note: '',
           ...autoMetrics,
@@ -369,13 +477,17 @@ export const GajiPage: React.FC = () => {
       
       const totalGaji = Math.max(0, gajiPokok + komisi + bonusT0 + bonusT3 + otherBonus - deduksi);
       
-      // Also calculate tingkat penerimaan dynamically if deklarasi and sebenarnya changed
-      let tingkatPenerimaan = merged.tingkatPenerimaan || 0;
-      const totalDeklarasi = (Number(merged.deklarasiT0) || 0) + (Number(merged.deklarasiV0) || 0);
-      const totalSebenarnya = (Number(merged.sebenarnyaT0) || 0) + (Number(merged.sebenarnyaV0) || 0);
-      if (totalDeklarasi > 0) {
-        tingkatPenerimaan = Math.round((totalSebenarnya / totalDeklarasi) * 100);
-      }
+      // Also calculate tingkat penerimaan dynamically: (promoted + V0 VERIFIED) / 7
+      const promoted = Number(merged.t3) || 0;
+      const v0Verified = Number(merged.sebenarnyaV0) || 0;
+      const tingkatPenerimaan = Number(((promoted + v0Verified) / 7).toFixed(1));
+
+      // Calculate Rasio Up (%) dynamically: (PROMOTED + VERIFIED V0) / (VERIFIED T0 + PROMOTED + DEKLARASI V0 + VERIFIED V0) * 100
+      const t0Verified = Number(merged.sebenarnyaT0) || 0;
+      const v0Deklarasi = Number(merged.deklarasiV0) || 0;
+      const numeratorUp = promoted + v0Verified;
+      const denominatorUp = t0Verified + promoted + v0Deklarasi + v0Verified;
+      const rasioPeningkatan = denominatorUp > 0 ? Math.round((numeratorUp / denominatorUp) * 100) : 0;
 
       return {
         ...merged,
@@ -384,7 +496,8 @@ export const GajiPage: React.FC = () => {
         komisi,
         bonusT3,
         totalGaji,
-        tingkatPenerimaan
+        tingkatPenerimaan,
+        rasioPeningkatan
       };
     });
   };
@@ -402,6 +515,7 @@ export const GajiPage: React.FC = () => {
         username: formData.username || '',
         recruiterName: formData.recruiterName || '',
         telegramId: formData.telegramId || '',
+        akun9Kucing: formData.akun9Kucing || selectedRecruiter?.akun9Kucing || '',
         hariEfektif: Number(formData.hariEfektif) || 0,
         totalPostingan: Number(formData.totalPostingan) || 0,
         deklarasiT0: Number(formData.deklarasiT0) || 0,
@@ -448,7 +562,7 @@ export const GajiPage: React.FC = () => {
         sebenarnyaV0: autoMetrics.sebenarnyaV0 || 0,
         deklarasiT0: autoMetrics.deklarasiT0 || 0,
         sebenarnyaT0: autoMetrics.sebenarnyaT0 || 0,
-        t3: autoMetrics.t3 || 0,
+        t3: formData.t3 || 0,
       });
     } catch (err) {
       console.error('Recalculation failed:', err);
@@ -636,8 +750,8 @@ export const GajiPage: React.FC = () => {
                   <li className="flex items-start gap-2.5 p-2.5 rounded-xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
                     <span className="w-5 h-5 rounded-full bg-sky-100 dark:bg-sky-950 text-sky-700 dark:text-sky-400 font-black flex items-center justify-center shrink-0 text-[10px] border border-sky-200 dark:border-sky-900/40">1</span>
                     <div>
-                      <strong className="text-slate-900 dark:text-white block mb-0.5">Syarat Verifikasi Data Harian (Tab Pemeriksaan):</strong>
-                      Data rekrutan V0, T0, dan T3 <strong className="text-slate-900 dark:text-white">baru terhitung di slip gaji</strong> setelah melewati minggu berjalan dan diproses di <strong className="text-sky-600 dark:text-sky-400 font-bold">Tab Pemeriksaan</strong> pada menu Data Harian. Selama belum masuk pemeriksaan, nilai Deklarasi V0 & V0 Verified sengaja dikosongkan (0).
+                      <strong className="text-slate-900 dark:text-white block mb-0.5">Syarat Verifikasi Data Harian (Data Minggu Lalu):</strong>
+                      Data rekrutan V0, T0, dan T3 <strong className="text-slate-900 dark:text-white">baru terhitung di slip gaji</strong> setelah melewati minggu berjalan dan diproses di <strong className="text-sky-600 dark:text-sky-400 font-bold">Data Minggu Lalu</strong> pada menu Data Harian. Selama belum masuk pemeriksaan minggu lalu, nilai Deklarasi V0 & V0 Verified sengaja dikosongkan (0).
                     </div>
                   </li>
                   <li className="flex items-start gap-2.5 p-2.5 rounded-xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
@@ -747,438 +861,237 @@ export const GajiPage: React.FC = () => {
         </div>
       )}
 
-      {isRecruiter && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {/* Recruiter personal overview */}
-          {(() => {
-            const currentSlip = salaries.find(s => s.telegramId === userProfile?.telegramId && s.periode === selectedPeriod);
-            return (
-              <>
-                <div className="p-4 rounded-3xl bg-white dark:bg-slate-950/60 border border-slate-200 dark:border-slate-900/60">
-                  <p className="text-[9px] font-extrabold uppercase tracking-wider text-slate-500">Hari Kerja Efektif</p>
-                  <p className="text-lg font-black text-slate-900 dark:text-white mt-1">
-                    {currentSlip ? `${currentSlip.hariEfektif} Hari` : '-'}
-                  </p>
-                </div>
-                <div className="p-4 rounded-3xl bg-white dark:bg-slate-950/60 border border-slate-200 dark:border-slate-900/60">
-                  <p className="text-[9px] font-extrabold uppercase tracking-wider text-slate-500">Target ACC T0 / V0</p>
-                  <p className="text-lg font-black text-slate-900 dark:text-white mt-1">
-                    {currentSlip ? `${currentSlip.sebenarnyaT0 || 0} / ${currentSlip.sebenarnyaV0 || 0}` : '-'}
-                  </p>
-                </div>
-                <div className="p-4 rounded-3xl bg-white dark:bg-slate-950/60 border border-slate-200 dark:border-slate-900/60">
-                  <p className="text-[9px] font-extrabold uppercase tracking-wider text-rose-500">Deduksi (Denda Lambat)</p>
-                  <p className="text-lg font-black text-rose-500 mt-1">
-                    {currentSlip ? formatRupiah(currentSlip.deduksi) : '-'}
-                  </p>
-                </div>
-                <div className="p-4 rounded-3xl bg-emerald-500/10 border border-emerald-500/20">
-                  <p className="text-[9px] font-extrabold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Total Gaji Diterima</p>
-                  <p className="text-lg font-black text-emerald-600 dark:text-emerald-400 mt-1">
-                    {currentSlip ? formatRupiah(currentSlip.totalGaji) : 'Belum Rekap'}
-                  </p>
-                </div>
-              </>
-            );
-          })()}
-        </div>
-      )}
+      {/* PERINGKAT TERBANYAK ACC (UNTUK SEMUA RECRUITER & ADMIN) */}
+      <GlassCard className="p-4 sm:p-5 bg-gradient-to-br from-amber-500/5 via-emerald-500/5 to-slate-950/80 border border-amber-500/20 dark:border-amber-500/30 rounded-3xl shadow-xl space-y-4 relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-36 h-36 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
 
-      {/* ADMIN & OWNER WORKFLOW PANELS */}
-      {isAdminOrOwner && (
-        <div className="space-y-4">
-          {/* Filter & Sorting bar */}
-          <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between p-3.5 rounded-3xl bg-white dark:bg-slate-950/60 border border-slate-200 dark:border-slate-900/80">
-            {/* Search */}
-            <div className="relative flex-1">
-              <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Cari Username / Nama Recruiter..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl pl-10 pr-4 py-2 text-xs font-medium text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-              />
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200/60 dark:border-slate-800/80 pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-amber-400 to-amber-600 text-slate-950 flex items-center justify-center font-black shadow-md shadow-amber-500/20 shrink-0">
+              <Trophy className="w-5 h-5" />
             </div>
-
-            {/* Filter and sorting controls */}
-            <div className="flex flex-wrap gap-2">
-              {/* Filter */}
-              <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl px-3 py-1.5">
-                <Filter className="w-3.5 h-3.5 text-slate-400" />
-                <select
-                  value={statusFilter}
-                  onChange={(e: any) => setStatusFilter(e.target.value)}
-                  className="bg-transparent border-none text-[11px] font-bold text-slate-700 dark:text-slate-300 focus:outline-none cursor-pointer"
-                >
-                  <option value="all">Semua Status Gaji</option>
-                  <option value="uninput">⚠️ Belum Diinput</option>
-                  <option value="draft">📝 Draft</option>
-                  <option value="paid">✅ Lunas (Paid)</option>
-                </select>
-              </div>
-
-              {/* Sort */}
-              <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl px-3 py-1.5">
-                <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
-                <select
-                  value={sortBy}
-                  onChange={(e: any) => setSortBy(e.target.value)}
-                  className="bg-transparent border-none text-[11px] font-bold text-slate-700 dark:text-slate-300 focus:outline-none cursor-pointer"
-                >
-                  <option value="name">Sortir: Nama (A-Z)</option>
-                  <option value="gaji">Sortir: Gaji Tertinggi</option>
-                  <option value="hari">Sortir: Hari Efektif</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          {/* Segmented Tab Filter - Extremely beautiful & user-friendly on mobile */}
-          <div className="grid grid-cols-3 p-1.5 bg-slate-100 dark:bg-slate-900 rounded-2xl gap-1">
-            <button
-              onClick={() => setStatusFilter('all')}
-              className={`py-2 text-center text-xs font-black rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                statusFilter === 'all'
-                  ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm'
-                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
-              }`}
-            >
-              Semua ({baseProcessedRecruiters.length})
-            </button>
-            <button
-              onClick={() => setStatusFilter('uninput')}
-              className={`py-2 text-center text-xs font-black rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                statusFilter === 'uninput'
-                  ? 'bg-rose-500 text-white shadow-sm shadow-rose-500/10'
-                  : 'text-rose-600 hover:bg-rose-500/5 dark:text-rose-400'
-              }`}
-            >
-              ⚠️ Belum ({belumInputRecruiters.length})
-            </button>
-            <button
-              onClick={() => setStatusFilter('draft')}
-              className={`py-2 text-center text-xs font-black rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                statusFilter === 'draft' || statusFilter === 'paid'
-                  ? 'bg-emerald-500 text-white shadow-sm shadow-emerald-500/10'
-                  : 'text-emerald-600 hover:bg-emerald-500/5 dark:text-emerald-400'
-              }`}
-            >
-              ✅ Sudah ({sudahInputRecruiters.length})
-            </button>
-          </div>
-
-          {/* RECRUITERS LIST */}
-          {loading ? (
-            <div className="flex flex-col items-center justify-center py-12 space-y-2">
-              <RefreshCw className="w-8 h-8 text-emerald-500 animate-spin" />
-              <p className="text-xs text-slate-400 font-bold">Memuat data gaji...</p>
-            </div>
-          ) : baseProcessedRecruiters.length === 0 ? (
-            <div className="p-8 text-center rounded-3xl border border-dashed border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40">
-              <Info className="w-8 h-8 text-slate-400 mx-auto mb-2" />
-              <p className="text-xs font-bold text-slate-700 dark:text-slate-300">Tidak ada recruiter ditemukan</p>
-              <p className="text-[10px] text-slate-600 dark:text-slate-400 mt-1">Coba sesuaikan kata kunci pencarian atau filter status gaji.</p>
-            </div>
-          ) : (
-            <div className="space-y-6">
-              {/* SECTION 1: BELUM DIINPUT */}
-              {(statusFilter === 'all' || statusFilter === 'uninput') && belumInputRecruiters.length > 0 && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between px-1">
-                    <h3 className="text-xs font-black uppercase tracking-wider text-rose-500 flex items-center gap-1.5">
-                      <Clock className="w-4 h-4" />
-                      <span>Belum Diinput ({belumInputRecruiters.length})</span>
-                    </h3>
-                    <span className="text-[9px] bg-rose-500/10 text-rose-600 dark:text-rose-400 px-2.5 py-0.5 rounded-full font-black uppercase tracking-wider">
-                      Perlu Diproses
-                    </span>
-                  </div>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {belumInputRecruiters.map((item) => (
-                      <motion.div
-                        layout
-                        key={item.user.telegramId}
-                        className="p-3.5 sm:p-4 rounded-3xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-900/60 hover:border-emerald-500/30 transition-all flex flex-col justify-between space-y-3.5 shadow-sm"
-                      >
-                        {/* Header: user info and status badge */}
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex items-center gap-3">
-                            {/* Photo / Avatar */}
-                            {item.user.photoUrl ? (
-                              <img 
-                                src={item.user.photoUrl} 
-                                alt={item.user.firstName}
-                                referrerPolicy="no-referrer"
-                                className="w-10 h-10 rounded-2xl object-cover border border-slate-200 dark:border-slate-800/60"
-                              />
-                            ) : (
-                              <div className="w-10 h-10 rounded-2xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800/60 flex items-center justify-center text-slate-900 dark:text-white font-black text-xs uppercase">
-                                {item.user.firstName?.slice(0, 2) || item.user.username?.slice(0, 2) || 'R'}
-                              </div>
-                            )}
-                            <div>
-                              <p className="text-xs font-black text-slate-900 dark:text-white leading-tight">
-                                {item.user.firstName} {item.user.lastName}
-                              </p>
-                              <p className="text-[10px] text-slate-600 dark:text-slate-400 font-mono mt-0.5">
-                                @{item.user.username} • UID: {item.user.telegramId}
-                              </p>
-                            </div>
-                          </div>
-
-                          <span className="text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-500 border border-rose-500/20 whitespace-nowrap">
-                            Belum Diinput
-                          </span>
-                        </div>
-
-                        {/* Summary details */}
-                        <div className="px-3 py-2.5 rounded-2xl bg-slate-50 dark:bg-slate-900/30 border border-slate-100 dark:border-slate-850/40 grid grid-cols-2 gap-2 text-[10px] font-bold text-slate-600 dark:text-slate-400">
-                          <div>
-                            <span className="text-slate-500 font-medium">Laporan:</span> <span className="text-slate-900 dark:text-white font-black">{item.reportsCount}</span>
-                          </div>
-                          <div>
-                            <span className="text-slate-500 font-medium">Hari Kerja:</span> <span className="text-slate-900 dark:text-white font-black">{item.reportsCount > 0 ? 'Auto' : '0'}</span>
-                          </div>
-                        </div>
-
-                        {/* Bottom: Action */}
-                        <div className="flex items-center justify-between pt-1.5 border-t border-slate-100 dark:border-slate-900/80">
-                          <p className="text-[9px] font-bold text-slate-600 dark:text-slate-400">
-                            Estimasi Gaji: <span className="text-emerald-500 font-black">Rp 0</span>
-                          </p>
-                          <button
-                            onClick={() => handleOpenSalaryModal(item.user, null, false)}
-                            className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl text-[10px] font-black flex items-center gap-1.5 cursor-pointer transition-colors shadow-sm shadow-emerald-500/10"
-                          >
-                            <Plus className="w-3.5 h-3.5" /> Input Slip
-                          </button>
-                        </div>
-                      </motion.div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* SECTION 2: SUDAH DIINPUT */}
-              {(statusFilter === 'all' || statusFilter === 'draft' || statusFilter === 'paid') && sudahInputRecruiters.length > 0 && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between px-1">
-                    <h3 className="text-xs font-black uppercase tracking-wider text-emerald-500 flex items-center gap-1.5">
-                      <CheckCircle2 className="w-4 h-4" />
-                      <span>Sudah Diinput ({sudahInputRecruiters.length})</span>
-                    </h3>
-                    <span className="text-[9px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-2.5 py-0.5 rounded-full font-black uppercase tracking-wider">
-                      Telah Terbit
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {sudahInputRecruiters
-                      .filter(item => {
-                        if (statusFilter === 'draft') return item.status === 'Draft';
-                        if (statusFilter === 'paid') return item.status === 'Paid';
-                        return true;
-                      })
-                      .map((item) => {
-                        const hasSalary = !!item.salarySlip;
-                        const status = item.status;
-                        const reportsCount = item.reportsCount;
-                        
-                        return (
-                          <motion.div
-                            layout
-                            key={item.user.telegramId}
-                            className="p-3.5 sm:p-4 rounded-3xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-900/60 hover:border-emerald-500/30 transition-all flex flex-col justify-between space-y-3.5 shadow-sm"
-                          >
-                            {/* Header: user info and status badge */}
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="flex items-center gap-3">
-                                {/* Photo / Avatar */}
-                                {item.user.photoUrl ? (
-                                  <img 
-                                    src={item.user.photoUrl} 
-                                    alt={item.user.firstName}
-                                    referrerPolicy="no-referrer"
-                                    className="w-10 h-10 rounded-2xl object-cover border border-slate-200 dark:border-slate-800/60"
-                                  />
-                                ) : (
-                                  <div className="w-10 h-10 rounded-2xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800/60 flex items-center justify-center text-slate-900 dark:text-white font-black text-xs uppercase">
-                                    {item.user.firstName?.slice(0, 2) || item.user.username?.slice(0, 2) || 'R'}
-                                  </div>
-                                )}
-                                <div>
-                                  <p className="text-xs font-black text-slate-900 dark:text-white leading-tight">
-                                    {item.user.firstName} {item.user.lastName}
-                                  </p>
-                                  <p className="text-[10px] text-slate-600 dark:text-slate-400 font-mono mt-0.5">
-                                    @{item.user.username} • UID: {item.user.telegramId}
-                                  </p>
-                                </div>
-                              </div>
-
-                              {/* Status badges */}
-                              <div>
-                                {status === 'Draft' ? (
-                                  <span className="text-[8px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/20 whitespace-nowrap">
-                                    Draft
-                                  </span>
-                                ) : (
-                                  <span className="text-[8px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 whitespace-nowrap">
-                                    Paid
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-
-                            {/* Report summary logs for selected week */}
-                            <div className="px-3.5 py-2 rounded-2xl bg-slate-50 dark:bg-slate-900/30 border border-slate-100 dark:border-slate-850/40 grid grid-cols-2 gap-2 text-[10px] font-bold text-slate-600 dark:text-slate-400">
-                              <div>
-                                <span className="text-slate-500 font-medium">Laporan:</span> <span className="text-slate-900 dark:text-white font-black">{reportsCount} Slip</span>
-                              </div>
-                              <div>
-                                <span className="text-slate-500 font-medium">Hari Efektif:</span> <span className="text-slate-900 dark:text-white font-black">{item.salarySlip ? `${item.salarySlip.hariEfektif} Hari` : 'Auto-hitung'}</span>
-                              </div>
-                              <div className="col-span-2 pt-1 border-t border-dashed border-slate-200/50 dark:border-slate-800/50 flex justify-between">
-                                <span className="text-slate-500 font-medium">ACC T0 / V0:</span>
-                                <span className="text-slate-900 dark:text-white font-black">
-                                  {item.salarySlip ? `${item.salarySlip.sebenarnyaT0} T0 / ${item.salarySlip.sebenarnyaV0} V0` : '-'}
-                                </span>
-                              </div>
-                            </div>
-
-                            {/* Bottom: salary and actions */}
-                            <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-900/80 gap-2">
-                              <div className="min-w-0">
-                                <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Total Gaji</p>
-                                <p className="text-xs sm:text-sm font-black text-emerald-600 dark:text-emerald-400 truncate">
-                                  {formatRupiah(item.salarySlip?.totalGaji)}
-                                </p>
-                              </div>
-
-                              <div className="flex gap-1 shrink-0">
-                                <button
-                                  onClick={() => handleOpenSalaryModal(item.user, item.salarySlip, true)}
-                                  className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-850 text-[10px] font-black rounded-xl text-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
-                                >
-                                  Detail
-                                </button>
-                                <button
-                                  onClick={() => handleOpenSalaryModal(item.user, item.salarySlip, false)}
-                                  className="p-1.5 bg-blue-500/10 hover:bg-blue-500/20 rounded-xl text-blue-600 dark:text-blue-400 border border-blue-500/10 cursor-pointer transition-colors"
-                                  title="Edit Slip Gaji"
-                                >
-                                  <Edit className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteSlip(item.salarySlip!.id)}
-                                  className="p-1.5 bg-rose-500/10 hover:bg-rose-500/20 rounded-xl text-rose-500 border border-rose-500/10 cursor-pointer transition-colors"
-                                  title="Hapus Slip Gaji"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            </div>
-                          </motion.div>
-                        );
-                      })}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* RECRUITER ONLY VIEW */}
-      {isRecruiter && (
-        <div className="space-y-4">
-          {/* Profile Header Widget */}
-          <div className="p-4 rounded-3xl bg-gradient-to-br from-emerald-500/10 to-teal-500/5 border border-emerald-500/15 flex items-center gap-4">
-            {userProfile?.photoUrl ? (
-              <img 
-                src={userProfile.photoUrl} 
-                alt={userProfile.firstName}
-                referrerPolicy="no-referrer"
-                className="w-12 h-12 rounded-2xl object-cover border-2 border-white dark:border-slate-900 shadow-sm"
-              />
-            ) : (
-              <div className="w-12 h-12 rounded-2xl bg-emerald-500 text-white font-black text-lg flex items-center justify-center uppercase shadow-sm">
-                {userProfile?.firstName?.slice(0, 2) || 'R'}
-              </div>
-            )}
             <div>
-              <h3 className="text-xs font-black text-slate-900 dark:text-white leading-tight">
-                Halo, {userProfile?.firstName} {userProfile?.lastName}!
+              <h3 className="text-sm font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-1.5">
+                Peringkat Recruiter Terbanyak ACC
+                <span className="text-[9px] bg-amber-500/20 text-amber-700 dark:text-amber-400 font-extrabold uppercase px-2 py-0.5 rounded-full border border-amber-500/30">
+                  Leaderboard
+                </span>
               </h3>
-              <p className="text-[10px] text-slate-600 dark:text-slate-400 mt-1 font-medium">
-                Peran: Recruiter • Telegram ID: {userProfile?.telegramId}
+              <p className="text-[10px] text-slate-600 dark:text-slate-400">
+                Peringkat recruiter berdasarkan jumlah verifikasi ACC terbanyak (T0, V0 & T3)
               </p>
             </div>
           </div>
 
-          <h3 className="text-xs font-black uppercase tracking-wider text-slate-500">Riwayat Slip Gaji Anda</h3>
-          
-          {loading ? (
-            <div className="flex flex-col items-center justify-center py-12">
-              <RefreshCw className="w-6 h-6 text-emerald-500 animate-spin" />
-              <p className="text-[10px] text-slate-400 font-bold mt-2">Memuat riwayat slip...</p>
-            </div>
-          ) : mySalaries.length === 0 ? (
-            <div className="p-8 text-center rounded-3xl border border-dashed border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40">
-              <FileText className="w-8 h-8 text-slate-400 mx-auto mb-2" />
-              <p className="text-xs font-bold text-slate-700 dark:text-slate-300">Belum ada slip gaji</p>
-              <p className="text-[10px] text-slate-600 dark:text-slate-400 mt-1">Admin/Owner akan memposting slip gaji Anda setiap minggunya.</p>
-            </div>
-          ) : (
-            <div className="space-y-2.5">
-              {mySalaries.map(slip => {
-                const { shortFormattedRange } = getWIBWeekRange(slip.periode);
+          {/* Scope Toggle: Periode ini vs All Time */}
+          <div className="flex p-0.5 bg-slate-100 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shrink-0 self-start sm:self-center">
+            <button
+              type="button"
+              onClick={() => { setLeaderboardScope('period'); triggerHaptic('selection'); }}
+              className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-all ${
+                leaderboardScope === 'period'
+                  ? 'bg-amber-500 text-slate-950 shadow-sm'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              Periode Ini
+            </button>
+            <button
+              type="button"
+              onClick={() => { setLeaderboardScope('allTime'); triggerHaptic('selection'); }}
+              className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-all ${
+                leaderboardScope === 'allTime'
+                  ? 'bg-amber-500 text-slate-950 shadow-sm'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              Semua Periode (Total)
+            </button>
+          </div>
+        </div>
+
+        {/* Ranking Cards Grid */}
+        {accLeaderboard.length === 0 ? (
+          <p className="text-xs text-slate-500 text-center py-4">Belum ada data recruiter untuk periode ini.</p>
+        ) : (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {paginatedLeaderboard.map((item, index) => {
+                const totalACC = leaderboardScope === 'period' ? item.periodACC : item.allTimeACC;
+                const breakdown = leaderboardScope === 'period' ? item.periodACCBreakdown : item.allTimeBreakdown;
+                const rank = (currentLeaderboardPage - 1) * ITEMS_PER_PAGE + index + 1;
+                const isCurrentUser = userProfile?.telegramId && item.user.telegramId === userProfile.telegramId;
+
+                // Rank styling
+                const isGold = rank === 1;
+                const isSilver = rank === 2;
+                const isBronze = rank === 3;
+
                 return (
-                  <div 
-                    key={slip.id}
-                    className="p-4 rounded-3xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-900/60 flex items-center justify-between"
+                  <motion.div
+                    key={item.user.telegramId}
+                    whileHover={{ scale: 1.01 }}
+                    className={`p-3.5 rounded-2xl border transition-all flex flex-col justify-between space-y-2.5 relative overflow-hidden ${
+                      isCurrentUser
+                        ? 'ring-2 ring-emerald-500 border-emerald-500/50 bg-emerald-500/10 dark:bg-emerald-950/20'
+                        : isGold
+                        ? 'bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-slate-950/80 border-amber-500/40 shadow-md shadow-amber-500/10'
+                        : isSilver
+                        ? 'bg-gradient-to-br from-slate-300/10 via-slate-400/5 to-slate-950/80 border-slate-400/40'
+                        : isBronze
+                        ? 'bg-gradient-to-br from-amber-700/10 via-amber-800/5 to-slate-950/80 border-amber-700/40'
+                        : 'bg-white/80 dark:bg-slate-950/60 border-slate-200 dark:border-slate-800'
+                    }`}
                   >
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-500">
-                        <FileText className="w-4.5 h-4.5" />
+                    {/* Badge rank */}
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="relative shrink-0">
+                          {item.user.photoUrl ? (
+                            <img
+                              src={item.user.photoUrl}
+                              alt={item.user.firstName}
+                              referrerPolicy="no-referrer"
+                              className="w-9 h-9 rounded-xl object-cover border border-slate-200 dark:border-slate-800"
+                            />
+                          ) : (
+                            <div className="w-9 h-9 rounded-xl bg-slate-200 dark:bg-slate-800 flex items-center justify-center text-slate-900 dark:text-white font-black text-xs">
+                              {item.user.firstName?.slice(0, 2) || 'R'}
+                            </div>
+                          )}
+                          {isGold && (
+                            <div className="absolute -top-1.5 -right-1.5 bg-amber-400 text-slate-950 p-0.5 rounded-full shadow-sm">
+                              <Crown className="w-3 h-3" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="truncate">
+                          <p className="text-xs font-black text-slate-900 dark:text-white leading-tight flex items-center gap-1 truncate">
+                            <span className="truncate">{item.user.firstName} {item.user.lastName}</span>
+                            {isCurrentUser && (
+                              <span className="text-[8px] bg-emerald-500 text-white font-black uppercase px-1.5 py-0.2 rounded shrink-0">
+                                Anda
+                              </span>
+                            )}
+                          </p>
+                          <p className="text-[9.5px] text-slate-500 font-mono truncate">@{item.user.username || '-'} • UID: {item.user.akun9Kucing || '-'}</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-xs font-black text-slate-900 dark:text-white">
-                          Slip Gaji {shortFormattedRange}
-                        </p>
-                        <p className="text-[10px] text-slate-600 dark:text-slate-400 font-bold">
-                          Total Bersih: <span className="text-emerald-500 font-black">{formatRupiah(slip.totalGaji)}</span>
-                        </p>
+
+                      {/* Rank tag */}
+                      <div className="text-right shrink-0">
+                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-lg inline-flex items-center gap-1 ${
+                          isGold ? 'bg-amber-400 text-slate-950' :
+                          isSilver ? 'bg-slate-300 text-slate-900' :
+                          isBronze ? 'bg-amber-700 text-white' :
+                          'bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-400'
+                        }`}>
+                          {isGold && <Crown className="w-3 h-3" />}
+                          {isSilver && <Award className="w-3 h-3" />}
+                          {isBronze && <Medal className="w-3 h-3" />}
+                          #{rank}
+                        </span>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      {slip.status === 'Paid' ? (
-                        <span className="text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
-                          Paid
+                    {/* ACC Counts & Breakdown */}
+                    <div className="p-2.5 rounded-xl bg-slate-100/70 dark:bg-slate-900/60 border border-slate-200/50 dark:border-slate-800/50 flex items-center justify-between">
+                      <div>
+                        <span className="text-[9px] font-extrabold uppercase text-slate-500 block">Total Terbanyak ACC</span>
+                        <span className="text-base font-black text-emerald-600 dark:text-emerald-400">
+                          {totalACC} <span className="text-[10px] font-bold">ACC Verified</span>
                         </span>
-                      ) : (
-                        <span className="text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/20">
-                          Draft
+                      </div>
+                      <div className="text-right text-[9.5px] font-mono font-bold text-slate-600 dark:text-slate-300 space-x-1">
+                        <span className="bg-sky-500/10 text-sky-600 dark:text-sky-400 px-1.5 py-0.5 rounded">T0: {breakdown.t0}</span>
+                        <span className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-1.5 py-0.5 rounded">V0: {breakdown.v0}</span>
+                        <span className="bg-purple-500/10 text-purple-600 dark:text-purple-400 px-1.5 py-0.5 rounded">T3: {breakdown.t3}</span>
+                      </div>
+                    </div>
+
+                    {/* Total Gaji & Action */}
+                    <div className="flex items-center justify-between pt-1">
+                      <div>
+                        <span className="text-[9px] font-extrabold uppercase text-slate-500 block">Total Gaji</span>
+                        <span className="text-xs font-black text-emerald-600 dark:text-emerald-400 font-mono">
+                          {item.salarySlip ? formatRupiah(item.salarySlip.totalGaji) : 'Belum Input Gaji'}
                         </span>
-                      )}
-                      
+                      </div>
                       <button
-                        onClick={() => handleOpenSalaryModal(userProfile!, slip, true)}
-                        className="px-2.5 py-1 bg-slate-50 hover:bg-slate-100 dark:bg-slate-900 dark:hover:bg-slate-800 text-[10px] font-bold rounded-xl border border-slate-200 dark:border-slate-800 cursor-pointer transition-colors"
+                        type="button"
+                        onClick={() => handleOpenSalaryModal(item.user, item.salarySlip, !isAdminOrOwner)}
+                        className="text-[9.5px] font-black text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-0.5 cursor-pointer"
                       >
-                        Detail
+                        Detail Slip <ChevronRight className="w-3 h-3" />
                       </button>
                     </div>
-                  </div>
+                  </motion.div>
                 );
               })}
             </div>
-          )}
-        </div>
-      )}
+
+            {/* Pagination Controls */}
+            {accLeaderboard.length > 0 && (
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-200/60 dark:border-slate-800/80">
+                <p className="text-[11px] font-bold text-slate-500">
+                  Menampilkan <span className="font-black text-slate-900 dark:text-white">{(currentLeaderboardPage - 1) * ITEMS_PER_PAGE + 1}</span> - <span className="font-black text-slate-900 dark:text-white">{Math.min(currentLeaderboardPage * ITEMS_PER_PAGE, accLeaderboard.length)}</span> dari <span className="font-black text-emerald-500">{accLeaderboard.length}</span> Anggota
+                </p>
+
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    disabled={currentLeaderboardPage <= 1}
+                    onClick={() => {
+                      setLeaderboardPage(p => Math.max(p - 1, 1));
+                      triggerHaptic('selection');
+                    }}
+                    className="px-3 py-1.5 rounded-xl text-xs font-black bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-1 cursor-pointer"
+                  >
+                    <ChevronLeft className="w-4 h-4" /> Prev
+                  </button>
+
+                  <div className="flex items-center gap-1 px-1 overflow-x-auto max-w-[200px] sm:max-w-none">
+                    {Array.from({ length: totalLeaderboardPages }, (_, i) => i + 1).map((p) => (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => {
+                          setLeaderboardPage(p);
+                          triggerHaptic('selection');
+                        }}
+                        className={`w-7 h-7 shrink-0 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                          p === currentLeaderboardPage
+                            ? 'bg-emerald-500 text-white shadow-sm'
+                            : 'bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800'
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    ))}
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={currentLeaderboardPage >= totalLeaderboardPages}
+                    onClick={() => {
+                      setLeaderboardPage(p => Math.min(p + 1, totalLeaderboardPages));
+                      triggerHaptic('selection');
+                    }}
+                    className="px-3 py-1.5 rounded-xl text-xs font-black bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-1 cursor-pointer"
+                  >
+                    Next <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </GlassCard>
+
+
+
+
 
       {/* DETAILED DIALOG/MODAL FOR FORM & PRINT PREVIEW */}
       {createPortal(
@@ -1297,7 +1210,7 @@ export const GajiPage: React.FC = () => {
                               )}
                               <div>
                                 <h4 className="text-xs font-black text-slate-800 dark:text-white leading-tight">{formData.recruiterName}</h4>
-                                <p className="text-[9px] text-slate-500 font-mono">@{formData.username} • ID: {formData.telegramId}</p>
+                                <p className="text-[9px] text-slate-500 font-mono">@{formData.username || '-'} • UID 9Kucing: {formData.akun9Kucing || selectedRecruiter?.akun9Kucing || '-'}</p>
                               </div>
                             </div>
                           </div>
@@ -1333,8 +1246,8 @@ export const GajiPage: React.FC = () => {
                               </span>
                             </div>
                             <div className="text-center sm:text-left border-l border-slate-100 dark:border-slate-800 pl-2">
-                              <span className="text-[8.5px] text-slate-500 dark:text-slate-400 block font-medium">ACC Rate</span>
-                              <span className="text-xs font-black text-sky-500">{formData.tingkatPenerimaan || 0}%</span>
+                              <span className="text-[8.5px] text-slate-500 dark:text-slate-400 block font-medium">Tingkat Terima</span>
+                              <span className="text-xs font-black text-sky-500">{formData.tingkatPenerimaan || 0}</span>
                             </div>
                           </div>
                         </div>
@@ -1462,7 +1375,7 @@ export const GajiPage: React.FC = () => {
                             </span>
                           </div>
                           <p className="text-[10px] text-slate-600 dark:text-slate-400 font-mono mt-0.5">
-                            Username: @{formData.username} • UID Telegram: {formData.telegramId}
+                            Username: @{formData.username || '-'} • UID 9Kucing: {formData.akun9Kucing || selectedRecruiter?.akun9Kucing || '-'}
                           </p>
                         </div>
                       </div>
@@ -1521,7 +1434,7 @@ export const GajiPage: React.FC = () => {
                                 className="w-full bg-slate-100 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs font-black text-slate-500 dark:text-slate-400 cursor-not-allowed"
                               />
                               <p className="text-[8px] font-bold text-amber-600 dark:text-amber-400 mt-1">
-                                * Diambil otomatis dari total data rekrutan (Grup T0) di Tab Pemeriksaan pada menu Data Harian.
+                                * Diambil otomatis dari total data rekrutan (Grup T0 & T3) di Data Minggu Lalu pada menu Data Harian.
                               </p>
                             </div>
 
@@ -1534,7 +1447,7 @@ export const GajiPage: React.FC = () => {
                                 className="w-full bg-slate-100 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs font-black text-slate-500 dark:text-slate-400 cursor-not-allowed"
                               />
                               <p className="text-[8px] font-bold text-amber-600 dark:text-amber-400 mt-1">
-                                * Diambil otomatis dari total data rekrutan (Grup T0) berstatus ACC di Tab Pemeriksaan pada menu Data Harian.
+                                * Diambil otomatis dari total data rekrutan (Grup T0) berstatus ACC di Data Minggu Lalu pada menu Data Harian.
                               </p>
                             </div>
                           </div>
@@ -1549,7 +1462,7 @@ export const GajiPage: React.FC = () => {
                                 className="w-full bg-slate-100 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs font-black text-slate-500 dark:text-slate-400 cursor-not-allowed"
                               />
                               <p className="text-[8px] font-bold text-amber-600 dark:text-amber-400 mt-1">
-                                * Diambil otomatis dari total data rekrutan (Grup V0) di Tab Pemeriksaan pada menu Data Harian.
+                                * Diambil otomatis dari total data rekrutan (Grup V0) di Data Minggu Lalu pada menu Data Harian.
                               </p>
                             </div>
 
@@ -1562,57 +1475,32 @@ export const GajiPage: React.FC = () => {
                                 className="w-full bg-slate-100 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs font-black text-slate-500 dark:text-slate-400 cursor-not-allowed"
                               />
                               <p className="text-[8px] font-bold text-amber-600 dark:text-amber-400 mt-1">
-                                * Diambil otomatis dari total data rekrutan (Grup V0) berstatus ACC di Tab Pemeriksaan pada menu Data Harian.
+                                * Diambil otomatis dari total data rekrutan (Grup V0) berstatus ACC di Data Minggu Lalu pada menu Data Harian.
                               </p>
                             </div>
                           </div>
 
                           <div className="grid grid-cols-2 gap-4">
                             <div>
-                              <label className="block text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">T3 (Promoted)</label>
+                              <label className="block text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">PROMOTED</label>
                               <input
                                 type="number"
                                 value={formData.t3 || 0}
-                                disabled={true}
-                                className="w-full bg-slate-100 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs font-black text-slate-500 dark:text-slate-400 cursor-not-allowed"
+                                disabled={viewOnly || !isAdminOrOwner}
+                                onChange={(e) => recalculateTotal({ t3: Math.max(0, Number(e.target.value)) })}
+                                className={
+                                  viewOnly || !isAdminOrOwner
+                                    ? "w-full bg-slate-100 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs font-black text-slate-500 dark:text-slate-400 cursor-not-allowed"
+                                    : "w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs font-black text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                                }
                               />
                               <p className="text-[8px] font-bold text-amber-600 dark:text-amber-400 mt-1">
-                                * Diambil otomatis dari total data rekrutan (Grup T3) berstatus ACC di Tab Pemeriksaan pada menu Data Harian.
+                                * Diinput manual oleh Admin / Owner pada halaman Gaji.
                               </p>
                             </div>
 
-                            <div className="flex gap-2">
-                              <div className="flex-1">
-                                <label className="block text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Tingkat Terima</label>
-                                <div className="relative">
-                                  <input
-                                    type="number"
-                                    value={formData.tingkatPenerimaan || 0}
-                                    disabled
-                                    className="w-full bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-800 rounded-xl pl-3 pr-7 py-2 text-xs font-black text-slate-700 dark:text-slate-300"
-                                  />
-                                  <Percent className="w-3 h-3 absolute right-2 top-1/2 -translate-y-1/2 text-slate-400" />
-                                </div>
-                              </div>
-                              <div className="flex-1">
-                                <label className="block text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Rasio Up (%)</label>
-                                <div className="relative">
-                                  <input
-                                    type="number"
-                                    value={formData.rasioPeningkatan || 0}
-                                    disabled={viewOnly}
-                                    onChange={(e) => setFormData({ ...formData, rasioPeningkatan: Math.max(0, Number(e.target.value)) })}
-                                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl pl-3 pr-7 py-2 text-xs font-black text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                                  />
-                                  <Percent className="w-3 h-3 absolute right-2 top-1/2 -translate-y-1/2 text-slate-400" />
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="border-t border-slate-100 dark:border-slate-800/80 pt-4">
-                            <div className="max-w-md">
-                              <label className="block text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Level Gaji</label>
+                            <div>
+                              <label className="block text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">LEVEL GAJI</label>
                               <input
                                 type="text"
                                 value={formData.levelGaji || 'Level 1'}
@@ -1620,7 +1508,40 @@ export const GajiPage: React.FC = () => {
                                 className="w-full bg-slate-100 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs font-black text-slate-500 dark:text-slate-400 cursor-not-allowed"
                               />
                               <p className="text-[8px] font-bold text-amber-600 dark:text-amber-400 mt-1">
-                                * Ditentukan otomatis berdasarkan jumlah keanggotaan dipromosikan (T3 & Sebenarnya V0).
+                                * Ditentukan otomatis berdasarkan jumlah keanggotaan dipromosikan (Promoted & Sebenarnya V0).
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-4 pt-2 border-t border-slate-100 dark:border-slate-800/80">
+                            <div>
+                              <label className="block text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Tingkat Terima</label>
+                              <div className="relative">
+                                <input
+                                  type="number"
+                                  step="0.1"
+                                  value={formData.tingkatPenerimaan || 0}
+                                  disabled
+                                  className="w-full bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs font-black text-slate-700 dark:text-slate-300"
+                                />
+                              </div>
+                              <p className="text-[8px] font-bold text-amber-600 dark:text-amber-400 mt-1">
+                                * Rata-rata harian dari total Promoted & V0 Verified.
+                              </p>
+                            </div>
+                             <div>
+                              <label className="block text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Rasio Up (%)</label>
+                              <div className="relative">
+                                <input
+                                  type="number"
+                                  value={formData.rasioPeningkatan || 0}
+                                  disabled
+                                  className="w-full bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-800 rounded-xl pl-3 pr-7 py-2 text-xs font-black text-slate-700 dark:text-slate-300 cursor-not-allowed"
+                                />
+                                <Percent className="w-3 h-3 absolute right-2 top-1/2 -translate-y-1/2 text-slate-400" />
+                              </div>
+                              <p className="text-[8px] font-bold text-amber-600 dark:text-amber-400 mt-1">
+                                * Persentase perbandingan hasil promosi & verifikasi.
                               </p>
                             </div>
                           </div>

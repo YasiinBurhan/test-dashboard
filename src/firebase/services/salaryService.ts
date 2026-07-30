@@ -130,18 +130,16 @@ export async function calculateRecruiterMetrics(
     const currentMondayStr = getWIBMonday(0);
     const isPeriodInPemeriksaan = periodeMondayStr < currentMondayStr;
 
-    // 3. Deklarasi T0: Count detailed applicant reports where grup is T0 in this week (regardless of verification)
-    const deklarasiT0 = reportsInWeek.filter(r => r.grup === 'T0' && (r.applicantWhatsapp || r.uid9Kucing || r.applicantTelegramUsername)).length;
+    // 3. Deklarasi T0: Count detailed applicant reports where grup is T0 or T3 in this week (regardless of verification)
+    const deklarasiT0 = reportsInWeek.filter(r => (r.grup === 'T0' || r.grup === 'T3') && (r.applicantWhatsapp || r.uid9Kucing || r.applicantTelegramUsername)).length;
 
     // 4. Sebenarnya T0: Verified (ACC) T0 recruits in this week (only retrieved when in Pemeriksaan phase)
     const sebenarnyaT0 = isPeriodInPemeriksaan
       ? reportsInWeek.filter(r => r.result === 'ACC' && r.grup === 'T0' && (r.applicantWhatsapp || r.uid9Kucing || r.applicantTelegramUsername)).length
       : 0;
 
-    // 5. T3: Verified (ACC) T3 recruits in this week (only retrieved when in Pemeriksaan phase)
-    const t3 = isPeriodInPemeriksaan
-      ? reportsInWeek.filter(r => r.result === 'ACC' && r.grup === 'T3' && (r.applicantWhatsapp || r.uid9Kucing || r.applicantTelegramUsername)).length
-      : 0;
+    // 5. PROMOTED (t3): Default 0 for manual input on Gaji page
+    const t3 = 0;
 
     // 6. Deklarasi V0: Count detailed applicant reports where grup is V0 in this week (regardless of verification)
     const deklarasiV0 = reportsInWeek.filter(r => r.grup === 'V0' && (r.applicantWhatsapp || r.uid9Kucing || r.applicantTelegramUsername)).length;
@@ -154,12 +152,17 @@ export async function calculateRecruiterMetrics(
     // 8. Deduksi (auto-calculate late submission fines: sum of fine)
     const deduksi = reportsInWeek.reduce((sum, r) => sum + (Number(r.fine) || 0), 0);
 
-    // 9. Tingkat Penerimaan (% ACC)
-    const totalDeklarasi = deklarasiT0 + deklarasiV0;
-    const totalSebenarnya = sebenarnyaT0 + sebenarnyaV0;
-    const tingkatPenerimaan = totalDeklarasi > 0 
-      ? Math.round((totalSebenarnya / totalDeklarasi) * 100) 
-      : 0;
+    // 9. Tingkat Penerimaan = IFERROR((promoted + V0 VERIFIED)/7)
+    const promoted = t3 || 0;
+    const v0Verified = sebenarnyaV0 || 0;
+    const tingkatPenerimaan = Number(((promoted + v0Verified) / 7).toFixed(1));
+
+    // 10. Rasio Up (%) = IFERROR((PROMOTED + VERIFIED V0)/(VERIFIED T0 + PROMOTED + DEKLARASI V0 + VERIFIED V0); 0)
+    const t0Verified = sebenarnyaT0 || 0;
+    const v0Deklarasi = deklarasiV0 || 0;
+    const numeratorUp = promoted + v0Verified;
+    const denominatorUp = t0Verified + promoted + v0Deklarasi + v0Verified;
+    const rasioPeningkatan = denominatorUp > 0 ? Math.round((numeratorUp / denominatorUp) * 100) : 0;
 
     // Smart default salary formula based on active recruitment rates
     // Level is decided based on number of promoted keanggotaan (t3 + sebenarnyaV0)
@@ -203,7 +206,7 @@ export async function calculateRecruiterMetrics(
       sebenarnyaV0,
       levelGaji,
       tingkatPenerimaan,
-      rasioPeningkatan: 0,
+      rasioPeningkatan,
       gajiPokok,
       komisi,
       bonusT0,
