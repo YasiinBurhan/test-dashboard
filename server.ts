@@ -425,8 +425,8 @@ app.post('/api/telegram/webhook', async (req: Request, res: Response) => {
     // Process standard messages
     const msg = message || edited_message || channel_post || edited_channel_post;
     
-    if (!msg) {
-      console.log('[Telegram Webhook] No message in update.');
+    if (!msg && !callback_query) {
+      console.log('[Telegram Webhook] No message or callback_query in update.');
       res.status(200).send('OK (Ignored update type)');
       return;
     }
@@ -1589,10 +1589,13 @@ app.post('/api/scan-uid', generalApiLimiter, authenticateJWT, authorizeRoles(['O
     const ai = getGeminiClient();
     if (!ai) {
       console.warn("GEMINI_API_KEY is not set.");
+      const isVercel = !!process.env.VERCEL;
       res.status(400).json({
         success: false,
         error: 'GEMINI_API_KEY_MISSING',
-        message: 'Kunci API Gemini (GEMINI_API_KEY) tidak dikonfigurasi di server. Anda dapat mengunggah screenshot untuk dilihat dan mengetik UID secara manual di bawah.'
+        message: isVercel 
+          ? 'Kunci API Gemini (GEMINI_API_KEY) belum dikonfigurasi di Dashboard Vercel (Project Settings -> Environment Variables). Silakan tambahkan dan redeploy.' 
+          : 'Kunci API Gemini (GEMINI_API_KEY) tidak dikonfigurasi di server. Anda dapat mengunggah screenshot untuk dilihat dan mengetik UID secara manual di bawah.'
       });
       return;
     }
