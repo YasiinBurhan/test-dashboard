@@ -749,70 +749,38 @@ app.post('/api/telegram/webhook', async (req: Request, res: Response) => {
               console.log(`[Telegram Webhook] Target Group: ${groupId}, Target Topic: ${topicId}`);
 
               if (groupId) {
-                // Construct message
-                const recUsername = reportData.recruiterUsername ? `@${reportData.recruiterUsername.replace(/^@+/, '')}` : (reportData.username ? `@${reportData.username.replace(/^@+/, '')}` : reportData.name);
-                const rawTg = reportData.applicantTelegramUsername ? reportData.applicantTelegramUsername.replace(/^@+/, '') : '';
-                const applicantTg = rawTg ? `<a href="https://t.me/${rawTg}">@${rawTg}</a>` : '-';
-                const photoLink = reportData.applicantPhotoUrl ? `\nFoto Profil : <a href="${reportData.applicantPhotoUrl}">Lihat Foto Pelamar</a>` : '';
+                console.log(`[Telegram Webhook] Copying message to ${groupId}, topic ${topicId}`);
+                
+                let copyPayload: any = {
+                  chat_id: groupId,
+                  from_chat_id: cbMsg.chat.id,
+                  message_id: cbMsg.message_id
+                };
+                if (topicId) copyPayload.message_thread_id = topicId;
 
-                let displayGrup = rawGrup;
-                if (rawGrup === 'T0' || rawGrup === 'T0-MARK') displayGrup = 'T0-MARK';
+                let copyRes = await fetch(`https://api.telegram.org/bot${activeToken}/copyMessage`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(copyPayload)
+                });
+                let copyResult = await copyRes.json();
+                console.log('[Telegram Webhook] copyMessage result:', copyResult);
 
-                const captionHtml = `
-UID : ${reportData.uid9Kucing || '-'}
-WA : ${reportData.applicantWhatsapp || '-'}
-Nama : <b>${reportData.applicantName || reportData.name || 'Tidak Diketahui'}</b>
-Username Telegram : <b>${applicantTg}</b>
-Rekomendasi dari : <b>${recUsername}</b>
-Info dari sosmed : <b>${reportData.channel || '-'}</b>
-Grub : <b>${displayGrup}</b>${photoLink}
-`.trim();
-
-                let messageSent = false;
-
-                // If there's a telegramFileId, use it to send video
-                if (reportData.telegramFileId) {
-                  console.log(`[Telegram Webhook] Sending video to ${groupId}, topic ${topicId}`);
-                  const sendRes = await fetch(`https://api.telegram.org/bot${activeToken}/sendVideo`, {
+                // Fallback without topic if thread error
+                if (!copyResult.ok && topicId && copyResult.description && (
+                  copyResult.description.toLowerCase().includes('thread') ||
+                  copyResult.description.toLowerCase().includes('topic') ||
+                  copyResult.description.toLowerCase().includes('message_thread_id')
+                )) {
+                  console.warn(`[Telegram Webhook] copyMessage thread error, retrying without topic...`);
+                  delete copyPayload.message_thread_id;
+                  copyRes = await fetch(`https://api.telegram.org/bot${activeToken}/copyMessage`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      chat_id: groupId,
-                      video: reportData.telegramFileId,
-                      caption: captionHtml,
-                      parse_mode: 'HTML',
-                      message_thread_id: topicId || undefined
-                    })
+                    body: JSON.stringify(copyPayload)
                   });
-                  const sendResult = await sendRes.json();
-                  console.log('[Telegram Webhook] SendVideo result:', sendResult);
-                  if (sendResult.ok) messageSent = true;
-                }
-
-                // Fallback to text/photo if video send failed or not available
-                if (!messageSent) {
-                  const apiMethod = (reportData.applicantPhotoUrl && reportData.applicantPhotoUrl.startsWith('http')) ? 'sendPhoto' : 'sendMessage';
-                  console.log(`[Telegram Webhook] Fallback send to ${groupId}, topic ${topicId}, method ${apiMethod}`);
-                  const payload: any = {
-                    chat_id: groupId,
-                    parse_mode: 'HTML',
-                    message_thread_id: topicId || undefined
-                  };
-
-                  if (apiMethod === 'sendPhoto') {
-                    payload.photo = reportData.applicantPhotoUrl;
-                    payload.caption = captionHtml;
-                  } else {
-                    payload.text = captionHtml;
-                  }
-
-                  const fallbackRes = await fetch(`https://api.telegram.org/bot${activeToken}/${apiMethod}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                  });
-                  const fallbackResult = await fallbackRes.json();
-                  console.log('[Telegram Webhook] Fallback result:', fallbackResult);
+                  copyResult = await copyRes.json();
+                  console.log('[Telegram Webhook] copyMessage fallback result:', copyResult);
                 }
               } else {
                 console.warn('[Telegram Webhook] No groupId configured in settings!');
