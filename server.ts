@@ -21,9 +21,18 @@ import { GoogleGenAI, Type } from '@google/genai';
 let aiClient: GoogleGenAI | null = null;
 function getGeminiClient(): GoogleGenAI | null {
   if (!aiClient) {
-    const apiKey = process.env.GEMINI_API_KEY;
+    const rawKey = (
+      process.env.GEMINI_API_KEY ||
+      process.env.GOOGLE_API_KEY ||
+      process.env.GOOGLE_AI_API_KEY ||
+      process.env.VITE_GEMINI_API_KEY ||
+      ''
+    ).trim();
+
+    const apiKey = (rawKey && rawKey !== 'undefined' && rawKey !== 'null') ? rawKey : '';
+
     if (!apiKey) {
-      console.warn('GEMINI_API_KEY environment variable is not set.');
+      console.warn('GEMINI_API_KEY environment variable is not set or invalid.');
       return null;
     }
     aiClient = new GoogleGenAI({
@@ -850,11 +859,20 @@ app.use(helmet({
 // Health check for Vercel debugging
 app.get('/api/health', (_req, res) => {
   console.log('[AzurLizeTeam] Health check hit');
+  const rawKey = (
+    process.env.GEMINI_API_KEY ||
+    process.env.GOOGLE_API_KEY ||
+    process.env.GOOGLE_AI_API_KEY ||
+    process.env.VITE_GEMINI_API_KEY ||
+    ''
+  ).trim();
+  const apiKey = (rawKey && rawKey !== 'undefined' && rawKey !== 'null') ? rawKey : '';
+
   res.json({ 
     status: 'ok', 
     environment: process.env.VERCEL ? 'vercel' : 'local',
-    hasGemini: !!process.env.GEMINI_API_KEY,
-    geminiLength: process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.length : 0,
+    hasGemini: Boolean(apiKey),
+    geminiLength: apiKey.length,
     timestamp: new Date().toISOString()
   });
 });
