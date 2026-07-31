@@ -2318,7 +2318,7 @@ app.post('/api/telegram/send-report', authenticateJWT, upload.single('video'), a
     const ownerChatId = settings?.telegramOwnerId;
     
     // Distinguish between Applicant Data (Data Harian) and Daily Summary (Laporan Harian)
-    // Applicant data usually has specific fields like UID or WhatsApp
+    // Applicant data usually has specific fields like UID or WhatsApp. Daily summary reports must always go directly.
     const isApplicant = !!(report && (report.uid9Kucing || report.applicantWhatsapp || report.applicantTelegramUsername));
     
     console.log('[Server] send-report call. Owner ID:', ownerChatId, 'Report ID:', report?.reportId, 'Is Applicant:', isApplicant);

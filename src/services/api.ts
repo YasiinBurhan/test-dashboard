@@ -235,6 +235,7 @@ export async function sendReportToTelegramApi(
   const ownerChatId = sys?.telegramOwnerId;
 
   // Determine if this is an Applicant report to trigger Owner Approval flow
+  // Daily Summary (Laporan Harian) has no applicant-specific identifiers and must always be sent directly.
   const isApplicant = !!(report && (report.uid9Kucing || report.applicantWhatsapp || report.applicantTelegramUsername));
   const isApprovalEnabled = !!(ownerChatId && report?.reportId && isApplicant && !videoDataUrl);
 
