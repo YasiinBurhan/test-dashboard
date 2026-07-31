@@ -8,6 +8,7 @@ import {
   updateReportPermission,
   updateReportDetails,
   updateReportFine,
+  markReportOutGroup,
   deleteReport as deleteReportFirebase
 } from '../firebase/services/reportService';
 import { syncReportToSheetsApi } from '../services/api';
@@ -181,6 +182,24 @@ export function useReports() {
     }
   };
 
+  const markOutGroup = async (
+    reportId: string,
+    targetTelegramId?: string,
+    applicantTgUsername?: string
+  ) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      await markReportOutGroup(reportId, targetTelegramId, applicantTgUsername);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Gagal menandai out grup.';
+      setError(msg);
+      throw new Error(msg);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return {
     reports,
     isLoading,
@@ -191,6 +210,7 @@ export function useReports() {
     updatePermission,
     updateDetails,
     updateFine,
-    deleteReport
+    deleteReport,
+    markOutGroup
   };
 }

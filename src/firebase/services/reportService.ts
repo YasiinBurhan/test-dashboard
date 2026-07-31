@@ -302,6 +302,50 @@ export async function updateReportStatus(
   }
 }
 
+export async function markReportOutGroup(
+  reportId: string,
+  targetTelegramId?: string,
+  applicantTgUsername?: string
+): Promise<void> {
+  try {
+    const colName = await getCollectionName(reportId);
+    const reportRef = doc(db, colName, reportId);
+    await setDoc(reportRef, { 
+      result: 'REJECT', 
+      isOutGroup: true,
+      note: 'Anggota keluar grup (Out Grup)',
+      updatedAt: new Date().toISOString() 
+    }, { merge: true });
+
+    let recipientId = targetTelegramId;
+    let applicantTg = applicantTgUsername;
+
+    if (!recipientId) {
+      const snap = await getDoc(reportRef);
+      if (snap.exists()) {
+        const data = snap.data() as DailyReport;
+        recipientId = data.telegramId;
+        applicantTg = data.applicantTelegramUsername;
+      }
+    }
+
+    if (recipientId) {
+      const cleanApp = applicantTg ? applicantTg.replace(/@/g, '').trim() : '';
+      const applicantName = cleanApp ? `@${cleanApp}` : 'Pelamar';
+
+      await createNotification({
+        targetUserId: recipientId,
+        title: 'Anggota ACC Keluar Grup (Out Grup) ⚠️',
+        message: `Perhatian! Anggota ACC Anda (${applicantName}) telah keluar grup (Out Grup). Bot menginformasikan bahwa status rekrutan diperbarui menjadi REJECT.`,
+        type: 'STATUS_CHANGE',
+        reportId
+      });
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `reports/${reportId}`);
+  }
+}
+
 export async function updateReportDetails(
   reportId: string,
   data: {

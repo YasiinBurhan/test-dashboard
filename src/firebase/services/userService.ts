@@ -160,6 +160,16 @@ export async function updateUserPin(
 export async function deleteUserProfile(telegramId: string): Promise<void> {
   try {
     const userRef = doc(db, 'users', String(telegramId));
+    const docSnap = await getDoc(userRef);
+    if (docSnap.exists()) {
+      const data = docSnap.data() as UserProfile;
+      if (data.firebaseUid) {
+        const adminRef = doc(db, 'admins', data.firebaseUid);
+        await deleteDoc(adminRef).catch((err) => {
+          console.warn('[userService] Failed to delete associated admin doc:', err);
+        });
+      }
+    }
     await deleteDoc(userRef);
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, `users/${telegramId}`);

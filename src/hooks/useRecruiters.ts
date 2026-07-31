@@ -57,7 +57,8 @@ export function useRecruiters() {
   };
 
   const changeRole = async (telegramId: string, role: UserRole) => {
-    if (!userProfile || userProfile.role !== 'Owner') {
+    const isOwnerRole = userProfile?.role?.trim().toLowerCase() === 'owner';
+    if (!userProfile || !isOwnerRole) {
       throw new Error('Hanya Owner yang dapat mengubah Role user');
     }
     setIsLoading(true);
@@ -75,7 +76,8 @@ export function useRecruiters() {
   };
 
   const deleteUser = async (telegramId: string) => {
-    if (!userProfile || userProfile.role !== 'Owner') {
+    const isOwnerRole = userProfile?.role?.trim().toLowerCase() === 'owner';
+    if (!userProfile || !isOwnerRole) {
       throw new Error('Hanya Owner yang dapat menghapus user');
     }
     setIsLoading(true);

@@ -648,13 +648,32 @@ const ReportListCard: React.FC<{
   onDelete?: (id: string) => Promise<void>,
   userPhotoMap?: Map<string, { photoUrl?: string; firstName?: string; name?: string }>,
   isPemeriksaan?: boolean,
-  isArsip?: boolean
-}> = ({ rep, isAdminOrOwner, onUpdateStatus, onUpdatePermission, onUpdateDetails, onDelete, userPhotoMap, isPemeriksaan, isArsip }) => {
+  isArsip?: boolean,
+  isMingguIni?: boolean,
+  onMarkOutGroup?: (id: string, targetTelegramId?: string, applicantTgUsername?: string) => Promise<void>
+}> = ({ rep, isAdminOrOwner, onUpdateStatus, onUpdatePermission, onUpdateDetails, onDelete, userPhotoMap, isPemeriksaan, isArsip, isMingguIni, onMarkOutGroup }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [showMediaModal, setShowMediaModal] = useState(false);
   const [imgErr, setImgErr] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isOutGroupLoading, setIsOutGroupLoading] = useState(false);
+  const [showOutGroupConfirm, setShowOutGroupConfirm] = useState(false);
+
+  const handleMarkOutGroup = async () => {
+    if (!onMarkOutGroup || !rep.reportId) return;
+    setIsOutGroupLoading(true);
+    try {
+      await onMarkOutGroup(rep.reportId, rep.telegramId, rep.applicantTelegramUsername);
+      triggerHaptic('notification', 'success');
+    } catch (err) {
+      console.error('Error marking out group:', err);
+      triggerHaptic('notification', 'error');
+    } finally {
+      setIsOutGroupLoading(false);
+      setShowOutGroupConfirm(false);
+    }
+  };
   const { clean, formatted, url } = rep.applicantTelegramUsername ? parseTelegramUsername(rep.applicantTelegramUsername) : { clean: null, formatted: null, url: null };
 
   const { userProfile, telegramUser } = useAuth();
@@ -917,6 +936,50 @@ const ReportListCard: React.FC<{
           )}
 
           <div className="flex items-center gap-2">
+            {isAdminOrOwner && isMingguIni && rep.result === 'ACC' && (
+              <div className="relative">
+                {showOutGroupConfirm ? (
+                  <div className="flex items-center gap-1.5 animate-in fade-in slide-in-from-right-2 duration-200">
+                    <button
+                      type="button"
+                      disabled={isOutGroupLoading}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleMarkOutGroup();
+                      }}
+                      className="px-2 py-1 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-lg text-[9px] font-black shadow-sm transition-all whitespace-nowrap"
+                    >
+                      {isOutGroupLoading ? '...' : 'YA OUT GRUP'}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isOutGroupLoading}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowOutGroupConfirm(false);
+                      }}
+                      className="px-2 py-1 bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-lg text-[9px] font-black shadow-sm transition-all"
+                    >
+                      X
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowOutGroupConfirm(true);
+                      triggerHaptic('impact', 'medium');
+                    }}
+                    className="px-2.5 py-1 bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-300 rounded-xl border border-amber-500/30 transition-all text-[10px] font-black flex items-center gap-1 shadow-sm whitespace-nowrap"
+                    title="Tandai Anggota Keluar Grup (Kirim Pesan ke Recruiter)"
+                  >
+                    <span>⚠️ Out Grup</span>
+                  </button>
+                )}
+              </div>
+            )}
+
             {isAdminOrOwner && onDelete && (
               <div className="relative">
                 {showDeleteConfirm ? (
@@ -1274,7 +1337,7 @@ const ReportListCard: React.FC<{
 
 export const DataHarianPage: React.FC = () => {
   const { userProfile, telegramUser, token } = useAuth();
-  const { reports, submitReport, updateStatus, updatePermission, updateDetails, deleteReport, isLoading } = useReports();
+  const { reports, submitReport, updateStatus, updatePermission, updateDetails, deleteReport, markOutGroup, isLoading } = useReports();
   const [activeTab, setActiveTab] = useState<'formulir' | 'data_pelamar' | 'metrik_rekruter'>('data_pelamar');
   const [activeSubTab, setActiveSubTab] = useState<'minggu_ini' | 'minggu_lalu' | 'arsip'>('minggu_ini');
 
@@ -4140,7 +4203,18 @@ Grub : ${grupDisplay}`;
               <>
                 <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
                   {paginatedReportsMingguIni.map((rep, idx) => (
-                    <ReportListCard key={rep.reportId || idx} rep={rep} isAdminOrOwner={isAdminOrOwner} onUpdateStatus={updateStatus} onUpdatePermission={updatePermission} onUpdateDetails={updateDetails} onDelete={deleteReport} userPhotoMap={userPhotoMap} />
+                    <ReportListCard 
+                      key={rep.reportId || idx} 
+                      rep={rep} 
+                      isAdminOrOwner={isAdminOrOwner} 
+                      onUpdateStatus={updateStatus} 
+                      onUpdatePermission={updatePermission} 
+                      onUpdateDetails={updateDetails} 
+                      onDelete={deleteReport} 
+                      userPhotoMap={userPhotoMap} 
+                      isMingguIni={true}
+                      onMarkOutGroup={markOutGroup}
+                    />
                   ))}
                 </div>
                 {renderPagination(filteredReportsMingguIni.length)}
