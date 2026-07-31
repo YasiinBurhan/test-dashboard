@@ -14,6 +14,7 @@ import { db } from '../config';
 import { handleFirestoreError, OperationType } from '../error';
 import { DailyReport, DailyReportFormData } from '../../types';
 import { createNotification } from './notificationService';
+import { getSystemSettings } from './settingService';
 
 const SUMMARY_COLLECTION = 'laporan_harian';
 const APPLICANT_COLLECTION = 'data_harian';
@@ -319,27 +320,47 @@ export async function markReportOutGroup(
 
     let recipientId = targetTelegramId;
     let applicantTg = applicantTgUsername;
+    let groupName = 'Grup';
 
-    if (!recipientId) {
-      const snap = await getDoc(reportRef);
-      if (snap.exists()) {
-        const data = snap.data() as DailyReport;
-        recipientId = data.telegramId;
-        applicantTg = data.applicantTelegramUsername;
-      }
+    const snap = await getDoc(reportRef);
+    if (snap.exists()) {
+      const data = snap.data() as DailyReport;
+      if (!recipientId) recipientId = data.telegramId;
+      if (!applicantTg) applicantTg = data.applicantTelegramUsername;
+      if (data.grup) groupName = data.grup;
     }
 
     if (recipientId) {
       const cleanApp = applicantTg ? applicantTg.replace(/@/g, '').trim() : '';
       const applicantName = cleanApp ? `@${cleanApp}` : 'Pelamar';
 
+      const notifMessage = `⚠️ <b>PERHATIAN OUT GRUP</b>\n\nAnggota ACC Anda (${applicantName}) telah keluar grup (Out Grup) untuk grup <b>${groupName}</b>.\nBot menginformasikan bahwa status rekrutan otomatis diperbarui menjadi <b>REJECT</b>.`;
+
       await createNotification({
         targetUserId: recipientId,
         title: 'Anggota ACC Keluar Grup (Out Grup) ⚠️',
-        message: `Perhatian! Anggota ACC Anda (${applicantName}) telah keluar grup (Out Grup). Bot menginformasikan bahwa status rekrutan diperbarui menjadi REJECT.`,
+        message: notifMessage,
         type: 'STATUS_CHANGE',
         reportId
       });
+
+      try {
+        const settings = await getSystemSettings();
+        const token = settings?.telegramBotToken;
+        if (token && recipientId) {
+          await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: recipientId,
+              text: notifMessage,
+              parse_mode: 'HTML'
+            })
+          });
+        }
+      } catch (tgErr) {
+        console.warn('[markReportOutGroup] Failed to send Telegram message to recruiter:', tgErr);
+      }
     }
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `reports/${reportId}`);
