@@ -87,9 +87,18 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
           }} 
           className="flex-1 w-full max-w-7xl mx-auto px-3.5 sm:px-6 pt-3 relative flex flex-col min-h-0"
         >
-          <div key={activeTab} className="flex-1 w-full space-y-4 md:space-y-6 animate-fadeIn">
-            {children}
-          </div>
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeTab}
+              initial={{ opacity: 0, y: isLowEnd ? 0 : 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: isLowEnd ? 0 : -6 }}
+              transition={{ duration: isLowEnd ? 0.08 : 0.15, ease: [0.16, 1, 0.3, 1] }}
+              className="flex-1 w-full space-y-4 md:space-y-6"
+            >
+              {children}
+            </motion.div>
+          </AnimatePresence>
         </main>
       </div>
     </div>

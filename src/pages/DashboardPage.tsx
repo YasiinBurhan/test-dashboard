@@ -651,7 +651,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setActiveTab }) =>
       topRecruiters: filteredRecruiters.slice(0, 3),
       topChannelOverall
     };
-  }, [allReports, allUsers, targetMondayStr]);
+  }, [allReports, allPosts, allUsers, targetMondayStr, isAdminOrOwner]);
 
   const totalAllRecruitersCount = useMemo(() => {
     return allUsers.filter(u => u.role === 'Recruiter').length;

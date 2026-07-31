@@ -3037,7 +3037,7 @@ Grub : ${grupDisplay}`;
                 setSelectedRecruiter(e.target.value);
                 triggerHaptic('selection');
               }}
-              className="w-full pl-11 pr-8 h-10 py-0 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-sky-500 cursor-pointer appearance-none"
+              className="w-full pl-3.5 pr-8 h-10 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-sky-500 cursor-pointer appearance-none transition-all"
             >
               <option value="Semua">Semua Recruiter ({recruitersList.length})</option>
               {recruitersList.map((rec) => (
@@ -3317,7 +3317,7 @@ Grub : ${grupDisplay}`;
                   setSelectedOnBehalfRecruiter(e.target.value);
                   triggerHaptic('selection');
                 }}
-                className="w-full pl-11 pr-8 h-10 py-0 rounded-xl text-xs font-black border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-purple-500 cursor-pointer appearance-none"
+                className="w-full pl-3.5 pr-8 h-10 rounded-xl text-xs font-black border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-purple-500 cursor-pointer appearance-none transition-all"
               >
                 <option value="" disabled>-- Pilih Recruiter --</option>
                 {recruitersList.map((rec) => (
@@ -4086,7 +4086,7 @@ Grub : ${grupDisplay}`;
                     setActiveDayTab(e.target.value as any);
                     triggerHaptic('selection');
                   }}
-                  className="w-full pl-3 pr-8 h-10 py-0 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-amber-500 cursor-pointer appearance-none transition-all"
+                  className="w-full pl-3 pr-8 py-2.5 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-amber-500 cursor-pointer appearance-none transition-all leading-normal"
                 >
                   {dayTabs.map((tab) => {
                     const count = getReportCountForDay(tab.name);
@@ -4780,7 +4780,7 @@ Grub : ${grupDisplay}`;
                         setSelectedMetrikRecruiter(e.target.value);
                         triggerHaptic('selection');
                       }}
-                      className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold rounded-lg h-9 py-0 px-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                      className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold rounded-lg py-2 px-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer transition-all leading-normal"
                     >
                       <option value="Saya">Saya ({userProfile?.firstName || userProfile?.username || 'Admin'})</option>
                       {recruitersList.map((rec) => (

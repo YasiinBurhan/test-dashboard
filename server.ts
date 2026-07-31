@@ -1,4 +1,5 @@
 import express from 'express';
+import FormData from 'form-data';
 import type { Request, Response } from 'express';
 import path from 'path';
 import fs from 'fs';
@@ -2153,10 +2154,10 @@ app.post('/api/telegram/send-post', authenticateJWT, async (req: Request, res: R
         const mimeType = match[1];
         const base64Data = match[2];
         const buffer = Buffer.from(base64Data, 'base64');
-        const blob = new Blob([buffer], { type: mimeType });
+        const blob = buffer;
         
         const fileKey = `photo${i}`;
-        formData.append(fileKey, blob, `post_${Date.now()}_${i}.jpg`);
+        formData.append(fileKey, blob, { filename: `post_${Date.now()}_${i}.jpg` });
         
         mediaArray.push({
           type: 'photo',
@@ -2172,7 +2173,7 @@ app.post('/api/telegram/send-post', authenticateJWT, async (req: Request, res: R
       if (targetTopic) photoFormData.append('message_thread_id', String(targetTopic));
       
       const photoBlob = formData.get('photo0');
-      if (photoBlob) photoFormData.append('photo', photoBlob);
+      if (photoBlob) photoFormData.append('photo', photoBlob, { filename: 'photo.jpg' });
 
       let response = await fetch(`https://api.telegram.org/bot${activeToken}/sendPhoto`, {
         method: 'POST',
@@ -2443,40 +2444,8 @@ Grub : <b>${displayGrup}</b>${photoLink}
         else if (mimeType.includes('gif')) ext = 'gif';
         
         // --- VIDEO COMPRESSION START ---
-        let blobToSend = new Blob([buffer], { type: mimeType });
+        let blobToSend: Buffer = buffer;
         let fileNameToSend = `laporan_${report?.reportId || Date.now()}.${ext}`;
-        
-        const tempId = crypto.randomBytes(8).toString('hex');
-        const inputPath = path.join('/tmp', `in_${tempId}.${ext}`);
-        const outputPath = path.join('/tmp', `out_${tempId}.mp4`);
-        
-        try {
-          console.log(`[Compression] Saving original video to ${inputPath} (${buffer.length} bytes)`);
-          await fs.promises.writeFile(inputPath, buffer);
-          
-          if (ext !== 'gif') {
-            console.log(`[Compression] Running ffmpeg compression...`);
-          // Settings: CRF 28, Scale to max 720p, keep audio with AAC
-          await execPromise(`ffmpeg -i "${inputPath}" -vcodec libx264 -crf 28 -preset fast -vf "scale=-2:720" -acodec aac -b:a 128k -movflags +faststart -y "${outputPath}"`);
-          
-          if (fs.existsSync(outputPath)) {
-            const compressedBuffer = await fs.promises.readFile(outputPath);
-            console.log(`[Compression] Success! ${buffer.length} -> ${compressedBuffer.length} bytes`);
-            blobToSend = new Blob([compressedBuffer], { type: 'video/mp4' });
-            fileNameToSend = `laporan_${report?.reportId || Date.now()}.mp4`;
-          }
-          }
-        } catch (compErr) {
-              console.warn('[Compression] ffmpeg failed, using original:', compErr);
-            } finally {
-              // Cleanup temp files
-              try {
-                if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
-                if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
-              } catch (cleanupErr) {
-                console.warn('[Compression] Cleanup error:', cleanupErr);
-              }
-            }
             // --- VIDEO COMPRESSION END ---
 
             const formData = new FormData();
@@ -2493,7 +2462,7 @@ Grub : <b>${displayGrup}</b>${photoLink}
             const fileParam = isGifFile ? 'animation' : 'video';
             const apiMethod = isGifFile ? 'sendAnimation' : 'sendVideo';
 
-            formData.append(fileParam, blobToSend, fileNameToSend);
+            formData.append(fileParam, blobToSend, { filename: fileNameToSend });
 
             let response = await fetch(`https://api.telegram.org/bot${activeToken}/${apiMethod}`, {
               method: 'POST',

@@ -781,8 +781,16 @@ Status Target & Efektif? <b>${formData.effectiveStatus || 'YES'}</b>${isLateSubm
         )}
       </div>
 
-      {activeTab === 'form' && (
-        <div className="space-y-5">
+      <AnimatePresence mode="wait">
+        {activeTab === 'form' && (
+          <motion.div
+            key="form-tab"
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
+            className="space-y-5"
+          >
           {/* Panduan & Deskripsi Laporan Harian Widget */}
           {!isAdminOrOwner && (
             <GlassCard className="p-4 bg-white/90 dark:bg-slate-950/90 border-slate-200 dark:border-slate-800 shadow-xl space-y-3 relative overflow-hidden">
@@ -1329,11 +1337,18 @@ Status Target & Efektif? <b>${formData.effectiveStatus || 'YES'}</b>${isLateSubm
           )}
         </form>
       </GlassCard>
-      </div>
+      </motion.div>
       )}
 
       {activeTab === 'riwayat' && (
-        <div className="space-y-4">
+        <motion.div
+          key="riwayat-tab"
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -6 }}
+          transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
+          className="space-y-4"
+        >
           <div className="flex bg-slate-50 dark:bg-slate-900/60 p-1 rounded-xl border border-slate-200 dark:border-slate-800 gap-1">
             <button
               type="button"
@@ -1661,11 +1676,18 @@ Status Target & Efektif? <b>${formData.effectiveStatus || 'YES'}</b>${isLateSubm
               </GlassCard>
             </div>
           )}
-        </div>
+        </motion.div>
       )}
 
       {activeTab === 'status' && isAdminOrOwner && (
-        <div className="space-y-4">
+        <motion.div
+          key="status-tab"
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -6 }}
+          transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
+          className="space-y-4"
+        >
           {/* Top Controls: Date Selector + Search Input */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-slate-50 dark:bg-slate-900/80 rounded-2xl border border-slate-200 dark:border-slate-800">
             <div className="flex items-center gap-2 bg-white dark:bg-slate-950 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800">
@@ -1885,8 +1907,9 @@ Status Target & Efektif? <b>${formData.effectiveStatus || 'YES'}</b>${isLateSubm
               </div>
             )}
           </GlassCard>
-        </div>
+        </motion.div>
       )}
+      </AnimatePresence>
 
       {/* Modern Alert Modal Overlay */}
       <AnimatePresence>

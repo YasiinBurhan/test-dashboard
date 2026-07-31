@@ -36,6 +36,7 @@
     "express-rate-limit": "^8.6.1",
     "firebase": "^12.16.0",
     "firebase-admin": "^14.2.0",
+    "form-data": "^4.0.6",
     "gifshot": "^0.4.5",
     "googleapis": "^173.0.0",
     "helmet": "^8.3.0",
