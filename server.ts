@@ -2244,13 +2244,56 @@ app.post('/api/telegram/send-post', authenticateJWT, async (req: Request, res: R
 // API Endpoint: Send Daily Report & Video directly to Telegram Group Topic
 app.post('/api/telegram/send-report', authenticateJWT, upload.single('video'), async (req: Request, res: Response) => {
   try {
-    let { report, videoDataUrl, groupId, topicId, customText, botToken } = req.body;
+    let { report, videoDataUrl, groupId, topicId, customText, botToken, predefinedFileId, predefinedOwnerMessageId, alreadySentDirectly } = req.body;
     if (typeof report === 'string') {
       try { report = JSON.parse(report); } catch(e) {}
     }
     
     if (!report && !customText) {
       res.status(400).json({ success: false, error: 'Data laporan tidak ditemukan' });
+      return;
+    }
+
+    // Support client-already-sent indicator to bypass any duplicate forwarding
+    if (alreadySentDirectly && report && report.reportId) {
+      console.log('[Server] Report already sent directly to group by client:', report.reportId);
+      
+      let reportCollection = 'data_harian';
+      let reportDoc = await serverDb.collection(reportCollection).doc(report.reportId).get();
+      if (!reportDoc.exists) {
+        reportCollection = 'laporan_harian';
+        reportDoc = await serverDb.collection(reportCollection).doc(report.reportId).get();
+      }
+      
+      if (reportDoc.exists) {
+        await serverDb.collection(reportCollection).doc(report.reportId).update({
+          telegramFileId: report.telegramFileId || '',
+          result: 'Pending'
+        });
+      }
+      res.json({ success: true, message: 'Laporan berhasil dicatat di server!' });
+      return;
+    }
+
+    // Support client-predefined/uploaded Telegram message ID and File ID (Bypasses server payload limits)
+    if (predefinedOwnerMessageId && report && report.reportId) {
+      console.log('[Server] Using predefined Telegram message and file ID from client:', predefinedOwnerMessageId, predefinedFileId);
+      
+      let reportCollection = 'data_harian';
+      let reportDoc = await serverDb.collection(reportCollection).doc(report.reportId).get();
+      if (!reportDoc.exists) {
+        reportCollection = 'laporan_harian';
+        reportDoc = await serverDb.collection(reportCollection).doc(report.reportId).get();
+      }
+      
+      if (reportDoc.exists) {
+        await serverDb.collection(reportCollection).doc(report.reportId).update({
+          telegramFileId: predefinedFileId || '',
+          ownerMessageId: Number(predefinedOwnerMessageId),
+          result: 'Pending'
+        });
+      }
+      res.json({ success: true, message: 'Laporan terkirim ke Owner untuk persetujuan (ACC)!' });
       return;
     }
 
@@ -2280,8 +2323,9 @@ app.post('/api/telegram/send-report', authenticateJWT, upload.single('video'), a
     
     console.log('[Server] send-report call. Owner ID:', ownerChatId, 'Report ID:', report?.reportId, 'Is Applicant:', isApplicant);
     
-    // ONLY enable approval flow for Owner if it is an Applicant Report
-    const isApprovalEnabled = !!(ownerChatId && report && report.reportId && isApplicant);
+    // ONLY enable approval flow for Owner if it is an Applicant Report and has no video
+    const hasVideo = !!(req.file || videoDataUrl || (report && (report.videoUrl || report.videoDataUrl || report.telegramFileId)));
+    const isApprovalEnabled = !!(ownerChatId && report && report.reportId && isApplicant && !hasVideo);
     
     if (isApprovalEnabled) {
       console.log('[Server] Approval flow ENABLED for owner:', ownerChatId);

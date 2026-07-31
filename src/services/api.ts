@@ -188,6 +188,40 @@ export async function syncReportToSheetsApi(report: unknown): Promise<ApiRespons
   }
 }
 
+async function sendReportWithPredefinedTelegramIds(
+  report: any,
+  predefinedFileId: string,
+  predefinedOwnerMessageId: number,
+  authToken?: string
+): Promise<ApiResponse> {
+  if (API_BASE_URL !== undefined) {
+    try {
+      const formDataPayload = new FormData();
+      formDataPayload.append('report', JSON.stringify(report || {}));
+      formDataPayload.append('predefinedFileId', predefinedFileId);
+      formDataPayload.append('predefinedOwnerMessageId', String(predefinedOwnerMessageId));
+      
+      const headers: any = {};
+      if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+
+      const response = await fetch(`${API_BASE_URL}/api/telegram/send-report`, {
+        method: 'POST',
+        headers,
+        body: formDataPayload
+      });
+
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        const data = await response.json();
+        if (data.success) return data;
+      }
+    } catch (err) {
+      console.error('[sendReportWithPredefinedTelegramIds] Failed:', err);
+    }
+  }
+  return { success: false, error: 'Gagal mendaftarkan approval video ke database.' };
+}
+
 export async function sendReportToTelegramApi(
   report: any,
   videoDataUrl?: string,
@@ -198,10 +232,125 @@ export async function sendReportToTelegramApi(
 ): Promise<ApiResponse> {
   const sys = await getSystemSettings();
   const token = sys?.telegramBotToken;
+  const ownerChatId = sys?.telegramOwnerId;
 
+  // Determine if this is an Applicant report to trigger Owner Approval flow
+  const isApplicant = !!(report && (report.uid9Kucing || report.applicantWhatsapp || report.applicantTelegramUsername));
+  const isApprovalEnabled = !!(ownerChatId && report?.reportId && isApplicant && !videoDataUrl);
+
+  // --- CASE A: OWNER APPROVAL FLOW IS ENABLED ---
+  if (isApprovalEnabled && token) {
+    console.log('[Client Telegram] Owner Approval Flow triggered client-side for Owner ID:', ownerChatId);
+    
+    const replyMarkup = {
+      inline_keyboard: [
+        [
+          { text: '✅ ACC', callback_data: `ACC:${report.reportId}` },
+          { text: '❌ REJECT', callback_data: `REJ:${report.reportId}` }
+        ]
+      ]
+    };
+
+    const targetOwnerChat = String(ownerChatId).trim();
+    const messageText = customText || `📊 Laporan Baru (Persetujuan)`;
+
+    // 1. If video is provided, try direct upload to Owner via sendVideo/sendAnimation
+    if (videoDataUrl) {
+      try {
+        const fetchRes = await fetch(videoDataUrl);
+        const blob = await fetchRes.blob();
+
+        const isGif = blob.type.includes('gif') || videoDataUrl.startsWith('data:image/gif');
+        const apiMethod = isGif ? 'sendAnimation' : 'sendVideo';
+        const fileParam = isGif ? 'animation' : 'video';
+
+        let ext = 'mp4';
+        if (isGif) ext = 'gif';
+        else if (blob.type.includes('quicktime') || blob.type.includes('mov')) ext = 'mov';
+        else if (blob.type.includes('webm')) ext = 'webm';
+
+        const formData = new FormData();
+        formData.append('chat_id', targetOwnerChat);
+        formData.append(fileParam, blob, `media_${Date.now()}.${ext}`);
+        formData.append('caption', messageText);
+        formData.append('parse_mode', 'HTML');
+        formData.append('reply_markup', JSON.stringify(replyMarkup));
+
+        const tgRes = await fetch(`https://api.telegram.org/bot${token}/${apiMethod}`, {
+          method: 'POST',
+          body: formData
+        });
+        const tgData = await tgRes.json();
+
+        if (tgData.ok) {
+          console.log('[Client Telegram] sendVideo to Owner successful!');
+          const videoObj = tgData.result.video || tgData.result.animation || tgData.result.document;
+          const telegramFileId = videoObj ? videoObj.file_id : '';
+          const ownerMessageId = tgData.result.message_id;
+
+          // Register with server
+          return await sendReportWithPredefinedTelegramIds(report, telegramFileId, ownerMessageId, authToken);
+        } else {
+          console.warn('[Client Telegram] Direct sendVideo to Owner failed:', tgData.description);
+        }
+      } catch (videoErr) {
+        console.warn('[Client Telegram] Direct sendVideo to Owner error:', videoErr);
+      }
+    }
+
+    // 2. Fallback to sendPhoto to Owner if applicant photo exists
+    if (report?.applicantPhotoUrl && typeof report.applicantPhotoUrl === 'string' && report.applicantPhotoUrl.startsWith('http')) {
+      try {
+        const photoPayload = {
+          chat_id: targetOwnerChat,
+          photo: report.applicantPhotoUrl,
+          caption: messageText,
+          parse_mode: 'HTML',
+          reply_markup: replyMarkup
+        };
+        const tgRes = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(photoPayload)
+        });
+        const tgData = await tgRes.json();
+        if (tgData.ok) {
+          console.log('[Client Telegram] sendPhoto to Owner successful!');
+          return await sendReportWithPredefinedTelegramIds(report, '', tgData.result.message_id, authToken);
+        }
+      } catch (photoErr) {
+        console.warn('[Client Telegram] Direct sendPhoto to Owner error:', photoErr);
+      }
+    }
+
+    // 3. Last fallback to sendMessage to Owner (Text-only)
+    try {
+      const textPayload = {
+        chat_id: targetOwnerChat,
+        text: messageText,
+        parse_mode: 'HTML',
+        reply_markup: replyMarkup
+      };
+      const tgRes = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(textPayload)
+      });
+      const tgData = await tgRes.json();
+      if (tgData.ok) {
+        console.log('[Client Telegram] sendMessage to Owner successful!');
+        return await sendReportWithPredefinedTelegramIds(report, '', tgData.result.message_id, authToken);
+      } else {
+        return { success: false, error: tgData.description || 'Gagal mengirim laporan persetujuan ke Owner.' };
+      }
+    } catch (textErr: any) {
+      return { success: false, error: textErr?.message || 'Gagal mengirim laporan persetujuan ke Owner.' };
+    }
+  }
+
+  // --- CASE B: DIRECT TO GROUP FLOW (OWNER APPROVAL DISABLED) ---
   // 1. Client-side direct upload for Video and GIF to bypass server JSON payload limits
-  // NOTE: We SKIP direct upload if telegramOwnerId is set, because we need the server to handle the Approval Flow (adding buttons, updating Firestore, etc.)
-  if (videoDataUrl && token && !sys?.telegramOwnerId) {
+  if (videoDataUrl && token) {
     try {
       const targetGroupRaw = groupId || sys?.telegramGroupId;
       const targetTopicRaw = topicId || sys?.telegramTopicReport;
@@ -245,6 +394,30 @@ export async function sendReportToTelegramApi(
         });
         const tgData = await tgRes.json();
 
+        const notifyServerDirectSuccess = async (tgResult: any) => {
+          if (API_BASE_URL !== undefined && report && report.reportId) {
+            try {
+              const videoObj = tgResult.result?.video || tgResult.result?.animation || tgResult.result?.document;
+              const fileId = videoObj ? videoObj.file_id : '';
+              const serverReport = { ...report, telegramFileId: fileId };
+              
+              await fetch(`${API_BASE_URL}/api/telegram/send-report`, {
+                method: 'POST',
+                headers: authToken ? { 'Authorization': `Bearer ${authToken}`, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                  report: serverReport, 
+                  groupId, 
+                  topicId, 
+                  customText, 
+                  alreadySentDirectly: true 
+                })
+              });
+            } catch (err) {
+              console.warn('[Direct Telegram] Failed to log direct send to server:', err);
+            }
+          }
+        };
+
         // Fallback without topic/thread if thread error occurs
         if (!tgData.ok && topicNum && tgData.description && (
           tgData.description.toLowerCase().includes('thread') ||
@@ -259,11 +432,13 @@ export async function sendReportToTelegramApi(
           });
           const retryData = await retryRes.json();
           if (retryData.ok) {
+            await notifyServerDirectSuccess(retryData);
             return { success: true, message: 'Laporan dan media berhasil dikirim ke Telegram!' };
           }
         }
 
         if (tgData.ok) {
+          await notifyServerDirectSuccess(tgData);
           return { success: true, message: 'Laporan dan media berhasil dikirim ke Telegram!' };
         } else {
           console.warn(`[Direct Telegram] Direct ${apiMethod} failed, falling back to server API:`, tgData.description);
