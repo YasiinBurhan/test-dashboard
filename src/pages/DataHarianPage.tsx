@@ -2862,52 +2862,54 @@ Grub : ${grupDisplay}`;
       className="space-y-5"
     >
       {/* Live Timer Section */}
-      <GlassCard className="p-4 border-sky-500/30 dark:border-sky-500/20 bg-sky-50/80 dark:bg-sky-500/5 overflow-hidden relative">
+      <GlassCard className="p-3.5 sm:p-4 border-sky-500/30 dark:border-sky-500/20 bg-sky-50/80 dark:bg-sky-500/5 overflow-hidden relative">
         <div className="absolute top-0 right-0 p-2 opacity-10 pointer-events-none">
           <Sparkles className="w-12 h-12 text-sky-500" />
         </div>
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between relative z-10 gap-3">
+        <div className="flex flex-col relative z-10 gap-2.5">
           <div className="flex flex-col min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[10px] font-black text-sky-600 dark:text-sky-400 uppercase tracking-widest flex items-center gap-1.5">
+            {/* Badges Layout */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[9.5px] sm:text-[10px] font-black text-sky-600 dark:text-sky-400 uppercase tracking-widest flex items-center gap-1">
                 <Timer className="w-3.5 h-3.5 animate-pulse text-sky-500 dark:text-sky-400" />
                 Batas Waktu Harian
               </span>
-              <span className="text-[8px] font-black uppercase text-sky-700 dark:text-sky-300 bg-sky-500/10 px-2 py-0.5 rounded-full border border-sky-500/20">
+              <span className="text-[8px] font-black uppercase text-sky-700 dark:text-sky-300 bg-sky-500/10 px-2 py-0.5 rounded-md border border-sky-500/20">
                 {formatDateWithDay(getWIBDate())}
               </span>
-              <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full border ${
+              <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-md border ${
                 !hasReportToday 
                   ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20' 
                   : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20'
               }`}>
-                {!hasReportToday ? 'Belum Input Data' : 'Data Hari Ini Tersimpan'}
+                {!hasReportToday ? 'Belum Input' : 'Tersimpan'}
               </span>
-              <span className="text-[8px] font-black uppercase text-sky-700 dark:text-sky-300 bg-sky-500/10 px-2 py-0.5 rounded-full border border-sky-500/20">
-                Maksimal 23:59 WIB (12 Malam)
+              <span className="text-[8px] font-black uppercase text-sky-700 dark:text-sky-300 bg-sky-500/10 px-2 py-0.5 rounded-md border border-sky-500/20">
+                Maks 23:59 WIB
               </span>
             </div>
-            <p className="text-[9.5px] text-slate-600 dark:text-slate-400 font-medium mt-0.5 leading-snug">
+            <p className="text-[9px] sm:text-[9.5px] text-slate-600 dark:text-slate-400 font-medium mt-1 leading-snug">
               {!hasReportToday 
                 ? 'Mohon kirimkan data harian Anda sebelum berganti hari pada pukul 00:00 WIB.' 
                 : 'Selamat! Data harian Anda hari ini sudah berhasil dikirim dan tersimpan.'}
             </p>
-            <div className="flex items-center gap-1.5 mt-2 font-mono">
-              <div className="text-center">
-                <span className="text-2xl font-black text-slate-900 dark:text-white tracking-tighter">{hours}</span>
-                <span className="block text-[7px] font-bold text-slate-500 dark:text-slate-400 uppercase -mt-1 font-sans">Jam</span>
+            {/* Elegant Counters */}
+            <div className="flex items-center gap-1.5 mt-2.5 font-mono">
+              <div className="flex items-center gap-1 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800/80 px-2 py-1 rounded-xl shadow-sm">
+                <span className="text-sm font-black text-slate-900 dark:text-white tracking-tight">{hours}</span>
+                <span className="text-[7px] font-bold text-slate-500 dark:text-slate-400 uppercase">j</span>
               </div>
-              <span className="text-lg font-black text-sky-500/50 -translate-y-1">:</span>
-              <div className="text-center">
-                <span className="text-2xl font-black text-slate-900 dark:text-white tracking-tighter">{minutes}</span>
-                <span className="block text-[7px] font-bold text-slate-500 dark:text-slate-400 uppercase -mt-1 font-sans">Menit</span>
+              <span className="text-xs font-black text-sky-500/50">:</span>
+              <div className="flex items-center gap-1 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800/80 px-2 py-1 rounded-xl shadow-sm">
+                <span className="text-sm font-black text-slate-900 dark:text-white tracking-tight">{minutes}</span>
+                <span className="text-[7px] font-bold text-slate-500 dark:text-slate-400 uppercase">m</span>
               </div>
-              <span className="text-lg font-black text-sky-500/50 -translate-y-1">:</span>
-              <div className="text-center">
-                <span className="text-2xl font-black text-sky-600 dark:text-sky-400 tracking-tighter">{seconds}</span>
-                <span className="block text-[7px] font-bold text-slate-500 dark:text-slate-400 uppercase -mt-1 font-sans">Detik</span>
+              <span className="text-xs font-black text-sky-500/50">:</span>
+              <div className="flex items-center gap-1 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800/80 px-2 py-1 rounded-xl shadow-sm">
+                <span className="text-sm font-black text-sky-600 dark:text-sky-400 tracking-tight">{seconds}</span>
+                <span className="text-[7px] font-bold text-slate-500 dark:text-slate-400 uppercase">d</span>
               </div>
-              <span className="text-[9px] font-bold text-slate-600 dark:text-slate-400 ml-2 font-sans self-center">Sisa Waktu Hari Ini</span>
+              <span className="text-[8.5px] font-bold text-slate-500 dark:text-slate-400 ml-1.5 font-sans self-center">Sisa Waktu Hari Ini</span>
             </div>
           </div>
         </div>
@@ -3019,8 +3021,7 @@ Grub : ${grupDisplay}`;
       {/* Recruiter Filter for Admin/Owner */}
       {isAdminOrOwner && activeTab !== 'formulir' && (
         <div className="bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800/80 p-3 rounded-2xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shadow-sm relative overflow-hidden">
-          <div className="absolute top-0 left-0 w-1 h-full bg-sky-500" />
-          <div className="flex items-center gap-2 relative z-10 pl-1.5">
+          <div className="flex items-center gap-2 relative z-10 pl-1">
             <div className="p-1.5 rounded-lg bg-sky-500/10 text-sky-400">
               <UserCheck className="w-4 h-4" />
             </div>
@@ -3430,7 +3431,7 @@ Grub : ${grupDisplay}`;
                   <div>
                     <h3 className="text-sm font-black text-slate-900 dark:text-white">Halaman Upload Bukti Pelamar</h3>
                     <p className="text-xs text-slate-600 dark:text-slate-400 font-medium">
-                      Unggah Bukti Video di sebelah <strong className="text-sky-400">KIRI</strong> dan Screenshot UID 9Kucing di sebelah <strong className="text-sky-400">KANAN</strong>.
+                      Unggah Bukti Video di sebelah <strong className="text-sky-400">Kiri (Atas)</strong> dan Screenshot UID 9Kucing di sebelah <strong className="text-sky-400">Kanan (Bawah)</strong>.
                     </p>
                   </div>
                 </div>
@@ -3980,21 +3981,26 @@ Grub : ${grupDisplay}`;
                     <span>Grup / Penempatan</span>
                   </span>
                 </label>
-                <select
-                  value={formData.grup || ''}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setFormData({ ...formData, grup: val ? (val as 'T0' | 'V0' | 'RECRUITER' | 'T3') : undefined });
-                    triggerHaptic('selection');
-                  }}
-                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-200 text-xs sm:text-sm rounded-xl px-3 py-2.5 focus:border-sky-500 focus:outline-none cursor-pointer font-black"
-                >
-                  <option value="" disabled className="bg-white dark:bg-slate-950 text-slate-400">Pilih Grup / Penempatan</option>
-                  <option value="T0" className="bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-200">T0-MARK</option>
-                  <option value="V0" className="bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-200">V0</option>
-                  <option value="RECRUITER" className="bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-200">RECRUITER</option>
-                  {isAdminOrOwner && <option value="T3" className="bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-200">T0-MARK (Dipromosikan)</option>}
-                </select>
+                <div className="relative">
+                  <select
+                    value={formData.grup || ''}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setFormData({ ...formData, grup: val ? (val as 'T0' | 'V0' | 'RECRUITER' | 'T3') : undefined });
+                      triggerHaptic('selection');
+                    }}
+                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-200 text-xs rounded-xl pl-3 pr-10 py-2 focus:border-sky-500 focus:outline-none cursor-pointer font-bold appearance-none transition-all"
+                  >
+                    <option value="" disabled className="bg-white dark:bg-slate-950 text-slate-400">Pilih Grup / Penempatan</option>
+                    <option value="T0" className="bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-200">T0-MARK</option>
+                    <option value="V0" className="bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-200">V0</option>
+                    <option value="RECRUITER" className="bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-200">RECRUITER</option>
+                    {isAdminOrOwner && <option value="T3" className="bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-200">T0-MARK (Dipromosikan)</option>}
+                  </select>
+                  <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-500 dark:text-slate-400">
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  </div>
+                </div>
               </div>
 
               <div className="flex gap-2.5 pt-2">

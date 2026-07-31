@@ -1617,17 +1617,25 @@ app.post('/api/scan-uid', generalApiLimiter, authenticateJWT, authorizeRoles(['O
       });
       return;
     }
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash',
-      contents: [
-        {
-          inlineData: {
-            data: base64Data,
-            mimeType: resolvedMimeType,
-          },
-        },
-        {
-          text: `You are acting as a high-precision PaddleOCR v4 + Advanced Preprocessing OCR engine. The uploaded image is a game profile screenshot that has been preprocessed using grayscale and dynamic contrast stretching.
+
+    let response;
+    let lastError: any = null;
+    const modelsToTry = ['gemini-3.6-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
+
+    for (const modelName of modelsToTry) {
+      try {
+        console.log(`[Scan Screenshot] Trying model: ${modelName}`);
+        response = await ai.models.generateContent({
+          model: modelName,
+          contents: [
+            {
+              inlineData: {
+                data: base64Data,
+                mimeType: resolvedMimeType,
+              },
+            },
+            {
+              text: `You are acting as a high-precision PaddleOCR v4 + Advanced Preprocessing OCR engine. The uploaded image is a game profile screenshot that has been preprocessed using grayscale and dynamic contrast stretching.
 
 Analyze this optimized image with extreme precision to extract the following key applicant fields:
 1. "uid": The applicant's game/app ID or player UID. This is a sequence of 5 to 15 digits (e.g. "UID: 12345678" or just "12345678" next to profile info).
@@ -1635,42 +1643,58 @@ Analyze this optimized image with extreme precision to extract the following key
 3. "telegramUsername": The Telegram handle or username (with or without @).
 
 Ensure accurate spatial text recognition as per PaddleOCR layout parsing standards. Return the response in the specified JSON format.`,
-        },
-      ],
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            uid: {
-              type: Type.STRING,
-              description: 'The extracted application/game UID numeric sequence (5 to 15 digits). If not found, return empty string.',
             },
-            whatsapp: {
-              type: Type.STRING,
-              description: 'The WhatsApp number if visible. If not found, return empty string.',
-            },
-            telegramUsername: {
-              type: Type.STRING,
-              description: 'The Telegram username with or without @. If not found, return empty string.',
-            },
-            name: {
-              type: Type.STRING,
-              description: 'The display name or full name of the user/applicant if visible. If not found, return empty string.',
-            },
-            confidence: {
-              type: Type.NUMBER,
-              description: 'Confidence score from 0 to 1.',
-            },
-            reasoning: {
-              type: Type.STRING,
-              description: 'Brief explanation of what was found or why it couldn\'t be found.',
+          ],
+          config: {
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                uid: {
+                  type: Type.STRING,
+                  description: 'The extracted application/game UID numeric sequence (5 to 15 digits). If not found, return empty string.',
+                },
+                whatsapp: {
+                  type: Type.STRING,
+                  description: 'The WhatsApp number if visible. If not found, return empty string.',
+                },
+                telegramUsername: {
+                  type: Type.STRING,
+                  description: 'The Telegram username with or without @. If not found, return empty string.',
+                },
+                name: {
+                  type: Type.STRING,
+                  description: 'The display name or full name of the user/applicant if visible. If not found, return empty string.',
+                },
+                confidence: {
+                  type: Type.NUMBER,
+                  description: 'Confidence score from 0 to 1.',
+                },
+                reasoning: {
+                  type: Type.STRING,
+                  description: 'Brief explanation of what was found or why it couldn\'t be found.',
+                },
+              },
+              required: ['uid', 'whatsapp', 'telegramUsername', 'name'],
             },
           },
-          required: ['uid', 'whatsapp', 'telegramUsername', 'name'],
-        },
-      },
-    });
+        });
+
+        if (response) {
+          console.log(`[Scan Screenshot] Successfully processed using model: ${modelName}`);
+          break;
+        }
+      } catch (err: any) {
+        console.warn(`[Scan Screenshot] Failed with model ${modelName}:`, err.message || err);
+        lastError = err;
+        // Wait briefly (500ms) before trying next fallback model
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+
+    if (!response) {
+      throw lastError || new Error('Semua model Gemini gagal merespon atau sedang tidak tersedia.');
+    }
 
     const resultText = response.text || '{}';
     const parsed = JSON.parse(resultText);
@@ -1684,6 +1708,8 @@ Ensure accurate spatial text recognition as per PaddleOCR layout parsing standar
     let errMsg = err instanceof Error ? err.message : String(err);
     if (errMsg.includes('429') || errMsg.includes('RESOURCE_EXHAUSTED') || errMsg.includes('quota') || errMsg.includes('Quota')) {
       errMsg = 'Batas kuota API Gemini tercapai (Rate Limit / Quota Exceeded). Silakan gunakan preview screenshot untuk melihat gambar dan ketik UID secara manual di bawah.';
+    } else if (errMsg.includes('503') || errMsg.includes('UNAVAILABLE') || errMsg.includes('high demand') || errMsg.includes('Spikes in demand')) {
+      errMsg = 'Layanan Gemini saat ini sedang sibuk (503 Service Unavailable / High Demand). Silakan coba lagi beberapa saat atau gunakan preview screenshot untuk mengetik UID secara manual.';
     }
     res.status(500).json({
       success: false,
