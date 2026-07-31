@@ -121,7 +121,14 @@ export async function activateOwnerPinApi(pinCode: string, token: string, telegr
 
 export async function getGoogleSheetInfoApi(): Promise<ApiResponse<{ id: string; url: string }>> {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/sheets/info`);
+    const headers: Record<string, string> = {};
+    const token = typeof window !== 'undefined' ? localStorage.getItem('azurlize_session_token') : null;
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    const response = await fetch(`${API_BASE_URL}/api/sheets/info`, {
+      headers
+    });
     
     const contentType = response.headers.get('content-type');
     if (!contentType || !contentType.includes('application/json')) {
@@ -140,11 +147,16 @@ export async function getGoogleSheetInfoApi(): Promise<ApiResponse<{ id: string;
 
 export async function syncUserToSheetsApi(user: unknown): Promise<ApiResponse<{ success: boolean; spreadsheetUrl: string }>> {
   try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json'
+    };
+    const token = typeof window !== 'undefined' ? localStorage.getItem('azurlize_session_token') : null;
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
     const response = await fetch(`${API_BASE_URL}/api/sheets/sync-user`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
+      headers,
       body: JSON.stringify({ user })
     });
 
@@ -165,11 +177,16 @@ export async function syncUserToSheetsApi(user: unknown): Promise<ApiResponse<{ 
 
 export async function syncReportToSheetsApi(report: unknown): Promise<ApiResponse<{ success: boolean; spreadsheetUrl: string }>> {
   try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json'
+    };
+    const token = typeof window !== 'undefined' ? localStorage.getItem('azurlize_session_token') : null;
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
     const response = await fetch(`${API_BASE_URL}/api/sheets/sync-report`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
+      headers,
       body: JSON.stringify({ report })
     });
 

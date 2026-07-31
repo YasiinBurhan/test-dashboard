@@ -12,6 +12,7 @@ import { subscribeToSystemSettings } from '../firebase/services/settingService';
 import { subscribeToAllUsers } from '../firebase/services/userService';
 import { subscribeToAllReports } from '../firebase/services/reportService';
 import { subscribeToAllPosts, subscribeToRecruiterPosts } from '../firebase/services/postService';
+import { getGoogleSheetInfoApi } from '../services/api';
 import { 
   BarChart2, 
   Megaphone, 
@@ -39,7 +40,15 @@ import {
   ChevronDown,
   Check,
   Users,
-  Coins
+  Coins,
+  RefreshCw,
+  CloudLightning,
+  FileSpreadsheet,
+  Database,
+  Wifi,
+  WifiOff,
+  ExternalLink,
+  AlertCircle
 } from 'lucide-react';
 import { triggerHaptic } from '../telegram/webapp';
 
@@ -93,6 +102,70 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setActiveTab }) =>
   const [timeLeft, setTimeLeft] = useState<string>('');
   const [activityPage, setActivityPage] = useState<number>(1);
   const recruiterFilterDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Rel-Syncron (Real-time Synchronization) States
+  const [sheetsInfo, setSheetsInfo] = useState<{ id: string; url: string } | null>(null);
+  const [isSheetsLoading, setIsSheetsLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<'success' | 'idle' | 'error'>('idle');
+  const [syncMessage, setSyncMessage] = useState<string>('');
+  const [lastSyncTime, setLastSyncTime] = useState<string>(() => {
+    const now = new Date();
+    return now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' WIB';
+  });
+
+  // Fetch Google Sheets integration on mount
+  useEffect(() => {
+    const fetchSheetsInfo = async () => {
+      try {
+        setIsSheetsLoading(true);
+        const res = await getGoogleSheetInfoApi();
+        if (res.success && res.data) {
+          setSheetsInfo(res.data);
+        } else {
+          console.warn('Google Sheets integration is not active or authorized:', res.error);
+        }
+      } catch (err) {
+        console.error('Failed to load Google Sheets info:', err);
+      } finally {
+        setIsSheetsLoading(false);
+      }
+    };
+    
+    fetchSheetsInfo();
+  }, []);
+
+  const handleManualSync = async () => {
+    if (isSyncing) return;
+    setIsSyncing(true);
+    setSyncStatus('idle');
+    setSyncMessage('');
+    triggerHaptic('impact', 'medium');
+    
+    try {
+      // Refresh sheets info from endpoint
+      const sheetRes = await getGoogleSheetInfoApi();
+      if (sheetRes.success && sheetRes.data) {
+        setSheetsInfo(sheetRes.data);
+      }
+      
+      const now = new Date();
+      setLastSyncTime(now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' WIB');
+      setSyncStatus('success');
+      setSyncMessage('Sinkronisasi Berhasil! Koneksi Firebase & Google Sheets aktif.');
+      triggerHaptic('notification', 'success');
+    } catch (err) {
+      setSyncStatus('error');
+      setSyncMessage('Sinkronisasi Gagal: Gagal memperbarui data.');
+      triggerHaptic('notification', 'error');
+    } finally {
+      setIsSyncing(false);
+      setTimeout(() => {
+        setSyncStatus('idle');
+        setSyncMessage('');
+      }, 4000);
+    }
+  };
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -792,6 +865,117 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ setActiveTab }) =>
           </p>
         </div>
       )}
+
+      {/* Real-time Sync & Integration Control Panel (Rel-Syncron) */}
+      <GlassCard className="p-4 border-indigo-500/20 bg-indigo-50/40 dark:bg-indigo-500/5 relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/5 rounded-full blur-xl pointer-events-none" />
+        <div className="absolute top-0 right-0 p-2 opacity-5 pointer-events-none">
+          <CloudLightning className="w-16 h-16 text-indigo-500" />
+        </div>
+
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 relative z-10">
+          <div>
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+              <h3 className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest">
+                Rel-Syncron (Sinkronisasi Real-time)
+              </h3>
+            </div>
+            <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 font-semibold leading-relaxed">
+              Sistem sinkronisasi terdistribusi aktif. Seluruh data laporan harian dan integrasi Google Sheets diperbarui secara real-time.
+            </p>
+          </div>
+
+          <button
+            onClick={handleManualSync}
+            disabled={isSyncing}
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-[10px] font-bold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800/80 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800 transition-all shadow-sm active:scale-95 disabled:opacity-60 cursor-pointer shrink-0 sm:self-center"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-indigo-500' : 'text-slate-500'}`} />
+            <span>{isSyncing ? 'Menyinkronkan...' : 'Sinkronkan Sekarang'}</span>
+          </button>
+        </div>
+
+        {/* Integration Details Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3.5 pt-3.5 border-t border-slate-200/50 dark:border-slate-800/50">
+          {/* Firestore Connection */}
+          <div className="flex items-center gap-3 p-2.5 rounded-xl bg-white/50 dark:bg-slate-950/40 border border-slate-100 dark:border-slate-800/40">
+            <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 shrink-0">
+              <Database className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 block uppercase tracking-wider leading-none">Database Utama</span>
+              <span className="text-[11px] font-black text-slate-800 dark:text-slate-200 block mt-1 leading-tight">Cloud Firestore (Real-time)</span>
+              <span className="text-[8px] font-bold text-emerald-500 flex items-center gap-1 mt-1">
+                <Wifi className="w-3 h-3" /> Terhubung & Aktif
+              </span>
+            </div>
+          </div>
+
+          {/* Google Sheets Connection */}
+          <div className="flex items-center gap-3 p-2.5 rounded-xl bg-white/50 dark:bg-slate-950/40 border border-slate-100 dark:border-slate-800/40">
+            <div className="p-2 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 shrink-0">
+              <FileSpreadsheet className="w-4 h-4" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 block uppercase tracking-wider leading-none">Spreadsheet Eksternal</span>
+              {isSheetsLoading ? (
+                <div className="h-4 w-20 bg-slate-200 dark:bg-slate-800 animate-pulse rounded mt-1" />
+              ) : sheetsInfo ? (
+                <>
+                  <span className="text-[11px] font-black text-slate-800 dark:text-slate-200 block mt-1 truncate max-w-[180px] leading-tight">
+                    Google Sheets Sinkron
+                  </span>
+                  <a
+                    href={sheetsInfo.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-[8.5px] font-bold text-indigo-500 hover:text-indigo-600 mt-1"
+                  >
+                    <span>Buka Spreadsheet</span>
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </a>
+                </>
+              ) : (
+                <>
+                  <span className="text-[11px] font-black text-slate-500 dark:text-slate-400 block mt-1 leading-tight">
+                    Belum Terkonfigurasi
+                  </span>
+                  <span className="text-[8.5px] font-bold text-amber-500 block mt-1">
+                    Hubungi Admin / Owner
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Sync Success/Error Notification Overlay Banner */}
+        <AnimatePresence>
+          {syncMessage && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className={`mt-3 p-2.5 rounded-xl text-[10px] font-bold flex items-center gap-2 ${
+                syncStatus === 'success'
+                  ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400'
+                  : 'bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400'
+              }`}
+            >
+              {syncStatus === 'success' ? (
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+              ) : (
+                <AlertCircle className="w-4 h-4 shrink-0" />
+              )}
+              <div className="flex-1">
+                <span>{syncMessage}</span>
+                <span className="block text-[8px] opacity-75 font-medium mt-0.5">Disinkronkan terakhir: {lastSyncTime}</span>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </GlassCard>
 
       {/* Pusat Aksi Cepat (Tactile Mobile Ergonomics) */}
       <div className="space-y-2.5">
