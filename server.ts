@@ -1679,11 +1679,15 @@ Ensure accurate spatial text recognition as per PaddleOCR layout parsing standar
       success: true,
       data: parsed,
     });
-  } catch (err) {
+  } catch (err: any) {
     console.error('[Scan Screenshot] Error processing screenshot with Gemini AI:', err);
+    let errMsg = err instanceof Error ? err.message : String(err);
+    if (errMsg.includes('429') || errMsg.includes('RESOURCE_EXHAUSTED') || errMsg.includes('quota') || errMsg.includes('Quota')) {
+      errMsg = 'Batas kuota API Gemini tercapai (Rate Limit / Quota Exceeded). Silakan gunakan preview screenshot untuk melihat gambar dan ketik UID secara manual di bawah.';
+    }
     res.status(500).json({
       success: false,
-      error: err instanceof Error ? err.message : 'Gagal memproses screenshot menggunakan Gemini AI.',
+      error: errMsg,
     });
   }
 });
@@ -2270,14 +2274,19 @@ app.post('/api/telegram/send-report', authenticateJWT, upload.single('video'), a
     const settings = await getSystemSettings();
     const ownerChatId = settings?.telegramOwnerId;
     
-    console.log('[Server] send-report call. Owner ID:', ownerChatId, 'Report ID:', report?.reportId);
+    // Distinguish between Applicant Data (Data Harian) and Daily Summary (Laporan Harian)
+    // Applicant data usually has specific fields like UID or WhatsApp
+    const isApplicant = !!(report && (report.uid9Kucing || report.applicantWhatsapp || report.applicantTelegramUsername));
     
-    const isApprovalEnabled = !!(ownerChatId && report && report.reportId);
+    console.log('[Server] send-report call. Owner ID:', ownerChatId, 'Report ID:', report?.reportId, 'Is Applicant:', isApplicant);
+    
+    // ONLY enable approval flow for Owner if it is an Applicant Report
+    const isApprovalEnabled = !!(ownerChatId && report && report.reportId && isApplicant);
     
     if (isApprovalEnabled) {
       console.log('[Server] Approval flow ENABLED for owner:', ownerChatId);
     } else {
-      console.log('[Server] Approval flow DISABLED. Sending directly to:', targetGroup);
+      console.log('[Server] Approval flow DISABLED (Direct Send). Target:', targetGroup);
     }
     
     const actualTargetChat = isApprovalEnabled ? ownerChatId : targetGroup;
