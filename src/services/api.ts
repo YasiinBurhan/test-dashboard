@@ -295,7 +295,7 @@ export async function sendReportToTelegramApi(
             formDataPayload.append('video', blob, `media.${ext}`);
           } catch (convErr) {
             console.error('Failed to convert blob to file for server upload:', convErr);
-            formDataPayload.append('videoDataUrl', videoDataUrl);
+            throw new Error('Gagal memproses file video. Silakan coba lagi atau unggah video yang didukung.');
           }
         } else {
           formDataPayload.append('videoDataUrl', videoDataUrl);
