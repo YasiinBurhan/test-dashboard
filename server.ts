@@ -2172,12 +2172,12 @@ app.post('/api/telegram/send-post', authenticateJWT, async (req: Request, res: R
       photoFormData.append('chat_id', targetGroup);
       if (targetTopic) photoFormData.append('message_thread_id', String(targetTopic));
       
-      const photoBlob = formData.get('photo0');
+      const photoBlob = (formData as any).get('photo0');
       if (photoBlob) photoFormData.append('photo', photoBlob, { filename: 'photo.jpg' });
 
       let response = await fetch(`https://api.telegram.org/bot${activeToken}/sendPhoto`, {
         method: 'POST',
-        body: photoFormData
+        body: photoFormData as any
       });
       result = await response.json();
 
@@ -2186,10 +2186,10 @@ app.post('/api/telegram/send-post', authenticateJWT, async (req: Request, res: R
         result.description.toLowerCase().includes('topic') ||
         result.description.toLowerCase().includes('message_thread_id')
       )) {
-        photoFormData.delete('message_thread_id');
+        (photoFormData as any).delete('message_thread_id');
         response = await fetch(`https://api.telegram.org/bot${activeToken}/sendPhoto`, {
           method: 'POST',
-          body: photoFormData
+          body: photoFormData as any
         });
         result = await response.json();
       }
@@ -2198,7 +2198,7 @@ app.post('/api/telegram/send-post', authenticateJWT, async (req: Request, res: R
 
       let response = await fetch(`https://api.telegram.org/bot${activeToken}/sendMediaGroup`, {
         method: 'POST',
-        body: formData
+        body: formData as any
       });
 
       result = await response.json();
@@ -2209,10 +2209,10 @@ app.post('/api/telegram/send-post', authenticateJWT, async (req: Request, res: R
         result.description.toLowerCase().includes('message_thread_id')
       )) {
         console.warn('[Telegram API] sendMediaGroup thread error, retrying without message_thread_id:', result.description);
-        formData.delete('message_thread_id');
+        (formData as any).delete('message_thread_id');
         response = await fetch(`https://api.telegram.org/bot${activeToken}/sendMediaGroup`, {
           method: 'POST',
-          body: formData
+          body: formData as any
         });
         result = await response.json();
       }
@@ -2466,7 +2466,7 @@ Grub : <b>${displayGrup}</b>${photoLink}
 
             let response = await fetch(`https://api.telegram.org/bot${activeToken}/${apiMethod}`, {
               method: 'POST',
-              body: formData
+              body: formData as any
             });
 
             let result = await response.json();
@@ -2478,10 +2478,10 @@ Grub : <b>${displayGrup}</b>${photoLink}
               result.description.toLowerCase().includes('message_thread_id')
             )) {
               console.warn(`[Telegram API] ${apiMethod} thread error, retrying without message_thread_id:`, result.description);
-              formData.delete('message_thread_id');
+              (formData as any).delete('message_thread_id');
               response = await fetch(`https://api.telegram.org/bot${activeToken}/${apiMethod}`, {
                 method: 'POST',
-                body: formData
+                body: formData as any
               });
               result = await response.json();
             }

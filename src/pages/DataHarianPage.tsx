@@ -2862,7 +2862,7 @@ Grub : ${grupDisplay}`;
       className="space-y-5"
     >
       {/* Live Timer Section */}
-      <GlassCard className="p-3.5 sm:p-4 border-sky-500/30 dark:border-sky-500/20 bg-sky-50/80 dark:bg-sky-500/5 overflow-hidden relative">
+      <GlassCard className="p-4 border-sky-500/30 dark:border-sky-500/20 bg-sky-50/80 dark:bg-sky-500/5 overflow-hidden relative">
         <div className="absolute top-0 right-0 p-2 opacity-10 pointer-events-none">
           <Sparkles className="w-12 h-12 text-sky-500" />
         </div>
@@ -2894,22 +2894,38 @@ Grub : ${grupDisplay}`;
                 : 'Selamat! Data harian Anda hari ini sudah berhasil dikirim dan tersimpan.'}
             </p>
             {/* Elegant Counters */}
-            <div className="flex items-center gap-1.5 mt-2.5 font-mono">
-              <div className="flex items-center gap-1 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800/80 px-2 py-1 rounded-xl shadow-sm">
-                <span className="text-sm font-black text-slate-900 dark:text-white tracking-tight">{hours}</span>
-                <span className="text-[7px] font-bold text-slate-500 dark:text-slate-400 uppercase">j</span>
+            <div className="flex flex-wrap items-center justify-between gap-2.5 mt-2.5">
+              <div className="flex items-center gap-1.5 font-mono">
+                <div className="flex items-center gap-1 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800/80 px-2 py-1 rounded-xl shadow-sm">
+                  <span className="text-sm font-black text-slate-900 dark:text-white tracking-tight">{hours}</span>
+                  <span className="text-[7px] font-bold text-slate-500 dark:text-slate-400 uppercase">j</span>
+                </div>
+                <span className="text-xs font-black text-sky-500/50">:</span>
+                <div className="flex items-center gap-1 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800/80 px-2 py-1 rounded-xl shadow-sm">
+                  <span className="text-sm font-black text-slate-900 dark:text-white tracking-tight">{minutes}</span>
+                  <span className="text-[7px] font-bold text-slate-500 dark:text-slate-400 uppercase">m</span>
+                </div>
+                <span className="text-xs font-black text-sky-500/50">:</span>
+                <div className="flex items-center gap-1 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800/80 px-2 py-1 rounded-xl shadow-sm">
+                  <span className="text-sm font-black text-sky-600 dark:text-sky-400 tracking-tight">{seconds}</span>
+                  <span className="text-[7px] font-bold text-slate-500 dark:text-slate-400 uppercase">d</span>
+                </div>
+                <span className="text-[8.5px] font-bold text-slate-500 dark:text-slate-400 ml-1 font-sans self-center">Sisa Waktu Hari Ini</span>
               </div>
-              <span className="text-xs font-black text-sky-500/50">:</span>
-              <div className="flex items-center gap-1 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800/80 px-2 py-1 rounded-xl shadow-sm">
-                <span className="text-sm font-black text-slate-900 dark:text-white tracking-tight">{minutes}</span>
-                <span className="text-[7px] font-bold text-slate-500 dark:text-slate-400 uppercase">m</span>
+
+              {/* Countdown Progress Bar */}
+              <div className="flex-1 min-w-[140px] max-w-xs space-y-1">
+                <div className="flex items-center justify-between text-[8px] font-bold text-slate-500 uppercase tracking-wider">
+                  <span>Siklus Pelaporan</span>
+                  <span className="font-mono text-sky-500 dark:text-sky-400">{Math.round(Math.max(0, 100 - elapsedPercent))}% Sisa</span>
+                </div>
+                <div className="w-full h-1.5 bg-slate-200 dark:bg-slate-900 rounded-full overflow-hidden border border-slate-300/30 dark:border-slate-800/40">
+                  <div 
+                    className="bg-gradient-to-r from-sky-400 to-indigo-500 h-full rounded-full transition-all duration-1000"
+                    style={{ width: `${Math.max(0, 100 - elapsedPercent)}%` }}
+                  />
+                </div>
               </div>
-              <span className="text-xs font-black text-sky-500/50">:</span>
-              <div className="flex items-center gap-1 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800/80 px-2 py-1 rounded-xl shadow-sm">
-                <span className="text-sm font-black text-sky-600 dark:text-sky-400 tracking-tight">{seconds}</span>
-                <span className="text-[7px] font-bold text-slate-500 dark:text-slate-400 uppercase">d</span>
-              </div>
-              <span className="text-[8.5px] font-bold text-slate-500 dark:text-slate-400 ml-1.5 font-sans self-center">Sisa Waktu Hari Ini</span>
             </div>
           </div>
         </div>
@@ -3037,7 +3053,7 @@ Grub : ${grupDisplay}`;
                 setSelectedRecruiter(e.target.value);
                 triggerHaptic('selection');
               }}
-              className="w-full pl-3.5 pr-8 h-10 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-sky-500 cursor-pointer appearance-none transition-all"
+              className="w-full pl-10 pr-8 h-10 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-sky-500 cursor-pointer appearance-none transition-all"
             >
               <option value="Semua">Semua Recruiter ({recruitersList.length})</option>
               {recruitersList.map((rec) => (
@@ -3469,6 +3485,14 @@ Grub : ${grupDisplay}`;
                         Wajib Upload
                       </span>
                     )}
+                  </div>
+
+                  {/* Warning Info: Video Rusak/Corrupt */}
+                  <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 flex items-start gap-2.5 shadow-sm">
+                    <span className="text-amber-500 text-sm leading-none shrink-0">⚠️</span>
+                    <p className="text-[10px] sm:text-xs text-amber-600 dark:text-amber-400 font-semibold leading-relaxed">
+                      <strong>PERHATIAN:</strong> Jika file video yang diunggah rusak/corrupt, video <strong>TIDAK AKAN</strong> terkirim ke grup. Harap pastikan video dapat diputar dengan lancar sebelum dikirim.
+                    </p>
                   </div>
 
                   <input
