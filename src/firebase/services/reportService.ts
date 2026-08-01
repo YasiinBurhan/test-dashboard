@@ -79,8 +79,8 @@ export function subscribeToAllReports(
   onUpdate: (reports: DailyReport[]) => void,
   onError?: (error: Error) => void
 ): () => void {
-  const qSummary = query(collection(db, SUMMARY_COLLECTION), orderBy('createdAt', 'desc'));
-  const qApplicant = query(collection(db, APPLICANT_COLLECTION), orderBy('createdAt', 'desc'));
+  const qSummary = collection(db, SUMMARY_COLLECTION);
+  const qApplicant = collection(db, APPLICANT_COLLECTION);
 
   let summaryReports: DailyReport[] = [];
   let applicantReports: DailyReport[] = [];

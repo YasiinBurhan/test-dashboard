@@ -148,7 +148,7 @@ export const OwnerPage: React.FC = () => {
   // Export Spreadsheet State
   const [allReports, setAllReports] = useState<DailyReport[]>([]);
   const [exportType, setExportType] = useState<'data_harian' | 'laporan_harian'>('data_harian');
-  const [exportDate, setExportDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [exportDate, setExportDate] = useState<string>('');
   const [exportRecruiter, setExportRecruiter] = useState<string>('');
   const [exportResultFilter, setExportResultFilter] = useState<string>('all');
   const [exportGrupFilter, setExportGrupFilter] = useState<string>('all');
@@ -308,7 +308,7 @@ export const OwnerPage: React.FC = () => {
     // Distinguish by exportType:
     // data_harian has applicantWhatsapp, uid9Kucing, result, or channel.
     // laporan_harian has visit, quality, posting, or effectiveStatus.
-    const isApplicant = !!(r.applicantWhatsapp || r.uid9Kucing || r.channel || r.result);
+    const isApplicant = !!(r.applicantWhatsapp || r.uid9Kucing || r.channel || r.result || r.applicantTelegramUsername || r.applicantName);
     if (exportType === 'data_harian' && !isApplicant) return false;
     if (exportType === 'laporan_harian' && isApplicant) return false;
 

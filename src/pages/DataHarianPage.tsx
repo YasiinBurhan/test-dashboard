@@ -897,12 +897,12 @@ const ReportListCard: React.FC<{
               <select
                 value={rep.result || 'Pending'}
                 onChange={(e) => onUpdateStatus(rep.reportId || '', e.target.value as 'Pending' | 'ACC' | 'REJECT', rep.telegramId, rep.applicantTelegramUsername)}
-                className={`pl-2.5 pr-7 py-1 rounded-full text-[10px] font-black border outline-none cursor-pointer appearance-none transition-all ${
+                className={`pl-2.5 pr-7 py-1 rounded-full text-[10px] font-black border outline-none cursor-pointer appearance-none transition-all shadow-sm ${
                   rep.result === 'ACC'
-                    ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                    ? 'bg-emerald-500 text-slate-950 border-emerald-600 font-extrabold'
                     : rep.result === 'REJECT'
-                    ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/20'
-                    : 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/20'
+                    ? 'bg-rose-500 text-white border-rose-600 font-extrabold'
+                    : 'bg-amber-500 text-slate-950 border-amber-600 font-extrabold'
                 }`}
               >
                 <option value="Pending" className="bg-white dark:bg-slate-900 text-amber-600 dark:text-amber-400">
@@ -920,12 +920,12 @@ const ReportListCard: React.FC<{
               </div>
             </div>
           ) : (
-            <span className={`px-2.5 py-1 rounded-full text-[10px] font-black border ${
+            <span className={`px-2.5 py-1 rounded-full text-[10px] font-black border shadow-sm ${
               rep.result === 'ACC'
-                ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30'
+                ? 'bg-emerald-500 text-slate-950 border-emerald-600'
                 : rep.result === 'REJECT'
-                ? 'bg-rose-500/20 text-rose-700 dark:text-rose-300 border-rose-500/30'
-                : 'bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/30'
+                ? 'bg-rose-500 text-white border-rose-600'
+                : 'bg-amber-500 text-slate-950 border-amber-600'
             }`}>
               {rep.result === 'ACC'
                 ? (isPemeriksaan ? 'ACC (Bekerja)' : 'ACC')
